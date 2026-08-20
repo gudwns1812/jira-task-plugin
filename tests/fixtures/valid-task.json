@@ -1,0 +1,15 @@
+{
+  "type": "task",
+  "epicKey": "S15P11A108-10",
+  "storyKey": "S15P11A108-100",
+  "title": "[AUTH-001 | FE] 이메일 회원가입 화면 구현",
+  "assignee": "user@example.com",
+  "priority": "High",
+  "storyPoints": 3,
+  "sprint": "Sprint 1",
+  "dueDate": "2026-08-28",
+  "description": {
+    "summary": "회원가입 화면과 입력 상태를 구현한다.",
+    "deliverables": ["입력 상태와 오류 메시지가 표시된다."]
+  }
+}
