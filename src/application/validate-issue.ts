@@ -1,9 +1,10 @@
-import { issueInputSchema } from "../domain/input/issue-input.schema.js";
+import { createIssueInputSchema } from "../domain/input/issue-input.schema.js";
+import { DEFAULT_WORK_POLICY, type WorkPolicy } from "../domain/policy/work-policy.js";
 import { validateIssue } from "../domain/validation/issue-validator.js";
 import type { ValidationMessage, ValidationResult } from "../domain/validation/validation-result.js";
 
-export function validateRawIssue(rawInput: unknown): ValidationResult {
-  const schemaResult = issueInputSchema.safeParse(rawInput);
+export function validateRawIssue(rawInput: unknown, policy: WorkPolicy = DEFAULT_WORK_POLICY): ValidationResult {
+  const schemaResult = createIssueInputSchema(policy).safeParse(rawInput);
 
   if (!schemaResult.success) {
     return {
@@ -13,7 +14,7 @@ export function validateRawIssue(rawInput: unknown): ValidationResult {
     };
   }
 
-  return validateIssue(schemaResult.data);
+  return validateIssue(schemaResult.data, policy);
 }
 
 function toValidationMessage(issue: { path: PropertyKey[]; message: string }): ValidationMessage {

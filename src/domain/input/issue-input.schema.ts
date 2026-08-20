@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { STORY_POINTS, type StoryPoint } from "../policy/work-policy.js";
+import { DEFAULT_WORK_POLICY, type WorkPolicy } from "../policy/work-policy.js";
 
 const requiredText = z.string().trim().min(1, "값을 입력해야 합니다.");
 
@@ -27,12 +27,6 @@ const dueDateSchema = requiredText.refine(isValidIsoDate, {
   message: "기한은 유효한 YYYY-MM-DD 형식이어야 합니다.",
 });
 
-const storyPointSchema = z.custom<StoryPoint>(
-  (value): value is StoryPoint =>
-    typeof value === "number" && STORY_POINTS.includes(value as StoryPoint),
-  { message: "스토리 포인트는 1, 2, 3, 5, 8 중 하나여야 합니다." },
-);
-
 export const taskDescriptionSchema = z
   .object({
     summary: requiredText,
@@ -40,40 +34,45 @@ export const taskDescriptionSchema = z
   })
   .strict();
 
-export const epicInputSchema = z
-  .object({
-    type: z.literal("epic"),
-    title: requiredText,
-  })
-  .strict();
+export function createIssueInputSchema(policy: WorkPolicy) {
+  const storyPointSchema = z.custom<number>(
+    (value): value is number => typeof value === "number" && policy.storyPoints.includes(value),
+    { message: `스토리 포인트는 ${policy.storyPoints.join(", ")} 중 하나여야 합니다.` },
+  );
 
-export const storyInputSchema = z
-  .object({
-    type: z.literal("story"),
-    epicKey: requiredText,
-    title: requiredText,
-    branch: requiredText,
-    sprint: requiredText.optional(),
-  })
-  .strict();
+  const epicInputSchema = z
+    .object({
+      type: z.literal("epic"),
+      title: requiredText,
+    })
+    .strict();
 
-export const taskInputSchema = z
-  .object({
-    type: z.literal("task"),
-    epicKey: requiredText,
-    storyKey: requiredText.optional(),
-    title: requiredText,
-    assignee: requiredText,
-    priority: requiredText,
-    storyPoints: storyPointSchema,
-    sprint: requiredText,
-    dueDate: dueDateSchema,
-    description: taskDescriptionSchema,
-  })
-  .strict();
+  const storyInputSchema = z
+    .object({
+      type: z.literal("story"),
+      epicKey: requiredText,
+      title: requiredText,
+      branch: requiredText,
+      sprint: requiredText.optional(),
+    })
+    .strict();
 
-export const issueInputSchema = z.discriminatedUnion("type", [
-  epicInputSchema,
-  storyInputSchema,
-  taskInputSchema,
-]);
+  const taskInputSchema = z
+    .object({
+      type: z.literal("task"),
+      epicKey: requiredText,
+      storyKey: requiredText.optional(),
+      title: requiredText,
+      assignee: requiredText,
+      priority: requiredText,
+      storyPoints: storyPointSchema,
+      sprint: requiredText,
+      dueDate: dueDateSchema,
+      description: taskDescriptionSchema,
+    })
+    .strict();
+
+  return z.discriminatedUnion("type", [epicInputSchema, storyInputSchema, taskInputSchema]);
+}
+
+export const issueInputSchema = createIssueInputSchema(DEFAULT_WORK_POLICY);
