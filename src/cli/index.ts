@@ -3,6 +3,7 @@
 import { Command } from "commander";
 
 import { validateRawIssue } from "../application/validate-issue.js";
+import { getIssueTemplate } from "../domain/template/issue-template.js";
 import { InputFileError, readJsonFile } from "../infrastructure/file-input.js";
 
 const program = new Command();
@@ -39,6 +40,21 @@ program
       console.error(`검증 실패: ${message}`);
       process.exitCode = 1;
     }
+  });
+
+program
+  .command("template <type>")
+  .description("스토리 또는 작업 설명 템플릿을 출력합니다")
+  .action((type: string) => {
+    const template = getIssueTemplate(type);
+
+    if (!template) {
+      console.error("지원하지 않는 템플릿입니다. story 또는 task를 입력하세요.");
+      process.exitCode = 1;
+      return;
+    }
+
+    console.log(template);
   });
 
 await program.parseAsync();
