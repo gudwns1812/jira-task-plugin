@@ -4,12 +4,14 @@ import { Command } from "commander";
 
 import { createDraft } from "../application/create-draft.js";
 import { validateRawIssue } from "../application/validate-issue.js";
-import { PolicyConfigurationError } from "../domain/policy/policy-config.js";
+import { PolicyConfigurationError, resolveJiraTaskConfig } from "../domain/policy/policy-config.js";
 import { getIssueTemplate } from "../domain/template/issue-template.js";
 import { InputFileError, readJsonFile } from "../infrastructure/file-input.js";
 import {
   initializePolicyConfig,
+  loadJiraTaskConfig,
   loadWorkPolicy,
+  setProjectKey,
 } from "../infrastructure/policy-config-repository.js";
 
 const program = new Command();
@@ -57,9 +59,9 @@ program
   .command("create")
   .description("검증한 JSON 이슈의 Jira 생성 요청을 만듭니다")
   .requiredOption("-f, --file <path>", "생성할 JSON 파일 경로")
-  .requiredOption("-p, --project <key>", "Jira 프로젝트 키")
+  .option("-p, --project <key>", "기본 Jira 프로젝트 키를 일시적으로 덮어씁니다")
   .option("--dry-run", "Jira에 생성하지 않고 요청 초안만 JSON으로 출력합니다")
-  .option("-c, --config <path>", "기본 정책을 덮어쓸 JSON 설정 파일")
+  .option("-c, --config <path>", "기본 정책과 Jira 프로젝트 키를 읽을 설정 파일")
   .action(async (options: { file: string; project: string; dryRun?: boolean; config?: string }) => {
     if (!options.dryRun) {
       console.error("생성 실패: 실제 Jira 생성은 아직 지원하지 않습니다. --dry-run을 지정하세요.");
@@ -69,8 +71,18 @@ program
 
     try {
       const rawInput = await readJsonFile(options.file);
-      const policy = await loadWorkPolicy(options.config);
-      const result = createDraft(rawInput, options.project, policy);
+      const config = await loadJiraTaskConfig(options.config);
+      const projectKey = options.project
+        ? resolveJiraTaskConfig({ projectKey: options.project }).projectKey
+        : config.projectKey;
+
+      if (!projectKey) {
+        throw new PolicyConfigurationError(
+          "Jira 프로젝트 키가 없습니다. config set --project <key>로 기본값을 설정하거나 --project <key>를 지정하세요.",
+        );
+      }
+
+      const result = createDraft(rawInput, projectKey, config.policy);
 
       printMessages("오류", result.errors, console.error);
       printMessages("경고", result.warnings, console.warn);
@@ -96,12 +108,12 @@ const configCommand = program.command("config").description("업무 정책 설�
 
 configCommand
   .command("init")
-  .description("편집 가능한 기본 정책 설정 파일을 만듭니다")
-  .option("-c, --config <path>", "만들 정책 설정 파일 경로")
+  .description("편집 가능한 기본 설정 파일을 만듭니다")
+  .option("-c, --config <path>", "만들 설정 파일 경로")
   .action(async (options: { config?: string }) => {
     try {
       const path = await initializePolicyConfig(options.config);
-      console.log(`정책 설정 파일을 만들었습니다: ${path}`);
+      console.log(`설정 파일을 만들었습니다: ${path}`);
     } catch (error) {
       const message = error instanceof PolicyConfigurationError ? error.message : "정책 설정 파일을 만들지 못했습니다.";
       console.error(`설정 실패: ${message}`);
@@ -111,13 +123,30 @@ configCommand
 
 configCommand
   .command("show")
-  .description("현재 적용되는 업무 정책을 출력합니다")
-  .option("-c, --config <path>", "읽을 정책 설정 파일 경로")
+  .description("현재 적용되는 업무 정책과 Jira 프로젝트 키를 출력합니다")
+  .option("-c, --config <path>", "읽을 설정 파일 경로")
   .action(async (options: { config?: string }) => {
     try {
-      console.log(JSON.stringify(await loadWorkPolicy(options.config), null, 2));
+      const config = await loadJiraTaskConfig(options.config);
+      console.log(JSON.stringify({ ...config.policy, ...(config.projectKey ? { projectKey: config.projectKey } : {}) }, null, 2));
     } catch (error) {
       const message = error instanceof PolicyConfigurationError ? error.message : "정책 설정을 읽지 못했습니다.";
+      console.error(`설정 실패: ${message}`);
+      process.exitCode = 1;
+    }
+  });
+
+configCommand
+  .command("set")
+  .description("기본 Jira 프로젝트 키를 설정합니다")
+  .requiredOption("-p, --project <key>", "저장할 Jira 프로젝트 키")
+  .option("-c, --config <path>", "저장할 설정 파일 경로")
+  .action(async (options: { project: string; config?: string }) => {
+    try {
+      const path = await setProjectKey(options.project, options.config);
+      console.log(`기본 Jira 프로젝트 키를 설정했습니다: ${path}`);
+    } catch (error) {
+      const message = error instanceof PolicyConfigurationError ? error.message : "정책 설정 파일을 저장하지 못했습니다.";
       console.error(`설정 실패: ${message}`);
       process.exitCode = 1;
     }

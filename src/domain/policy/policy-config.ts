@@ -11,6 +11,9 @@ const uniqueStoryPointList = z
   .min(1)
   .refine((values) => new Set(values).size === values.length, { message: "중복된 포인트는 사용할 수 없습니다." });
 const labelMap = z.record(requiredText, requiredText);
+const projectKeySchema = requiredText.regex(/^[A-Z][A-Z0-9_]*$/, {
+  message: "프로젝트 키는 대문자 영문으로 시작하고 대문자 영문·숫자·밑줄만 사용할 수 있습니다.",
+});
 
 export const policyOverrideSchema = z
   .object({
@@ -28,6 +31,15 @@ export const policyOverrideSchema = z
   .strict();
 
 export type PolicyOverrides = z.infer<typeof policyOverrideSchema>;
+
+export const jiraTaskConfigSchema = policyOverrideSchema.extend({
+  projectKey: projectKeySchema.optional(),
+});
+
+export interface JiraTaskConfig {
+  projectKey?: string;
+  policy: WorkPolicy;
+}
 
 export class PolicyConfigurationError extends Error {
   constructor(message: string) {
@@ -69,6 +81,24 @@ export function resolveWorkPolicy(rawOverrides: unknown): WorkPolicy {
 
 export function defaultPolicyConfig(): WorkPolicy {
   return resolveWorkPolicy({});
+}
+
+export function resolveJiraTaskConfig(rawConfig: unknown): JiraTaskConfig {
+  const parsed = jiraTaskConfigSchema.safeParse(rawConfig);
+
+  if (!parsed.success) {
+    const details = parsed.error.issues
+      .map((issue) => `${issue.path.map(String).join(".") || "config"}: ${issue.message}`)
+      .join("; ");
+    throw new PolicyConfigurationError(`설정 형식이 올바르지 않습니다. ${details}`);
+  }
+
+  const { projectKey, ...policyOverrides } = parsed.data;
+  return { projectKey, policy: resolveWorkPolicy(policyOverrides) };
+}
+
+export function defaultJiraTaskConfig(): JiraTaskConfig {
+  return { policy: defaultPolicyConfig() };
 }
 
 function mergeLabels(
