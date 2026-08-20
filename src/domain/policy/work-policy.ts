@@ -17,3 +17,33 @@ export const STORY_POINTS = [1, 2, 3, 5, 8] as const;
 export type Area = (typeof AREAS)[number];
 export type WorkCategory = (typeof WORK_CATEGORIES)[number];
 export type StoryPoint = (typeof STORY_POINTS)[number];
+
+export function isArea(value: string): value is Area {
+  return AREAS.includes(value as Area);
+}
+
+export function isWorkCategory(value: string): value is WorkCategory {
+  return WORK_CATEGORIES.includes(value as WorkCategory);
+}
+
+export function labelForArea(area: Area): string {
+  return area === "INFRA" ? "Infra" : area;
+}
+
+export function labelForCategory(category: WorkCategory): string | undefined {
+  switch (category) {
+    case "PLAN":
+    case "UX":
+    case "DESIGN":
+      return "기획";
+    case "INFRA":
+      return "Infra";
+    case "DOCS":
+      return "Docs";
+    case "QA":
+      return "QA";
+    case "TECH":
+    case "PT":
+      return undefined;
+  }
+}
