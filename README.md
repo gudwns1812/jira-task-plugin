@@ -5,20 +5,12 @@ Jira 업무 입력을 검증하고, 요청 초안을 확인하며, Story 작업 
 ## 빠른 시작
 
 ```bash
-git clone https://github.com/gudwns1812/task-jira-cli.git
-cd task-jira-cli
-npm ci
-npm run build
-npm link
+npm install -g task-jira-cli
 
 jira-task --help
 ```
 
-Node.js 22 이상과 Git이 필요합니다. `npm link`를 사용하지 않으려면 아래 예시의 `jira-task` 대신 `npm run dev --`를 앞에 붙여 실행하세요.
-
-```bash
-npm run dev -- --help
-```
+Node.js 22 이상과 Git이 필요합니다.
 
 ## 처음 한 번 설정하기
 

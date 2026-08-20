@@ -1,18 +1,22 @@
 {
   "name": "task-jira-cli",
   "version": "0.1.0",
-  "private": true,
   "description": "RULE.md 기반 Jira 업무 생성 및 검증 CLI",
   "type": "module",
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "bin": {
-    "jira-task": "./dist/cli/index.js"
+    "jira-task": "dist/cli/index.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/cli/index.js",
     "dev": "tsx src/cli/index.ts",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "prepublishOnly": "npm run build"
   },
   "engines": {
     "node": ">=22"
