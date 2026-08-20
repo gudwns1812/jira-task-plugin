@@ -5,6 +5,7 @@ import {
   type JiraIssue,
   type StoryIssueReader,
 } from "../domain/jira/story-issue-reader.js";
+import type { JiraIssueTypeWithStatuses, JiraProject, JiraSetupReader } from "../domain/jira/setup-reader.js";
 
 export interface JiraClientOptions {
   baseUrl: string;
@@ -13,7 +14,7 @@ export interface JiraClientOptions {
   fetchImplementation?: typeof fetch;
 }
 
-export class JiraClient implements StoryIssueReader {
+export class JiraClient implements StoryIssueReader, JiraSetupReader {
   private readonly baseUrl: string;
   private readonly authorization: string;
   private readonly fetchImplementation: typeof fetch;
@@ -38,6 +39,54 @@ export class JiraClient implements StoryIssueReader {
     }
 
     return { key: body.key, issueType, status };
+  }
+
+  async verifyIdentity(): Promise<void> {
+    await this.request("/rest/api/3/myself");
+  }
+
+  async listProjects(): Promise<JiraProject[]> {
+    const projects: JiraProject[] = [];
+    let startAt = 0;
+
+    while (true) {
+      const response = await this.request(`/rest/api/3/project/search?startAt=${startAt}&maxResults=50`);
+      const body = (await response.json()) as { values?: unknown; isLast?: unknown };
+      if (!Array.isArray(body.values) || typeof body.isLast !== "boolean") {
+        throw new JiraRequestError("Jira 프로젝트 목록 응답 형식이 올바르지 않습니다.");
+      }
+      if (!body.isLast && body.values.length === 0) {
+        throw new JiraRequestError("Jira 프로젝트 목록의 다음 페이지를 확인할 수 없습니다.");
+      }
+      for (const project of body.values) {
+        if (
+          typeof project !== "object" ||
+          project === null ||
+          !("id" in project) ||
+          !("key" in project) ||
+          !("name" in project) ||
+          typeof project.id !== "string" ||
+          typeof project.key !== "string" ||
+          typeof project.name !== "string"
+        ) {
+          throw new JiraRequestError("Jira 프로젝트 목록 응답 형식이 올바르지 않습니다.");
+        }
+        projects.push({ id: project.id, key: project.key, name: project.name });
+      }
+      if (body.isLast) {
+        return projects;
+      }
+      startAt += 50;
+    }
+  }
+
+  async listIssueTypesWithStatuses(projectKey: string): Promise<JiraIssueTypeWithStatuses[]> {
+    const response = await this.request(`/rest/api/3/project/${encodeURIComponent(projectKey)}/statuses`);
+    const body = (await response.json()) as unknown;
+    if (!Array.isArray(body)) {
+      throw new JiraRequestError("Jira 이슈 유형 및 상태 응답 형식이 올바르지 않습니다.");
+    }
+    return body.map((issueType) => decodeIssueTypeWithStatuses(issueType));
   }
 
   async findTransitionId(issueKey: string, targetStatus: string): Promise<string | undefined> {
@@ -99,4 +148,20 @@ export class JiraClient implements StoryIssueReader {
     }
     throw new JiraRequestError("Jira 요청이 워크플로 규칙을 만족하지 않습니다.");
   }
+}
+
+function decodeIssueTypeWithStatuses(value: unknown): JiraIssueTypeWithStatuses {
+  if (typeof value !== "object" || value === null || !("id" in value) || !("name" in value) || !("statuses" in value)) {
+    throw new JiraRequestError("Jira 이슈 유형 및 상태 응답 형식이 올바르지 않습니다.");
+  }
+  if (typeof value.id !== "string" || typeof value.name !== "string" || !Array.isArray(value.statuses)) {
+    throw new JiraRequestError("Jira 이슈 유형 및 상태 응답 형식이 올바르지 않습니다.");
+  }
+  const statuses = value.statuses.map((status) => {
+    if (typeof status !== "object" || status === null || !("id" in status) || !("name" in status) || typeof status.id !== "string" || typeof status.name !== "string") {
+      throw new JiraRequestError("Jira 이슈 유형 및 상태 응답 형식이 올바르지 않습니다.");
+    }
+    return { id: status.id, name: status.name };
+  });
+  return { id: value.id, name: value.name, statuses };
 }

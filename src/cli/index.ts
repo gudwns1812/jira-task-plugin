@@ -4,25 +4,29 @@ import { Command } from "commander";
 
 import { createBranch } from "../application/create-branch.js";
 import { createDraft } from "../application/create-draft.js";
+import { runInitialSetup, SetupCancelledError, SetupSelectionError } from "../application/run-initial-setup.js";
 import { validateRawIssue } from "../application/validate-issue.js";
 import { PolicyConfigurationError, resolveJiraTaskConfig } from "../domain/policy/policy-config.js";
 import { getIssueTemplate } from "../domain/template/issue-template.js";
 import { InputFileError, readJsonFile } from "../infrastructure/file-input.js";
 import { GitRepository } from "../infrastructure/git-repository.js";
 import { JiraClient } from "../infrastructure/jira-client.js";
+import { CredentialStorageError, KeyringCredentialStore } from "../infrastructure/keyring-credential-store.js";
 import {
   initializePolicyConfig,
+  hasJiraTaskConfig,
   loadJiraTaskConfig,
   loadWorkPolicy,
   setJiraTaskConfig,
 } from "../infrastructure/policy-config-repository.js";
+import { InquirerSetupPrompter } from "../infrastructure/setup-prompter.js";
 
 const program = new Command();
 
 program
   .name("jira-task")
   .description("RULE.md 기반 Jira 업무 생성 및 검증 CLI")
-  .version("0.1.0");
+  .version("0.1.1");
 
 program
   .command("validate")
@@ -133,7 +137,11 @@ configCommand
       const config = await loadJiraTaskConfig(options.config);
       console.log(
         JSON.stringify(
-          { ...config.policy, ...(config.projectKey ? { projectKey: config.projectKey } : {}), ...(config.jira ? { jira: config.jira } : {}) },
+          {
+            ...config.policy,
+            ...(config.projectKey ? { projectKey: config.projectKey } : {}),
+            ...(config.jira ? { jira: redactJiraSettings(config.jira) } : {}),
+          },
           null,
           2,
         ),
@@ -143,6 +151,14 @@ configCommand
       console.error(`설정 실패: ${message}`);
       process.exitCode = 1;
     }
+  });
+
+configCommand
+  .command("setup")
+  .description("Jira 연결과 프로젝트 기본값을 대화형으로 설정합니다")
+  .option("-c, --config <path>", "저장할 설정 파일 경로")
+  .action(async (options: { config?: string }) => {
+    await startInitialSetup(options.config);
   });
 
 configCommand
@@ -199,7 +215,7 @@ branchCommand
   .action(async (options: { story: string; name: string; config?: string }) => {
     try {
       const config = await loadJiraTaskConfig(options.config);
-      const branchConfig = getBranchConfig(config, process.env);
+      const branchConfig = await getBranchConfig(config, process.env, new KeyringCredentialStore());
       const result = await createBranch(
         {
           projectKey: branchConfig.projectKey,
@@ -235,7 +251,7 @@ branchCommand
       console.error(`브랜치 생성 실패: ${result.message}`);
       process.exitCode = result.exitCode;
     } catch (error) {
-      const message = error instanceof PolicyConfigurationError ? error.message : "브랜치를 만들지 못했습니다.";
+      const message = error instanceof PolicyConfigurationError || error instanceof CredentialStorageError ? error.message : "브랜치를 만들지 못했습니다.";
       console.error(`브랜치 생성 실패: ${message}`);
       process.exitCode = 2;
     }
@@ -256,7 +272,16 @@ program
     console.log(template);
   });
 
-await program.parseAsync();
+if (process.argv.slice(2).length === 0 && !(await hasJiraTaskConfig())) {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    console.error("Jira 초기 설정이 필요합니다. 터미널에서 jira-task config setup을 실행하세요.");
+    process.exitCode = 2;
+  } else {
+    await startInitialSetup();
+  }
+} else {
+  await program.parseAsync();
+}
 
 function printMessages(
   heading: string,
@@ -271,17 +296,23 @@ function printMessages(
   messages.forEach((message) => print(`- ${message.path}: ${message.message}`));
 }
 
-function getBranchConfig(
+async function getBranchConfig(
   config: Awaited<ReturnType<typeof loadJiraTaskConfig>>,
   environment: NodeJS.ProcessEnv,
-): { projectKey: string; baseUrl: string; storyIssueType: string; inProgressStatus: string; email: string; apiToken: string } {
+  credentials: KeyringCredentialStore,
+): Promise<{ projectKey: string; baseUrl: string; storyIssueType: string; inProgressStatus: string; email: string; apiToken: string }> {
+  const storyIssueType = config.jira?.issueTypes?.story?.name ?? config.jira?.storyIssueType;
+  const inProgressStatus = config.jira?.statuses?.story?.start?.name ?? config.jira?.inProgressStatus;
+  const email = environment.JIRA_EMAIL ?? config.jira?.email;
+  const baseUrl = config.jira?.baseUrl;
+  const apiToken = environment.JIRA_API_TOKEN ?? (baseUrl && email ? await credentials.get(baseUrl, email) : undefined);
   const missing = [
     !config.projectKey ? "프로젝트 키(config set --project)" : undefined,
-    !config.jira?.baseUrl ? "Jira 주소(config set --base-url)" : undefined,
-    !config.jira?.storyIssueType ? "스토리 타입(config set --story-type)" : undefined,
-    !config.jira?.inProgressStatus ? "진행 상태(config set --in-progress-status)" : undefined,
-    !environment.JIRA_EMAIL ? "JIRA_EMAIL" : undefined,
-    !environment.JIRA_API_TOKEN ? "JIRA_API_TOKEN" : undefined,
+    !baseUrl ? "Jira 주소(config set --base-url)" : undefined,
+    !storyIssueType ? "스토리 타입(config setup 또는 config set --story-type)" : undefined,
+    !inProgressStatus ? "진행 상태(config setup 또는 config set --in-progress-status)" : undefined,
+    !email ? "JIRA_EMAIL 또는 초기 설정 이메일" : undefined,
+    !apiToken ? "JIRA_API_TOKEN 또는 운영체제 자격 증명 저장소의 토큰" : undefined,
   ].filter((value): value is string => Boolean(value));
 
   if (missing.length > 0) {
@@ -290,10 +321,48 @@ function getBranchConfig(
 
   return {
     projectKey: config.projectKey!,
-    baseUrl: config.jira!.baseUrl!,
-    storyIssueType: config.jira!.storyIssueType!,
-    inProgressStatus: config.jira!.inProgressStatus!,
-    email: environment.JIRA_EMAIL!,
-    apiToken: environment.JIRA_API_TOKEN!,
+    baseUrl: baseUrl!,
+    storyIssueType: storyIssueType!,
+    inProgressStatus: inProgressStatus!,
+    email: email!,
+    apiToken: apiToken!,
   };
+}
+
+async function startInitialSetup(configPath?: string): Promise<void> {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    console.error("대화형 터미널에서 jira-task config setup을 실행하세요.");
+    process.exitCode = 2;
+    return;
+  }
+
+  try {
+    console.log("jira-task 초기 설정을 시작합니다.\n");
+    const result = await runInitialSetup({
+      prompter: new InquirerSetupPrompter(),
+      createJira: (connection) =>
+        new JiraClient({ baseUrl: connection.baseUrl, email: connection.email, apiToken: connection.apiToken }),
+      saveConfig: async (update) => {
+        await setJiraTaskConfig(update, configPath);
+      },
+      credentials: new KeyringCredentialStore(),
+    });
+    console.log(`\n✓ jira-task 설정 완료 (${result.projectKey}, ${result.storyIssueType}, ${result.storyStartStatus})`);
+  } catch (error) {
+    if (error instanceof SetupCancelledError) {
+      console.log("\n초기 설정을 취소했습니다.");
+      return;
+    }
+    const message =
+      error instanceof PolicyConfigurationError || error instanceof SetupSelectionError || error instanceof CredentialStorageError
+        ? error.message
+        : "Jira 초기 설정을 완료하지 못했습니다. Jira 주소, 인증 정보, 프로젝트 권한을 확인하세요.";
+    console.error(`설정 실패: ${message}`);
+    process.exitCode = 2;
+  }
+}
+
+function redactJiraSettings(jira: NonNullable<Awaited<ReturnType<typeof loadJiraTaskConfig>>["jira"]>) {
+  const { email: _email, ...safeSettings } = jira;
+  return safeSettings;
 }

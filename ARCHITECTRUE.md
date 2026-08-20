@@ -12,17 +12,17 @@
 - 제목, 이슈 유형, 필수 입력값, 설명 형식이 `RULE.md`를 만족하는지 검증한다.
 - 유형별 기본 레이블과 설명 템플릿을 자동 적용한다.
 - 작업의 스토리 포인트와 담당 영역의 일관성을 검증한다.
-- 최종적으로 Jira REST API에 이슈를 생성하고, 필요한 이슈 간 연결을 만든다.
+- Jira 이슈 입력을 검증하고 요청 초안을 만든다. 실제 이슈 생성과 관계 연결은 현재 범위에서 제외한다.
 
 ### 초기 버전(MVP) 범위
 
 - `validate`: 입력 파일 또는 옵션을 규칙에 맞게 검증
-- `create`: 검증을 통과한 한 개의 이슈 생성
+- `create --dry-run`: 검증을 통과한 한 개의 이슈 요청 초안 생성
 - `branch create`: 스토리 이슈 번호를 포함한 Git 브랜치 생성
 - `template`: 스토리/작업 설명 템플릿 출력
 - `config`: Jira 연결 정보와 프로젝트 기본값 관리
 
-처음부터 스프린트 생성, 일괄 수정, 대화형 UI까지 넣지 않는다. 다만 브랜치는 스토리의 핵심 산출물이므로 MVP에 포함한다.
+처음부터 스프린트 생성, 일괄 수정은 넣지 않는다. Jira 연결 설정은 첫 실행 대화형 마법사로 제공하며, 브랜치는 스토리의 핵심 산출물이므로 MVP에 포함한다.
 
 ### 비범위
 
@@ -40,6 +40,8 @@
 | 언어 | TypeScript | 이슈 유형별 필수 필드를 타입으로 표현 가능 |
 | 명령 파싱 | `commander` | 선언형 명령/옵션 정의가 단순함 |
 | 입력 검증 | `zod` | 옵션·JSON 입력과 도메인 규칙을 단계적으로 검증 |
+| 대화형 입력 | `@inquirer/prompts` | 비밀번호 마스킹·선택 목록·확인 UX 제공 |
+| 자격 증명 | OS credential store | API 토큰을 JSON 설정 파일과 분리 |
 | HTTP | 내장 `fetch` | Jira REST API 호출에 충분함 |
 | 테스트 | Vitest | 규칙 검증 함수를 빠르게 단위 테스트 |
 | 배포 | npm package + `bin` | `jira-task`처럼 전역 명령으로 실행 |
@@ -49,11 +51,10 @@
 실행 파일 이름은 예시로 `jira-task`를 사용한다.
 
 ```text
-jira-task config set --project S15P11A108 --base-url https://team.atlassian.net --story-type Story --in-progress-status "In Progress"
+jira-task
 jira-task template task
 jira-task validate --file task.json
-jira-task create task --file task.json
-jira-task create story --title "[AUTH-001] 이메일 회원가입" --epic EPIC-12
+jira-task create --file task.json --dry-run
 jira-task branch create --story 100 --name signup
 ```
 
@@ -61,14 +62,14 @@ jira-task branch create --story 100 --name signup
 
 | 명령 | 책임 | Jira API 호출 |
 | --- | --- | --- |
-| `config set/show` | 로컬 설정 저장·조회 | 없음 |
+| `config setup` | Jira 연결 확인과 프로젝트·유형·상태 선택 | 읽기 전용 조회 |
+| `config set/show` | 자동화용 로컬 설정 저장·조회 | 없음 |
 | `template <story|task>` | 설명 작성용 템플릿 출력 | 없음 |
 | `validate --file <path>` | 입력값과 규칙 검증, 오류 목록 출력 | 기본 없음 |
-| `create <epic|story|task>` | 검증 후 이슈 생성 및 관계 연결 | 있음 |
 | `create --dry-run` | Jira 요청 본문을 출력하고 생성하지 않음 | 없음 |
 | `branch create` | 스토리 번호와 작업명으로 Git 브랜치를 생성하고 스토리를 진행 중으로 전환 | Jira 조회·전환 |
 
-`create`는 내부에서 항상 `validate`와 동일한 검증기를 호출해야 한다. 검증 명령과 생성 명령의 규칙이 갈라지는 일을 막는다.
+`create --dry-run`은 내부에서 항상 `validate`와 동일한 검증기를 호출해야 한다. 검증 명령과 초안 명령의 규칙이 갈라지는 일을 막는다.
 
 ## 4. 입력 형식
 
@@ -246,14 +247,10 @@ Jira 프로젝트마다 이슈 타입 이름과 커스텀 필드 ID가 다를 �
 입력 JSON/옵션
   -> Zod 형식 검사
   -> 도메인 규칙 검사
-  -> --dry-run이면 Jira 요청 본문 출력 후 종료
-  -> Jira 이슈 생성
-  -> 에픽 연결 설정
-  -> 스토리-작업 연결 설정(필요한 경우)
-  -> 생성된 이슈 키와 URL 출력
+  -> Jira 요청 본문 출력 후 종료
 ```
 
-관계 링크의 Jira API 표현은 사이트 설정에 따라 다를 수 있다. 실제 연결 전에는 테스트 프로젝트에서 링크 타입과 `epicLink` 필드 ID를 확인한다.
+실제 이슈 생성과 관계 링크는 현재 범위 밖이다. 나중에 추가할 때는 사이트별 링크 타입과 `epicLink` 필드 ID를 테스트 프로젝트에서 먼저 확인한다.
 
 ## 9. Git 브랜치 생성
 
@@ -293,9 +290,11 @@ branch create --story 100 --name signup
 ## 10. 설정 및 보안
 
 - 설정 파일: 사용자 홈 디렉터리의 `~/.jira-task/policy.json`을 기본 경로로 사용한다.
-- 토큰은 `policy.json`에 저장하지 않는다. 기본은 환경 변수 `JIRA_API_TOKEN`을 사용한다.
-- 이메일 계정도 `JIRA_EMAIL` 환경 변수로 받는다.
-- `config set`은 URL, 프로젝트 키, 스토리 타입명, 진행 상태명처럼 민감하지 않은 값만 저장한다.
+- 최초 실행 `jira-task`는 설정 파일이 없을 때 대화형 마법사를 시작한다. `config setup`은 마법사를 다시 실행한다.
+- 마법사는 인증을 확인한 뒤 접근 가능한 프로젝트, 이슈 유형, 이슈 유형별 상태를 조회해 선택받는다.
+- 토큰은 `policy.json`에 저장하지 않고 운영체제 자격 증명 저장소에 보관한다. 환경 변수 `JIRA_EMAIL`, `JIRA_API_TOKEN`은 저장된 자격 증명보다 우선한다.
+- 설정 파일에는 Jira 주소·이메일·프로젝트·이슈 유형·상태의 ID와 표시 이름만 저장한다. `config show`는 이메일을 출력하지 않는다.
+- `config set`은 자동화용 하위 호환 명령으로 URL, 프로젝트 키, 스토리 타입명, 진행 상태명처럼 비밀이 아닌 값만 저장한다.
 - 네트워크 오류와 인증 오류에는 토큰 원문이나 HTTP `Authorization` 헤더를 출력하지 않는다.
 
 ## 11. 오류 출력과 종료 코드
