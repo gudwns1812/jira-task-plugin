@@ -1,0 +1,63 @@
+# Dependencies
+node_modules/
+
+# Build output, package artifacts, and caches
+dist/
+build/
+coverage/
+.nyc_output/
+.tsbuildinfo
+*.tsbuildinfo
+.eslintcache
+.stylelintcache
+.cache/
+.turbo/
+.vite/
+.parcel-cache/
+
+# Logs and diagnostic reports
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Environment files and local CLI configuration
+.env
+.env.*
+!.env.example
+!.env.*.example
+.jira-task/
+
+# Operating-system files
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Editors and IDEs
+.idea/
+*.iml
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.code-workspace
+.project
+.classpath
+.settings/
+
+# Temporary and backup files
+tmp/
+temp/
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~
