@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { validateRawIssue } from "../../src/application/validate-issue.js";
+import { resolveWorkPolicy } from "../../src/domain/policy/policy-config.js";
 
 const validTask = {
   type: "task",
@@ -40,5 +41,18 @@ describe("validateRawIssue", () => {
         expect.objectContaining({ path: "title", message: expect.stringContaining("담당 영역") }),
       ]),
     );
+  });
+
+  it("사용자 정책으로 추가한 영역과 레이블을 사용한다", () => {
+    const policy = resolveWorkPolicy({
+      areas: ["FE", "MOBILE"],
+      labels: { areas: { MOBILE: "Mobile" } },
+    });
+    const result = validateRawIssue(
+      { ...validTask, title: "[AUTH-001 | MOBILE] 모바일 회원가입 화면 구현" },
+      policy,
+    );
+
+    expect(result).toEqual({ errors: [], warnings: [], derived: { labels: ["Mobile"] } });
   });
 });

@@ -1,5 +1,3 @@
-import type { StoryPoint } from "../policy/work-policy.js";
-
 export type IssueType = "epic" | "story" | "task";
 
 export interface EpicInput {
@@ -27,7 +25,7 @@ export interface TaskInput {
   title: string;
   assignee: string;
   priority: string;
-  storyPoints: StoryPoint;
+  storyPoints: number;
   sprint: string;
   dueDate: string;
   description: TaskDescription;

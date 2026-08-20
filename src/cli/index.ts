@@ -3,8 +3,13 @@
 import { Command } from "commander";
 
 import { validateRawIssue } from "../application/validate-issue.js";
+import { PolicyConfigurationError } from "../domain/policy/policy-config.js";
 import { getIssueTemplate } from "../domain/template/issue-template.js";
 import { InputFileError, readJsonFile } from "../infrastructure/file-input.js";
+import {
+  initializePolicyConfig,
+  loadWorkPolicy,
+} from "../infrastructure/policy-config-repository.js";
 
 const program = new Command();
 
@@ -17,10 +22,12 @@ program
   .command("validate")
   .description("JSON 이슈 입력을 RULE.md 기준으로 검증합니다")
   .requiredOption("-f, --file <path>", "검증할 JSON 파일 경로")
-  .action(async (options: { file: string }) => {
+  .option("-c, --config <path>", "기본 정책을 덮어쓸 JSON 설정 파일")
+  .action(async (options: { file: string; config?: string }) => {
     try {
       const rawInput = await readJsonFile(options.file);
-      const result = validateRawIssue(rawInput);
+      const policy = await loadWorkPolicy(options.config);
+      const result = validateRawIssue(rawInput, policy);
 
       printMessages("오류", result.errors, console.error);
       printMessages("경고", result.warnings, console.warn);
@@ -36,8 +43,42 @@ program
         console.log(`기본 레이블: ${result.derived.labels.join(", ")}`);
       }
     } catch (error) {
-      const message = error instanceof InputFileError ? error.message : "입력 파일을 처리하지 못했습니다.";
+      const message =
+        error instanceof InputFileError || error instanceof PolicyConfigurationError
+          ? error.message
+          : "입력 파일을 처리하지 못했습니다.";
       console.error(`검증 실패: ${message}`);
+      process.exitCode = 1;
+    }
+  });
+
+const configCommand = program.command("config").description("업무 정책 설정을 관리합니다");
+
+configCommand
+  .command("init")
+  .description("편집 가능한 기본 정책 설정 파일을 만듭니다")
+  .option("-c, --config <path>", "만들 정책 설정 파일 경로")
+  .action(async (options: { config?: string }) => {
+    try {
+      const path = await initializePolicyConfig(options.config);
+      console.log(`정책 설정 파일을 만들었습니다: ${path}`);
+    } catch (error) {
+      const message = error instanceof PolicyConfigurationError ? error.message : "정책 설정 파일을 만들지 못했습니다.";
+      console.error(`설정 실패: ${message}`);
+      process.exitCode = 1;
+    }
+  });
+
+configCommand
+  .command("show")
+  .description("현재 적용되는 업무 정책을 출력합니다")
+  .option("-c, --config <path>", "읽을 정책 설정 파일 경로")
+  .action(async (options: { config?: string }) => {
+    try {
+      console.log(JSON.stringify(await loadWorkPolicy(options.config), null, 2));
+    } catch (error) {
+      const message = error instanceof PolicyConfigurationError ? error.message : "정책 설정을 읽지 못했습니다.";
+      console.error(`설정 실패: ${message}`);
       process.exitCode = 1;
     }
   });

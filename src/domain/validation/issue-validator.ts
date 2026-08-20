@@ -1,14 +1,16 @@
 import type { IssueInput, TaskInput } from "../input/issue-input.types.js";
 import {
+  DEFAULT_WORK_POLICY,
   isArea,
   isWorkCategory,
   labelForArea,
   labelForCategory,
+  type WorkPolicy,
 } from "../policy/work-policy.js";
 import { parseEpicTitle, parseStoryTitle, parseTaskTitle } from "./title-parser.js";
 import type { ValidationMessage, ValidationResult } from "./validation-result.js";
 
-export function validateIssue(input: IssueInput): ValidationResult {
+export function validateIssue(input: IssueInput, policy: WorkPolicy = DEFAULT_WORK_POLICY): ValidationResult {
   const errors: ValidationMessage[] = [];
   const warnings: ValidationMessage[] = [];
   const labels: string[] = [];
@@ -26,7 +28,7 @@ export function validateIssue(input: IssueInput): ValidationResult {
       labels.push("feat");
       break;
     case "task":
-      validateTask(input, errors, warnings, labels);
+      validateTask(input, policy, errors, warnings, labels);
       break;
   }
 
@@ -57,6 +59,7 @@ function validateStoryTitle(title: string, errors: ValidationMessage[]): void {
 
 function validateTask(
   task: TaskInput,
+  policy: WorkPolicy,
   errors: ValidationMessage[],
   warnings: ValidationMessage[],
   labels: string[],
@@ -72,16 +75,16 @@ function validateTask(
     if (parsed.sequence.length !== 3) {
       errors.push({ path: "title", message: "기능 ID의 번호는 AUTH-001처럼 세 자리여야 합니다." });
     }
-    addAreaLabel(parsed.area, errors, labels);
+    addAreaLabel(parsed.area, policy, errors, labels);
   } else {
-    if (!isWorkCategory(parsed.category)) {
-      errors.push({ path: "title", message: "공식 업무 분류를 사용해야 합니다: PLAN, UX, DESIGN, TECH, INFRA, DOCS, QA, PT." });
+    if (!isWorkCategory(policy, parsed.category)) {
+      errors.push({ path: "title", message: `공식 업무 분류를 사용해야 합니다: ${policy.workCategories.join(", ")}.` });
     }
 
     if (parsed.area) {
-      addAreaLabel(parsed.area, errors, labels);
-    } else if (isWorkCategory(parsed.category)) {
-      const label = labelForCategory(parsed.category);
+      addAreaLabel(parsed.area, policy, errors, labels);
+    } else if (isWorkCategory(policy, parsed.category)) {
+      const label = labelForCategory(policy, parsed.category);
       if (label) {
         labels.push(label);
       } else {
@@ -107,11 +110,11 @@ function validateTask(
   }
 }
 
-function addAreaLabel(area: string, errors: ValidationMessage[], labels: string[]): void {
-  if (!isArea(area)) {
-    errors.push({ path: "title", message: "담당 영역은 FE, BE, AI, QA, INFRA 중 하나여야 합니다." });
+function addAreaLabel(area: string, policy: WorkPolicy, errors: ValidationMessage[], labels: string[]): void {
+  if (!isArea(policy, area)) {
+    errors.push({ path: "title", message: `담당 영역은 ${policy.areas.join(", ")} 중 하나여야 합니다.` });
     return;
   }
 
-  labels.push(labelForArea(area));
+  labels.push(labelForArea(policy, area));
 }
