@@ -1,7 +1,9 @@
 import { execFile } from "node:child_process";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
@@ -28,8 +30,8 @@ describe("create CLI command", () => {
       "create",
       "--file",
       "tests/fixtures/valid-task.json",
-      "--project",
-      "S15P11A108",
+      "--config",
+      "tests/fixtures/project-config.json",
       "--dry-run",
     );
 
@@ -53,5 +55,65 @@ describe("create CLI command", () => {
 
     expect("error" in result).toBe(true);
     expect(result.stderr).toContain("--dry-run");
+  });
+
+  it("프로젝트 키가 없으면 초안을 만들지 않고 설정 방법을 안내한다", async () => {
+    const result = await runCli(
+      "create",
+      "--file",
+      "tests/fixtures/valid-task.json",
+      "--config",
+      "tests/fixtures/no-project-config.json",
+      "--dry-run",
+    );
+
+    expect("error" in result).toBe(true);
+    expect(result.stderr).toContain("config set --project");
+  });
+
+  it("--project는 저장된 기본 프로젝트 키를 일시적으로 덮어쓴다", async () => {
+    const result = await runCli(
+      "create",
+      "--file",
+      "tests/fixtures/valid-task.json",
+      "--config",
+      "tests/fixtures/project-config.json",
+      "--project",
+      "OVERRIDE",
+      "--dry-run",
+    );
+
+    expect("error" in result).toBe(false);
+    expect(JSON.parse(result.stdout)).toMatchObject({ projectKey: "OVERRIDE" });
+  });
+});
+
+describe("config set CLI command", () => {
+  it("기본 프로젝트 키를 설정 파일에 저장한다", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "task-jira-cli-"));
+    const configPath = join(directory, "config.json");
+
+    try {
+      const result = await runCli("config", "set", "--project", "S15P11A108", "--config", configPath);
+
+      expect("error" in result).toBe(false);
+      expect(JSON.parse(await readFile(configPath, "utf8"))).toMatchObject({ projectKey: "S15P11A108" });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("잘못된 프로젝트 키는 설정 파일을 만들지 않고 거부한다", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "task-jira-cli-"));
+    const configPath = join(directory, "config.json");
+
+    try {
+      const result = await runCli("config", "set", "--project", "team project", "--config", configPath);
+
+      expect("error" in result).toBe(true);
+      await expect(readFile(configPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 });

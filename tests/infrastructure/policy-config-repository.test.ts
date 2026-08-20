@@ -7,7 +7,9 @@ import { describe, expect, it } from "vitest";
 import { PolicyConfigurationError } from "../../src/domain/policy/policy-config.js";
 import {
   initializePolicyConfig,
+  loadJiraTaskConfig,
   loadWorkPolicy,
+  setProjectKey,
 } from "../../src/infrastructure/policy-config-repository.js";
 
 describe("정책 설정 저장소", () => {
@@ -28,5 +30,21 @@ describe("정책 설정 저장소", () => {
     await expect(loadWorkPolicy(join(tmpdir(), "missing-task-jira-policy.json"))).rejects.toThrow(
       PolicyConfigurationError,
     );
+  });
+
+  it("프로젝트 키를 저장하고 기존 정책 설정을 보존한다", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "task-jira-cli-"));
+    const configPath = join(directory, "policy.json");
+
+    try {
+      await initializePolicyConfig(configPath);
+      await expect(setProjectKey("S15P11A108", configPath)).resolves.toBe(configPath);
+      await expect(loadJiraTaskConfig(configPath)).resolves.toMatchObject({
+        projectKey: "S15P11A108",
+        policy: { storyPoints: [1, 2, 3, 5, 8] },
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 });

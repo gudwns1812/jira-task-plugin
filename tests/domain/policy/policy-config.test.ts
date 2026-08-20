@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   PolicyConfigurationError,
   defaultPolicyConfig,
+  resolveJiraTaskConfig,
   resolveWorkPolicy,
 } from "../../../src/domain/policy/policy-config.js";
 
@@ -32,5 +33,17 @@ describe("resolveWorkPolicy", () => {
     expect(() => resolveWorkPolicy({ labels: { areas: { MOBILE: "Mobile" } } })).toThrow(
       PolicyConfigurationError,
     );
+  });
+
+  it("Jira 프로젝트 키를 정책과 함께 읽는다", () => {
+    expect(resolveJiraTaskConfig({ projectKey: "S15P11A108", areas: ["FE"] })).toMatchObject({
+      projectKey: "S15P11A108",
+      policy: { areas: ["FE"] },
+    });
+  });
+
+  it("비어 있거나 형식이 잘못된 Jira 프로젝트 키를 거부한다", () => {
+    expect(() => resolveJiraTaskConfig({ projectKey: "" })).toThrow(PolicyConfigurationError);
+    expect(() => resolveJiraTaskConfig({ projectKey: "team project" })).toThrow(PolicyConfigurationError);
   });
 });
