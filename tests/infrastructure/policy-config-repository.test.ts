@@ -9,6 +9,7 @@ import {
   initializePolicyConfig,
   loadJiraTaskConfig,
   loadWorkPolicy,
+  setJiraTaskConfig,
   setProjectKey,
 } from "../../src/infrastructure/policy-config-repository.js";
 
@@ -41,6 +42,26 @@ describe("정책 설정 저장소", () => {
       await expect(setProjectKey("S15P11A108", configPath)).resolves.toBe(configPath);
       await expect(loadJiraTaskConfig(configPath)).resolves.toMatchObject({
         projectKey: "S15P11A108",
+        policy: { storyPoints: [1, 2, 3, 5, 8] },
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("Jira 연결 설정을 부분 저장하면서 프로젝트 키와 정책을 보존한다", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "task-jira-cli-"));
+    const configPath = join(directory, "policy.json");
+
+    try {
+      await initializePolicyConfig(configPath);
+      await setProjectKey("S15P11A108", configPath);
+      await setJiraTaskConfig({ jira: { baseUrl: "http://127.0.0.1:8080" } }, configPath);
+      await setJiraTaskConfig({ jira: { storyIssueType: "Story", inProgressStatus: "In Progress" } }, configPath);
+
+      await expect(loadJiraTaskConfig(configPath)).resolves.toMatchObject({
+        projectKey: "S15P11A108",
+        jira: { baseUrl: "http://127.0.0.1:8080", storyIssueType: "Story", inProgressStatus: "In Progress" },
         policy: { storyPoints: [1, 2, 3, 5, 8] },
       });
     } finally {

@@ -2,16 +2,19 @@
 
 import { Command } from "commander";
 
+import { createBranch } from "../application/create-branch.js";
 import { createDraft } from "../application/create-draft.js";
 import { validateRawIssue } from "../application/validate-issue.js";
 import { PolicyConfigurationError, resolveJiraTaskConfig } from "../domain/policy/policy-config.js";
 import { getIssueTemplate } from "../domain/template/issue-template.js";
 import { InputFileError, readJsonFile } from "../infrastructure/file-input.js";
+import { GitRepository } from "../infrastructure/git-repository.js";
+import { JiraClient } from "../infrastructure/jira-client.js";
 import {
   initializePolicyConfig,
   loadJiraTaskConfig,
   loadWorkPolicy,
-  setProjectKey,
+  setJiraTaskConfig,
 } from "../infrastructure/policy-config-repository.js";
 
 const program = new Command();
@@ -128,7 +131,13 @@ configCommand
   .action(async (options: { config?: string }) => {
     try {
       const config = await loadJiraTaskConfig(options.config);
-      console.log(JSON.stringify({ ...config.policy, ...(config.projectKey ? { projectKey: config.projectKey } : {}) }, null, 2));
+      console.log(
+        JSON.stringify(
+          { ...config.policy, ...(config.projectKey ? { projectKey: config.projectKey } : {}), ...(config.jira ? { jira: config.jira } : {}) },
+          null,
+          2,
+        ),
+      );
     } catch (error) {
       const message = error instanceof PolicyConfigurationError ? error.message : "정책 설정을 읽지 못했습니다.";
       console.error(`설정 실패: ${message}`);
@@ -138,17 +147,97 @@ configCommand
 
 configCommand
   .command("set")
-  .description("기본 Jira 프로젝트 키를 설정합니다")
-  .requiredOption("-p, --project <key>", "저장할 Jira 프로젝트 키")
+  .description("기본 Jira 프로젝트와 브랜치 생성용 Jira 연결 정보를 설정합니다")
+  .option("-p, --project <key>", "저장할 Jira 프로젝트 키")
+  .option("--base-url <url>", "Jira Cloud 주소")
+  .option("--story-type <name>", "스토리 이슈 타입명")
+  .option("--in-progress-status <name>", "브랜치 생성 후 적용할 진행 상태명")
   .option("-c, --config <path>", "저장할 설정 파일 경로")
-  .action(async (options: { project: string; config?: string }) => {
+  .action(
+    async (options: {
+      project?: string;
+      baseUrl?: string;
+      storyType?: string;
+      inProgressStatus?: string;
+      config?: string;
+    }) => {
     try {
-      const path = await setProjectKey(options.project, options.config);
-      console.log(`기본 Jira 프로젝트 키를 설정했습니다: ${path}`);
+      if (!options.project && !options.baseUrl && !options.storyType && !options.inProgressStatus) {
+        throw new PolicyConfigurationError("저장할 설정을 하나 이상 지정하세요.");
+      }
+      const path = await setJiraTaskConfig(
+        {
+          ...(options.project ? { projectKey: options.project } : {}),
+          ...(options.baseUrl || options.storyType || options.inProgressStatus
+            ? {
+                jira: {
+                  ...(options.baseUrl ? { baseUrl: options.baseUrl } : {}),
+                  ...(options.storyType ? { storyIssueType: options.storyType } : {}),
+                  ...(options.inProgressStatus ? { inProgressStatus: options.inProgressStatus } : {}),
+                },
+              }
+            : {}),
+        },
+        options.config,
+      );
+      console.log(`Jira 기본 설정을 저장했습니다: ${path}`);
     } catch (error) {
       const message = error instanceof PolicyConfigurationError ? error.message : "정책 설정 파일을 저장하지 못했습니다.";
       console.error(`설정 실패: ${message}`);
       process.exitCode = 1;
+    }
+  });
+
+const branchCommand = program.command("branch").description("스토리 기준 Git 브랜치를 관리합니다");
+
+branchCommand
+  .command("create")
+  .description("스토리 번호로 브랜치를 만들고 Jira 스토리를 진행 중으로 전환합니다")
+  .requiredOption("--story <number>", "현재 프로젝트의 Jira 스토리 번호")
+  .requiredOption("--name <slug>", "소문자 영문·숫자·하이픈으로 된 짧은 작업명")
+  .option("-c, --config <path>", "Jira 프로젝트와 연결 정보를 읽을 설정 파일")
+  .action(async (options: { story: string; name: string; config?: string }) => {
+    try {
+      const config = await loadJiraTaskConfig(options.config);
+      const branchConfig = getBranchConfig(config, process.env);
+      const result = await createBranch(
+        {
+          projectKey: branchConfig.projectKey,
+          storyNumber: options.story,
+          name: options.name,
+          storyIssueType: branchConfig.storyIssueType,
+          inProgressStatus: branchConfig.inProgressStatus,
+        },
+        new JiraClient({
+          baseUrl: branchConfig.baseUrl,
+          email: branchConfig.email,
+          apiToken: branchConfig.apiToken,
+        }),
+        new GitRepository(),
+      );
+
+      if (result.kind === "success") {
+        console.log(`브랜치를 만들었습니다: ${result.branchName}`);
+        console.log(
+          result.transitioned
+            ? `Jira 스토리를 진행 중으로 전환했습니다: ${result.storyKey}`
+            : `Jira 스토리는 이미 진행 중입니다: ${result.storyKey}`,
+        );
+        return;
+      }
+      if (result.kind === "partial-success") {
+        console.error(`브랜치는 만들었지만 Jira 상태 전환에 실패했습니다: ${result.branchName} (${result.storyKey})`);
+        console.error(result.message);
+        process.exitCode = 4;
+        return;
+      }
+
+      console.error(`브랜치 생성 실패: ${result.message}`);
+      process.exitCode = result.exitCode;
+    } catch (error) {
+      const message = error instanceof PolicyConfigurationError ? error.message : "브랜치를 만들지 못했습니다.";
+      console.error(`브랜치 생성 실패: ${message}`);
+      process.exitCode = 2;
     }
   });
 
@@ -180,4 +269,31 @@ function printMessages(
 
   print(`\n${heading}`);
   messages.forEach((message) => print(`- ${message.path}: ${message.message}`));
+}
+
+function getBranchConfig(
+  config: Awaited<ReturnType<typeof loadJiraTaskConfig>>,
+  environment: NodeJS.ProcessEnv,
+): { projectKey: string; baseUrl: string; storyIssueType: string; inProgressStatus: string; email: string; apiToken: string } {
+  const missing = [
+    !config.projectKey ? "프로젝트 키(config set --project)" : undefined,
+    !config.jira?.baseUrl ? "Jira 주소(config set --base-url)" : undefined,
+    !config.jira?.storyIssueType ? "스토리 타입(config set --story-type)" : undefined,
+    !config.jira?.inProgressStatus ? "진행 상태(config set --in-progress-status)" : undefined,
+    !environment.JIRA_EMAIL ? "JIRA_EMAIL" : undefined,
+    !environment.JIRA_API_TOKEN ? "JIRA_API_TOKEN" : undefined,
+  ].filter((value): value is string => Boolean(value));
+
+  if (missing.length > 0) {
+    throw new PolicyConfigurationError(`브랜치 생성 설정이 없습니다: ${missing.join(", ")}`);
+  }
+
+  return {
+    projectKey: config.projectKey!,
+    baseUrl: config.jira!.baseUrl!,
+    storyIssueType: config.jira!.storyIssueType!,
+    inProgressStatus: config.jira!.inProgressStatus!,
+    email: environment.JIRA_EMAIL!,
+    apiToken: environment.JIRA_API_TOKEN!,
+  };
 }

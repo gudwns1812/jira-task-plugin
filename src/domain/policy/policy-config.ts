@@ -14,6 +14,17 @@ const labelMap = z.record(requiredText, requiredText);
 const projectKeySchema = requiredText.regex(/^[A-Z][A-Z0-9_]*$/, {
   message: "프로젝트 키는 대문자 영문으로 시작하고 대문자 영문·숫자·밑줄만 사용할 수 있습니다.",
 });
+const jiraBaseUrlSchema = z.url({ message: "Jira 주소는 http 또는 https URL이어야 합니다." });
+const jiraSettingsSchema = z
+  .object({
+    baseUrl: jiraBaseUrlSchema.optional(),
+    storyIssueType: requiredText.optional(),
+    inProgressStatus: requiredText.optional(),
+  })
+  .strict()
+  .refine((settings) => Object.values(settings).some((value) => value !== undefined), {
+    message: "Jira 설정에는 하나 이상의 값이 필요합니다.",
+  });
 
 export const policyOverrideSchema = z
   .object({
@@ -34,10 +45,14 @@ export type PolicyOverrides = z.infer<typeof policyOverrideSchema>;
 
 export const jiraTaskConfigSchema = policyOverrideSchema.extend({
   projectKey: projectKeySchema.optional(),
+  jira: jiraSettingsSchema.optional(),
 });
+
+export type JiraSettings = z.infer<typeof jiraSettingsSchema>;
 
 export interface JiraTaskConfig {
   projectKey?: string;
+  jira?: JiraSettings;
   policy: WorkPolicy;
 }
 
@@ -93,8 +108,8 @@ export function resolveJiraTaskConfig(rawConfig: unknown): JiraTaskConfig {
     throw new PolicyConfigurationError(`설정 형식이 올바르지 않습니다. ${details}`);
   }
 
-  const { projectKey, ...policyOverrides } = parsed.data;
-  return { projectKey, policy: resolveWorkPolicy(policyOverrides) };
+  const { projectKey, jira, ...policyOverrides } = parsed.data;
+  return { projectKey, jira, policy: resolveWorkPolicy(policyOverrides) };
 }
 
 export function defaultJiraTaskConfig(): JiraTaskConfig {
