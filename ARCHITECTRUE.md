@@ -49,12 +49,12 @@
 실행 파일 이름은 예시로 `jira-task`를 사용한다.
 
 ```text
-jira-task config set --base-url https://team.atlassian.net --project S15P11A108
+jira-task config set --project S15P11A108 --base-url https://team.atlassian.net --story-type Story --in-progress-status "In Progress"
 jira-task template task
 jira-task validate --file task.json
 jira-task create task --file task.json
 jira-task create story --title "[AUTH-001] 이메일 회원가입" --epic EPIC-12
-jira-task branch create --story S15P11A108-100 --name signup
+jira-task branch create --story 100 --name signup
 ```
 
 ### 명령별 책임
@@ -66,7 +66,7 @@ jira-task branch create --story S15P11A108-100 --name signup
 | `validate --file <path>` | 입력값과 규칙 검증, 오류 목록 출력 | 기본 없음 |
 | `create <epic|story|task>` | 검증 후 이슈 생성 및 관계 연결 | 있음 |
 | `create --dry-run` | Jira 요청 본문을 출력하고 생성하지 않음 | 없음 |
-| `branch create` | 스토리 키와 작업명을 사용해 Git 브랜치 생성·전환 | Jira에서 스토리 조회 |
+| `branch create` | 스토리 번호와 작업명으로 Git 브랜치를 생성하고 스토리를 진행 중으로 전환 | Jira 조회·전환 |
 
 `create`는 내부에서 항상 `validate`와 동일한 검증기를 호출해야 한다. 검증 명령과 생성 명령의 규칙이 갈라지는 일을 막는다.
 
@@ -267,35 +267,35 @@ feat/<스토리 이슈 번호의 마지막 숫자>-<짧은 영문 작업명>
 예: S15P11A108-100 + signup -> feat/100-signup
 ```
 
-- `--story`에는 Jira 스토리 키를 받는다.
-- CLI는 Jira에서 해당 이슈를 조회해 실제 유형이 스토리인지 확인한다. 스토리가 아니면 생성하지 않는다.
+- `--story`에는 현재 설정된 프로젝트의 스토리 번호를 받는다. `100`은 설정된 프로젝트 키와 조립해 `S15P11A108-100`으로 조회한다.
+- CLI는 Jira에서 해당 이슈를 조회해 실제 유형이 설정된 스토리 타입인지 확인한다. 스토리가 아니면 생성하지 않는다.
 - `--name`은 소문자 영문·숫자·하이픈만 허용한다. 예: `signup`, `email-login`, `sso-auth`.
-- `--from <branch>`를 생략하면 현재 체크아웃된 브랜치를 기반으로 생성한다. 팀의 기본 브랜치를 강제하려면 설정의 `defaultBaseBranch`를 사용한다.
-- 작업 디렉터리에 커밋되지 않은 변경 사항이 있으면 기본적으로 중단한다. `--allow-dirty`는 사용자가 의도적으로 지정한 경우에만 허용한다.
-- 같은 이름의 로컬 또는 원격 브랜치가 존재하면 중단하고, `--checkout-existing`을 지정했을 때만 해당 로컬 브랜치로 전환한다.
+- 작업 디렉터리에 커밋되지 않은 변경 사항이 있거나 같은 이름의 로컬·원격 브랜치가 있으면 중단한다.
+- 브랜치를 만든 뒤 Jira가 제공한 전환 목록에서 설정된 진행 상태로 향하는 전환을 찾아 적용한다. 이미 진행 중이면 전환 호출 없이 성공한다.
+- 브랜치 생성 후 Jira 전환이 실패하면 생성한 브랜치는 보존하고 partial success로 알린다.
 
 ### 생성 흐름
 
 ```text
-branch create --story S15P11A108-100 --name signup
-  -> Git 저장소인지 확인
+branch create --story 100 --name signup
+  -> 설정된 프로젝트 키와 조립해 S15P11A108-100 결정
   -> Jira에서 이슈 조회 및 스토리 유형 확인
-  -> 이슈 키의 마지막 숫자와 --name으로 브랜치명 결정
+  -> 스토리 번호와 --name으로 브랜치명 결정
+  -> Git 저장소인지 확인
   -> 작업 디렉터리 변경 사항·동명 브랜치 확인
-  -> 기준 브랜치 최신화 여부 안내 또는 검사
-  -> git switch -c feat/100-signup [기준 브랜치]
-  -> 생성된 브랜치명 출력
+  -> git switch -c feat/100-signup
+  -> Jira 전환 목록 조회 후 진행 상태 전환
+  -> 생성된 브랜치명과 스토리 상태 출력
 ```
 
 `create story`는 Jira 이슈 키를 받은 뒤 `--create-branch` 옵션이 있을 때 위 유스케이스를 이어서 실행할 수 있다. 처음에는 별도 명령 `branch create`를 기본으로 구현해, Jira 이슈 생성과 Git 변경을 명시적으로 분리한다.
 
 ## 10. 설정 및 보안
 
-- 설정 파일: 사용자 홈 디렉터리의 `~/.jira-task/config.json`을 기본 경로로 사용한다.
-- 토큰은 `config.json`에 저장하지 않는다. 기본은 환경 변수 `JIRA_API_TOKEN`을 사용한다.
+- 설정 파일: 사용자 홈 디렉터리의 `~/.jira-task/policy.json`을 기본 경로로 사용한다.
+- 토큰은 `policy.json`에 저장하지 않는다. 기본은 환경 변수 `JIRA_API_TOKEN`을 사용한다.
 - 이메일 계정도 `JIRA_EMAIL` 환경 변수로 받는다.
-- `config set`은 URL, 프로젝트 키, 커스텀 필드 매핑처럼 민감하지 않은 값만 저장한다.
-- Git 기준 브랜치를 고정해야 한다면 `defaultBaseBranch`(예: `develop`)를 설정 파일에 저장한다.
+- `config set`은 URL, 프로젝트 키, 스토리 타입명, 진행 상태명처럼 민감하지 않은 값만 저장한다.
 - 네트워크 오류와 인증 오류에는 토큰 원문이나 HTTP `Authorization` 헤더를 출력하지 않는다.
 
 ## 11. 오류 출력과 종료 코드
@@ -315,7 +315,7 @@ branch create --story S15P11A108-100 --name signup
 | `1` | 입력 형식 또는 업무 규칙 위반 |
 | `2` | 설정 누락 |
 | `3` | Jira 인증/권한 오류 |
-| `4` | Jira 네트워크 또는 서버 오류 |
+| `4` | Jira 네트워크·서버 오류 또는 브랜치 생성 후 Jira 전환 실패(partial success) |
 | `5` | Git 저장소·브랜치·작업 디렉터리 상태 오류 |
 
 ## 12. 구현 순서

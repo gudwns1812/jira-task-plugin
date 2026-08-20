@@ -9,6 +9,7 @@ import {
   resolveJiraTaskConfig,
 } from "../domain/policy/policy-config.js";
 import type { JiraTaskConfig } from "../domain/policy/policy-config.js";
+import type { JiraSettings } from "../domain/policy/policy-config.js";
 import type { WorkPolicy } from "../domain/policy/work-policy.js";
 
 export const DEFAULT_POLICY_CONFIG_PATH = join(homedir(), ".jira-task", "policy.json");
@@ -22,13 +23,38 @@ export async function loadJiraTaskConfig(configPath?: string): Promise<JiraTaskC
 }
 
 export async function setProjectKey(projectKey: string, configPath?: string): Promise<string> {
+  return setJiraTaskConfig({ projectKey }, configPath);
+}
+
+export async function setJiraTaskConfig(
+  update: { projectKey?: string; jira?: JiraSettings },
+  configPath?: string,
+): Promise<string> {
   const path = configPath ?? DEFAULT_POLICY_CONFIG_PATH;
   const currentConfig = await loadStoredConfig(path, true);
-  const nextConfig = resolveJiraTaskConfig({ ...currentConfig.policy, projectKey });
+  const nextConfig = resolveJiraTaskConfig({
+    ...currentConfig.policy,
+    ...(currentConfig.projectKey ? { projectKey: currentConfig.projectKey } : {}),
+    ...(currentConfig.jira ? { jira: currentConfig.jira } : {}),
+    ...update,
+    ...(update.jira ? { jira: { ...currentConfig.jira, ...update.jira } } : {}),
+  });
 
   try {
     await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, `${JSON.stringify({ ...nextConfig.policy, projectKey: nextConfig.projectKey }, null, 2)}\n`, "utf8");
+    await writeFile(
+      path,
+      `${JSON.stringify(
+        {
+          ...nextConfig.policy,
+          ...(nextConfig.projectKey ? { projectKey: nextConfig.projectKey } : {}),
+          ...(nextConfig.jira ? { jira: nextConfig.jira } : {}),
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
   } catch {
     throw new PolicyConfigurationError(`정책 설정 파일을 저장할 수 없습니다: ${path}`);
   }
