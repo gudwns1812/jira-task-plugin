@@ -1,0 +1,18 @@
+<idea-plugin>
+    <id>io.github.gudwns1812.jiratask</id>
+    <name>Jira Task</name>
+    <vendor url="https://github.com/gudwns1812/task-jira-cli">gudwns1812</vendor>
+
+    <description><![CDATA[Jira Task helps create Jira issues from the IDE. This is an early skeleton build; issue creation features are still in progress.]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <actions>
+        <action id="JiraTask.CreateIssue"
+                class="io.github.gudwns1812.jiratask.CreateJiraIssueAction"
+                text="Create Jira Issue"
+                description="Jira 이슈 생성 (준비 중)">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+        </action>
+    </actions>
+</idea-plugin>

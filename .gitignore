@@ -6,6 +6,8 @@ dist/
 build/
 coverage/
 .nyc_output/
+.gradle/
+.intellijPlatform/
 .tsbuildinfo
 *.tsbuildinfo
 .eslintcache
