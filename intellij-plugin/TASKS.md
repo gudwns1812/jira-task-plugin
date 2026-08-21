@@ -164,13 +164,18 @@ T18부터 새로 작성하는 코드도 이 네 가지 규칙을 따른다.
 
 ## 4단계 — UI/액션 레이어 (IntelliJ Platform)
 
-### T18. Settings 패널 구현 (`config show` / `config set` / `config init` 대체)
+### T18. Settings 패널 구현 (`config show` / `config set` / `config init` 대체) — (완료)
 - **내용**: **Settings \| Tools \| Jira Task**에 `Configurable` 추가. 현재 프로젝트 키/Jira 주소/이슈 유형/상태를 읽기 전용으로 표시(이메일·토큰 미노출), 프로젝트 키·베이스 URL 수동 수정 필드, "설정 마법사 다시 실행" 버튼.
 - **의존**: T12.
 - **완료 기준**: 설정값 표시/저장 UI 테스트(가능하면 `LightPlatformTestCase` 기반), 토큰/이메일이 화면에 노출되지 않는지 확인.
+- **범위 조정**: "설정 마법사 다시 실행" 버튼은 T19(마법사 다이얼로그)와 함께 추가한다. 마법사가 없는 상태에서 버튼을 먼저 넣으면 "준비 중" 자리표시자가 하나 더 생기고, 그것은 T24에서 없애야 할 대상이기 때문이다.
+- **설계**: 화면에 보여줄 값(`SettingsSnapshot`)과 편집 값(`SettingsEdit`), 저장 유스케이스(`EditSettingsUseCase`)를 애플리케이션 계층의 순수 코드로 두고, `JiraTaskConfigurable`은 Swing 위젯과 값의 왕복만 담당한다. 덕분에 검증·병합 규칙은 Swing 없이 단위 테스트할 수 있다.
+- **동작 결정**: 편집 필드를 비워 두면 "그 값은 변경하지 않음"으로 본다(CLI `config set`에서 해당 옵션을 생략한 것과 동일). 설정 저장은 얕은 병합이라 값 삭제를 지원하지 않으므로, 빈 칸을 "삭제"로 해석하지 않고 `isModified`도 false로 둔다. 두 필드가 모두 비어 있으면 저장을 호출하지 않는다.
+- **산출물**: `application/EditSettings.kt`(`SettingsSnapshot`/`SettingsEdit`/`SettingsLoad`/`EditSettingsUseCase`), `ui/JiraTaskConfigurable.kt`, `plugin.xml`에 `applicationConfigurable`(id `io.github.gudwns1812.jiratask.settings`, parentId `tools`) 등록. 테스트: `application/EditSettingsTest.kt` (13 tests, Swing 없이 저장·검증·이메일 미노출 검증), `ui/JiraTaskConfigurableTest.kt` (10 tests, `BasePlatformTestCase`에서 실제 패널을 만들어 컴포넌트 트리의 모든 문자열을 훑어 표시값·이메일 미노출·`JPasswordField` 부재까지 확인).
+- **검증**: `./gradlew test` 149개 전부 통과(신규 23개), `./gradlew build buildPlugin` 통과, 컴파일 경고 0건. `buildSearchableOptions`가 만든 `p-io.github.gudwns1812.jiratask-searchableOptions.json`에 이 패널이 `{"id":"io.github.gudwns1812.jiratask.settings","name":"Jira Task"}`로 색인되어(항목: Jira 프로젝트 키/Jira 주소/스토리 유형/… ) 실제 헤드리스 IDE가 패널을 로드·렌더링했음을 확인. CLI 기존 테스트(`npm test`) 101개도 그대로 통과.
 
 ### T19. 초기 설정 마법사 다이얼로그 구현 (`config setup` 대체)
-- **내용**: `SetupPrompter`의 IntelliJ 구현체 — Jira 주소/이메일/API 토큰 입력 다이얼로그(토큰은 `JBPasswordField`), 프로젝트/이슈유형/상태 선택 콤보박스, 최종 확인 다이얼로그. 플러그인 최초 사용 시(설정 없음) 자동 트리거 옵션도 포함.
+- **내용**: T18에서 보류한 "설정 마법사 다시 실행" 버튼을 Settings 패널에 추가하고, `SetupPrompter`의 IntelliJ 구현체 — Jira 주소/이메일/API 토큰 입력 다이얼로그(토큰은 `JBPasswordField`), 프로젝트/이슈유형/상태 선택 콤보박스, 최종 확인 다이얼로그. 플러그인 최초 사용 시(설정 없음) 자동 트리거 옵션도 포함.
 - **의존**: T17, T18.
 - **완료 기준**: 정상 흐름 수동 시나리오 테스트 + 취소 시 아무 것도 저장되지 않는 것을 검증하는 테스트(가능한 범위에서 헤드리스 테스트, UI 부분은 수동 검증 문서화).
 

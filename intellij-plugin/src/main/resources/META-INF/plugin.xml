@@ -7,6 +7,13 @@
 
     <depends>com.intellij.modules.platform</depends>
 
+    <extensions defaultExtensionNs="com.intellij">
+        <applicationConfigurable id="io.github.gudwns1812.jiratask.settings"
+                                 parentId="tools"
+                                 instance="io.github.gudwns1812.jiratask.ui.JiraTaskConfigurable"
+                                 displayName="Jira Task"/>
+    </extensions>
+
     <actions>
         <action id="JiraTask.CreateIssue"
                 class="io.github.gudwns1812.jiratask.CreateJiraIssueAction"
