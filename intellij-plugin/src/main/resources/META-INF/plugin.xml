@@ -3,12 +3,19 @@
     <name>Jira Task</name>
     <vendor url="https://github.com/gudwns1812/task-jira-cli">gudwns1812</vendor>
 
-    <description><![CDATA[Jira Task helps create Jira issues from the IDE. This is an early skeleton build; issue creation features are still in progress.]]></description>
+    <description><![CDATA[
+        Brings the RULE.md based Jira workflow of task-jira-cli into the IDE.
+        Provides a first-run setup wizard, issue draft validation with a request preview,
+        story branch creation with a Jira status transition, current task number tracking
+        in the status bar, and automatic Jira issue keys in Git commit messages.
+    ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.vcs</depends>
 
     <extensions defaultExtensionNs="com.intellij">
         <notificationGroup id="Jira Task" displayType="BALLOON"/>
+        <checkinHandlerFactory implementation="io.github.gudwns1812.jiratask.ui.commit.JiraTaskCheckinHandlerFactory"/>
         <statusBarWidgetFactory id="JiraTask.CurrentTask"
                                 implementation="io.github.gudwns1812.jiratask.ui.task.CurrentTaskWidgetFactory"
                                 order="last"/>
@@ -20,35 +27,30 @@
     </extensions>
 
     <actions>
-        <action id="JiraTask.RunSetupWizard"
-                class="io.github.gudwns1812.jiratask.ui.RunSetupWizardAction"
-                text="Jira Task 설정 마법사"
-                description="Jira 연결과 프로젝트 기본값을 마법사로 설정합니다">
+        <group id="JiraTask.Menu" text="Jira Task" popup="true">
             <add-to-group group-id="ToolsMenu" anchor="last"/>
-        </action>
-        <action id="JiraTask.StartTask"
-                class="io.github.gudwns1812.jiratask.ui.task.StartTaskAction"
-                text="Start Jira Task"
-                description="커밋에 사용할 현재 Jira 작업 번호를 저장합니다">
-            <add-to-group group-id="ToolsMenu" anchor="last"/>
-        </action>
-        <action id="JiraTask.CreateStoryBranch"
-                class="io.github.gudwns1812.jiratask.ui.branch.CreateStoryBranchAction"
-                text="Create Story Branch"
-                description="스토리 번호로 브랜치를 만들고 Jira 스토리를 진행 중으로 전환합니다">
-            <add-to-group group-id="ToolsMenu" anchor="last"/>
-        </action>
-        <action id="JiraTask.CreateIssueDraft"
-                class="io.github.gudwns1812.jiratask.ui.issue.CreateIssueDraftAction"
-                text="Jira 이슈 초안 만들기"
-                description="이슈 입력을 RULE.md 기준으로 검증하고 생성 요청 초안을 만듭니다">
-            <add-to-group group-id="ToolsMenu" anchor="last"/>
-        </action>
-        <action id="JiraTask.CreateIssue"
-                class="io.github.gudwns1812.jiratask.CreateJiraIssueAction"
-                text="Create Jira Issue"
-                description="Jira 이슈 생성 (준비 중)">
-            <add-to-group group-id="ToolsMenu" anchor="last"/>
-        </action>
+
+            <action id="JiraTask.CreateIssueDraft"
+                    class="io.github.gudwns1812.jiratask.ui.issue.CreateIssueDraftAction"
+                    text="Create Issue Draft"
+                    description="이슈 입력을 RULE.md 기준으로 검증하고 생성 요청 초안을 만듭니다"/>
+            <action id="JiraTask.CreateStoryBranch"
+                    class="io.github.gudwns1812.jiratask.ui.branch.CreateStoryBranchAction"
+                    text="Create Story Branch"
+                    description="스토리 번호로 브랜치를 만들고 Jira 스토리를 진행 중으로 전환합니다"/>
+            <action id="JiraTask.StartTask"
+                    class="io.github.gudwns1812.jiratask.ui.task.StartTaskAction"
+                    text="Start Jira Task"
+                    description="커밋에 사용할 현재 Jira 작업 번호를 저장합니다"/>
+            <action id="JiraTask.Commit"
+                    class="io.github.gudwns1812.jiratask.ui.commit.CommitWithJiraTaskAction"
+                    text="Commit with Jira Task"
+                    description="현재 작업 번호로 이슈 키를 붙여 스테이지된 변경 사항을 커밋합니다"/>
+            <separator/>
+            <action id="JiraTask.RunSetupWizard"
+                    class="io.github.gudwns1812.jiratask.ui.RunSetupWizardAction"
+                    text="Run Setup Wizard"
+                    description="Jira 연결과 프로젝트 기본값을 마법사로 설정합니다"/>
+        </group>
     </actions>
 </idea-plugin>

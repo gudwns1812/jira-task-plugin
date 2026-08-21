@@ -1,5 +1,6 @@
 package io.github.gudwns1812.jiratask.ui.issue
 
+import com.google.gson.JsonParser
 import io.github.gudwns1812.jiratask.domain.policy.WorkPolicy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -177,6 +178,29 @@ class IssueDraftPresenterTest {
         ).toRawInput()
 
         assertEquals(setOf("type", "epicKey", "title", "branch"), storyRaw.keys)
+    }
+
+    @Test
+    fun `produces the same draft as the CLI dry run for the same input`() {
+        // dist/cli/index.js create -f task.json -p S15P11A108 --dry-run 의 실제 출력
+        val cliOutput = """
+            {
+              "projectKey": "S15P11A108",
+              "issueType": "task",
+              "summary": "[AUTH-001 | FE] 회원가입 폼",
+              "description": "## 설명\n이메일 회원가입 폼을 만든다.\n\n## 결과물\n[] 회원가입 화면\n[] 유효성 검사 로직",
+              "labels": ["FE"],
+              "policyFields": { "storyPoints": 3, "sprint": "Sprint 1" },
+              "relationships": { "epicKey": "S15P11A108-1" },
+              "assignee": "박형준",
+              "priority": "High",
+              "dueDate": "2026-08-31"
+            }
+        """.trimIndent()
+
+        val view = present(validTask().copy(storyKey = ""))
+
+        assertEquals(JsonParser.parseString(cliOutput), JsonParser.parseString(view.json!!))
     }
 
     @Test

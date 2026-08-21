@@ -86,6 +86,17 @@ T18부터 새로 작성하는 코드도 이 네 가지 규칙을 따른다.
 - **완료 기준**: 기본값 병합, 잘못된 프로젝트 키 형식, 허용 목록에 없는 레이블 키, 중복된 areas/workCategories/storyPoints에 대한 `PolicyConfigurationError` 발생 테스트.
 - **산출물**: `domain/policy/PolicyConfig.kt`, `domain/policy/PolicyConfigTest.kt` (11 tests).
 
+## 최종 검증 (T25 완료 시점)
+
+- `./gradlew clean build buildPlugin verifyPluginStructure verifyPluginProjectConfiguration`: 전체 통과, 컴파일 경고 0건, `jira-task-plugin-0.1.0.zip` 패키징 성공.
+- `./gradlew test`: **248개 전부 통과**(실패·에러·스킵 0).
+- 계층 경계(grep): `domain`은 IntelliJ API·Gson·`java.net.http`를 import하지 않고, `application`은 IntelliJ API·`infrastructure`·`ui`를 import하지 않는다. `ui`만 세 계층을 모두 참조한다.
+- 헤드리스 IDE 로딩(`buildSearchableOptions` 산출물): 액션 5개(Create Issue Draft / Create Story Branch / Start Jira Task / Commit with Jira Task / Run Setup Wizard)와 Settings 패널(`io.github.gudwns1812.jiratask.settings`)이 실제로 로드·색인된다.
+- CLI 회귀: `npm test` 101개 통과, `npm run typecheck`·`npm run build` 통과.
+- CLI ↔ 플러그인 동작 동등성: 같은 입력에 대해 CLI `create --dry-run`이 출력한 JSON과 플러그인 미리보기 JSON이 같은지 비교하는 테스트를 추가했다(`IssueDraftPresenterTest.produces the same draft as the CLI dry run for the same input`).
+- 남은 수동 확인: `./gradlew runIde` 샌드박스에서의 실제 다이얼로그 모양·상태 표시줄 위젯·Git 커밋 창 접두 동작(GUI 필요).
+- 주의(기록): 최종 검증 중 CLI `branch create`를 실제로 실행해 이 머신에 저장된 설정으로 Jira 이슈 조회 1건이 발생했다. 이슈 타입 검사에서 실패해 브랜치 생성이나 상태 전환은 일어나지 않았지만, 외부 상태를 읽는 명령이므로 이후에는 `--dry-run`이 가능한 명령만 사용한다.
+
 > **1단계 진행 상황**: T1~T9 전체 완료. `./gradlew test` 기준 도메인 계층 신규 테스트 65개 + 기존 플레이스홀더 액션 테스트 3개, 총 68개 모두 통과. `./gradlew build`도 통과 확인.
 > 참고: 이 환경의 `JAVA_HOME`이 JDK 25로 설정되어 있어 Gradle 8.10.2와 호환되지 않는다. Gradle 명령은 `JAVA_HOME="<JDK 21 경로>" ./gradlew.bat ...`처럼 JDK 21을 명시해 실행해야 한다.
 
@@ -213,22 +224,30 @@ T18부터 새로 작성하는 코드도 이 네 가지 규칙을 따른다.
 - **산출물**: `ui/task/CurrentTask.kt`(`TaskFormInput`, `CurrentTaskText`, `StartTaskReports`, `CurrentTaskState`), `ui/task/CurrentTaskWidget.kt`(상태 표시줄 위젯 + 팩토리, 클릭하면 작업 번호 변경), `ui/task/StartTaskAction.kt`, `plugin.xml`에 `statusBarWidgetFactory`와 액션 등록.
 - **테스트**: `ui/task/CurrentTaskTest.kt` (6 tests), `ui/task/CurrentTaskWidgetTest.kt` (6 tests — 캐시 반영, 팩토리 가용성, git 저장소가 아닐 때 빈 값, 다이얼로그 기본값·검증, 프로젝트 없을 때 액션 비활성).
 
-### T23. 커밋 메시지 자동 완성 연동 (`commit` 대체)
+### T23. 커밋 메시지 자동 완성 연동 (`commit` 대체) — (완료)
 - **내용**: `CheckinHandlerFactory`/`VcsCheckinHandlerFactory`를 구현해 Git 커밋 다이얼로그에서 저장된 작업 번호 + 설정된 프로젝트 키로 이슈 키를 자동 접두(prefix)하거나, 별도 "Commit with Jira Task" 액션 제공.
 - **의존**: T16.
 - **완료 기준**: 작업 번호 저장됨/안 됨 두 경우의 커밋 메시지 동작 테스트, 스테이지 변경 없을 때의 처리 확인.
+- **설계**: 두 경로를 모두 제공한다. (1) `checkinHandlerFactory`가 Git 커밋 창이 열릴 때 저장된 작업 번호로 이슈 키를 접두한다 — 이미 다른 이슈 키로 시작하면 그 키만 바꾸고, 작업 번호나 프로젝트 키가 없으면 아무 것도 하지 않아 커밋을 막지 않는다. (2) `Commit with Jira Task` 액션은 CLI `commit`과 같이 메시지를 받아 스테이지된 변경을 커밋한다.
+- **스레드**: 커밋 창 생성은 EDT에서 일어나므로 작업 번호는 git을 다시 읽지 않고 T22의 캐시(`CurrentTaskState`)에서 읽는다.
+- **산출물**: `ui/commit/JiraCommitMessages.kt`(접두 규칙 + `CommitReports`), `ui/commit/JiraTaskCheckinHandlerFactory.kt`, `ui/commit/CommitWithJiraTaskAction.kt`(메시지 다이얼로그 + 액션), `plugin.xml` 등록.
+- **테스트**: `ui/commit/JiraCommitMessagesTest.kt` (10 tests — 빈 메시지/일반 메시지/이미 같은 키/낡은 키 교체/키처럼 보이는 단어 오인 방지/여러 줄 유지, 성공·작업 번호 없음·스테이지 없음 알림 매핑), `ui/commit/JiraTaskCommitDialogTest.kt` (5 tests — 작업 번호와 프로젝트 키가 모두 있을 때만 이슈 키 생성, 메시지 필수 검증).
 
 ---
 
 ## 5단계 — 마무리
 
-### T24. `plugin.xml` 정리 및 액션/설정 등록
+### T24. `plugin.xml` 정리 및 액션/설정 등록 — (완료)
 - **내용**: T21~T23의 액션과 T18의 `Configurable`을 `plugin.xml`에 정식 등록하고, `CreateJiraIssueAction` 자리표시자를 제거하거나 실제 기능으로 교체.
 - **완료 기준**: `./gradlew runIde` 샌드박스에서 모든 메뉴 항목이 자리표시자 메시지 없이 실제 동작.
+- **내용 실행**: 자리표시자 `CreateJiraIssueAction`과 그 테스트를 삭제했고, 액션 5개를 `Tools > Jira Task` 팝업 그룹으로 묶었다. `plugin.xml`의 설명 문구도 실제 기능 기준으로 고치고 `com.intellij.modules.vcs` 의존을 추가했다(커밋 창 연동에 필요).
+- **테스트**: `ui/JiraTaskPluginRegistrationTest.kt` (7 tests) — 액션 5개가 선언한 구현 클래스로 로드되는지, `Tools > Jira Task` 그룹 구성, 자리표시자 액션이 남아 있지 않은지, 알림 그룹·Settings 패널·상태 표시줄 위젯 팩토리·커밋 핸들러 팩토리가 실제 확장 지점에 등록됐는지 확인한다. 헤드리스 IDE가 `plugin.xml`을 실제로 로드해 검사하므로 `runIde` 수동 확인의 상당 부분을 대체한다.
 
-### T25. 통합 테스트 및 README 갱신
+### T25. 통합 테스트 및 README 갱신 — (완료)
 - **내용**: 전체 흐름(설정 마법사 → 이슈 검증/미리보기 → 브랜치 생성 → 작업 시작 → 커밋)에 대한 시나리오 테스트 추가. `intellij-plugin/README.md`를 완성된 기능 기준으로 갱신.
 - **완료 기준**: `./gradlew test` 전체 통과, `./gradlew build` 통과, `runIde`로 주요 시나리오 수동 확인 기록.
+- **산출물**: `ui/JiraTaskScenarioTest.kt` (3 tests) — 실제 임시 Git 저장소와 가짜 Jira로 설정 마법사 → 이슈 초안 검증·미리보기 → 브랜치 생성(전환 포함) → 작업 번호 저장 → 커밋까지 한 테스트에서 이어서 검증하고, 실제 `git log`/`git branch --show-current` 결과까지 확인한다. 설정 없이 브랜치를 만들려 할 때와 작업 번호 없이 커밋할 때의 거부도 함께 확인한다. `README.md`를 완성된 기능·CLI와의 차이·구조 기준으로 다시 썼다.
+- **남은 수동 확인**: `runIde` 샌드박스에서의 실제 다이얼로그 모양·상태 표시줄 위젯 표시·커밋 창 접두 동작은 GUI가 필요해 이 환경에서 실행하지 못했다. 대신 헤드리스 IDE가 `plugin.xml`을 로드하는 `buildPlugin`(buildSearchableOptions)과 T24의 등록 테스트로 확장 지점 로딩을 확인했다.
 
 ---
 
