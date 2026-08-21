@@ -137,7 +137,7 @@ describe("config set CLI command", () => {
     const home = await mkdtemp(join(tmpdir(), "task-jira-cli-home-"));
 
     try {
-      const result = await runCliWithEnvironment({ HOME: home });
+      const result = await runCliWithEnvironment({ HOME: home, USERPROFILE: home });
 
       expect("error" in result).toBe(true);
       expect((result.error as { code?: number }).code).toBe(2);

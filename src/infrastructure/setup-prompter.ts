@@ -26,13 +26,13 @@ export class InquirerSetupPrompter implements SetupPrompter {
 
   async confirm(summary: SetupSummary): Promise<boolean> {
     console.log("\n설정 내용을 확인해주세요.\n");
-    console.log(`Jira       ${summary.baseUrl}`);
-    console.log(`Project    ${summary.project.key} - ${summary.project.name}`);
-    console.log(`Story      ${summary.storyIssueType.name}`);
-    console.log(`Task       ${summary.taskIssueType.name}`);
-    console.log(`Epic       ${summary.epicIssueType.name}`);
-    console.log(`Start (Story) ${summary.storyStartStatus.name}`);
-    console.log(`Done (Task)   ${summary.taskDoneStatus.name}\n`);
+    console.log(`Jira 주소      ${summary.baseUrl}`);
+    console.log(`프로젝트       ${summary.project.key} - ${summary.project.name}`);
+    console.log(`스토리 유형     ${summary.storyIssueType.name}`);
+    console.log(`작업 유형      ${summary.taskIssueType.name}`);
+    console.log(`에픽 유형      ${summary.epicIssueType.name}`);
+    console.log(`스토리 시작 상태 ${summary.storyStartStatus.name}`);
+    console.log(`작업 완료 상태   ${summary.taskDoneStatus.name}\n`);
     return confirm({ message: "저장하시겠습니까?", default: true });
   }
 

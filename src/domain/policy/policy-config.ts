@@ -47,8 +47,6 @@ const jiraSettingsSchema = z
       })
       .strict()
       .optional(),
-    storyIssueType: requiredText.optional(),
-    inProgressStatus: requiredText.optional(),
   })
   .strict()
   .refine((settings) => Object.values(settings).some((value) => value !== undefined), {

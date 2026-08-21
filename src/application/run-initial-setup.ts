@@ -57,6 +57,10 @@ export class SetupSelectionError extends Error {
   }
 }
 
+const STORY_ISSUE_TYPE_NAMES = ["스토리", "story"];
+const TASK_ISSUE_TYPE_NAMES = ["작업", "task"];
+const EPIC_ISSUE_TYPE_NAMES = ["에픽", "epic"];
+
 export async function runInitialSetup(dependencies: InitialSetupDependencies): Promise<{
   projectKey: string;
   storyIssueType: string;
@@ -74,9 +78,12 @@ export async function runInitialSetup(dependencies: InitialSetupDependencies): P
     await dependencies.prompter.choose("프로젝트를 선택하세요.", projects.map((item) => ({ value: item.id, label: `${item.key} - ${item.name}` }))),
   );
   const issueTypes = await jira.listIssueTypesWithStatuses(project.key);
-  const storyIssueType = await selectIssueType(dependencies.prompter, "스토리로 사용할 이슈 유형을 선택하세요.", issueTypes, []);
-  const taskIssueType = await selectIssueType(dependencies.prompter, "실제 개발 작업으로 사용할 이슈 유형을 선택하세요.", issueTypes, [storyIssueType.id]);
-  const epicIssueType = await selectIssueType(dependencies.prompter, "에픽으로 사용할 이슈 유형을 선택하세요.", issueTypes, [storyIssueType.id, taskIssueType.id]);
+  const storyIssueType = findIssueTypeByNames(issueTypes, STORY_ISSUE_TYPE_NAMES, "스토리");
+  const taskIssueType = findIssueTypeByNames(issueTypes, TASK_ISSUE_TYPE_NAMES, "작업");
+  const epicIssueType = findIssueTypeByNames(issueTypes, EPIC_ISSUE_TYPE_NAMES, "에픽");
+  if (new Set([storyIssueType.id, taskIssueType.id, epicIssueType.id]).size !== 3) {
+    throw new SetupSelectionError("서로 다른 스토리, 작업, 에픽 이슈 유형을 찾을 수 없습니다.");
+  }
   const storyStartStatus = await selectStatus(dependencies.prompter, "스토리 브랜치 생성 시 이동할 상태를 선택하세요.", storyIssueType, "start");
   const taskDoneStatus = await selectStatus(dependencies.prompter, "작업 완료 시 이동할 상태를 선택하세요.", taskIssueType, "done");
 
@@ -124,17 +131,18 @@ async function verifiedConnection(
   }
 }
 
-async function selectIssueType(prompter: SetupPrompter, message: string, issueTypes: JiraIssueTypeWithStatuses[], excludedIds: string[]): Promise<JiraIssueTypeWithStatuses> {
-  const choices = issueTypes.filter((item) => !excludedIds.includes(item.id));
-  if (choices.length === 0) {
-    throw new SetupSelectionError("서로 다른 Story, Task, Epic 이슈 유형을 선택할 수 없습니다.");
+function findIssueTypeByNames(issueTypes: JiraIssueTypeWithStatuses[], names: string[], label: string): JiraIssueTypeWithStatuses {
+  const matches = issueTypes.filter((item) => names.includes(item.name.trim().toLowerCase()));
+
+  if (matches.length === 1) {
+    return matches[0];
   }
-  const selectedId = await prompter.choose(message, choices.map((item) => ({ value: item.id, label: item.name })));
-  const selected = choices.find((item) => item.id === selectedId);
-  if (!selected) {
-    throw new SetupSelectionError("선택한 이슈 유형이 현재 프로젝트에 없습니다.");
+  if (matches.length > 1) {
+    throw new SetupSelectionError(
+      `${label}로 사용할 이슈 유형이 여러 개입니다: ${matches.map((item) => item.name).join(", ")}. 프로젝트의 이슈 타입 이름을 정리한 뒤 다시 시도하세요.`,
+    );
   }
-  return selected;
+  throw new SetupSelectionError(`이 프로젝트에는 '${names.join("' 또는 '")}' 이슈 유형이 없습니다.`);
 }
 
 async function selectStatus(prompter: SetupPrompter, message: string, issueType: JiraIssueTypeWithStatuses, purpose: string): Promise<JiraNamedValue> {

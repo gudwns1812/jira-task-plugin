@@ -24,11 +24,16 @@ describe("branch create CLI", () => {
       response.setHeader("Content-Type", "application/json");
 
       if (request.method === "GET" && url.pathname === "/rest/api/3/issue/S15P11A108-100") {
-        response.end(JSON.stringify({ key: "S15P11A108-100", fields: { issuetype: { name: "Story" }, status: { name: "To Do" } } }));
+        response.end(
+          JSON.stringify({
+            key: "S15P11A108-100",
+            fields: { issuetype: { id: "10001", name: "스토리" }, status: { id: "1", name: "할 일" } },
+          }),
+        );
         return;
       }
       if (request.method === "GET" && url.pathname.endsWith("/transitions")) {
-        response.end(JSON.stringify({ transitions: [{ id: "31", to: { name: "In Progress" } }] }));
+        response.end(JSON.stringify({ transitions: [{ id: "31", to: { id: "21", name: "진행 중" } }] }));
         return;
       }
       if (request.method === "POST" && url.pathname.endsWith("/transitions")) {
@@ -53,7 +58,11 @@ describe("branch create CLI", () => {
         configPath,
         JSON.stringify({
           projectKey: "S15P11A108",
-          jira: { baseUrl: `http://127.0.0.1:${address.port}`, storyIssueType: "Story", inProgressStatus: "In Progress" },
+          jira: {
+            baseUrl: `http://127.0.0.1:${address.port}`,
+            issueTypes: { story: { id: "10001", name: "Story" } },
+            statuses: { story: { start: { id: "21", name: "In Progress" } } },
+          },
         }),
       );
 

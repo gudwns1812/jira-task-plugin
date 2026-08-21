@@ -165,36 +165,19 @@ configCommand
 
 configCommand
   .command("set")
-  .description("기본 Jira 프로젝트와 브랜치 생성용 Jira 연결 정보를 설정합니다")
+  .description("기본 Jira 프로젝트와 연결 주소를 설정합니다")
   .option("-p, --project <key>", "저장할 Jira 프로젝트 키")
   .option("--base-url <url>", "Jira Cloud 주소")
-  .option("--story-type <name>", "스토리 이슈 타입명")
-  .option("--in-progress-status <name>", "브랜치 생성 후 적용할 진행 상태명")
   .option("-c, --config <path>", "저장할 설정 파일 경로")
-  .action(
-    async (options: {
-      project?: string;
-      baseUrl?: string;
-      storyType?: string;
-      inProgressStatus?: string;
-      config?: string;
-    }) => {
+  .action(async (options: { project?: string; baseUrl?: string; config?: string }) => {
     try {
-      if (!options.project && !options.baseUrl && !options.storyType && !options.inProgressStatus) {
+      if (!options.project && !options.baseUrl) {
         throw new PolicyConfigurationError("저장할 설정을 하나 이상 지정하세요.");
       }
       const path = await setJiraTaskConfig(
         {
           ...(options.project ? { projectKey: options.project } : {}),
-          ...(options.baseUrl || options.storyType || options.inProgressStatus
-            ? {
-                jira: {
-                  ...(options.baseUrl ? { baseUrl: options.baseUrl } : {}),
-                  ...(options.storyType ? { storyIssueType: options.storyType } : {}),
-                  ...(options.inProgressStatus ? { inProgressStatus: options.inProgressStatus } : {}),
-                },
-              }
-            : {}),
+          ...(options.baseUrl ? { jira: { baseUrl: options.baseUrl } } : {}),
         },
         options.config,
       );
@@ -223,8 +206,8 @@ branchCommand
           projectKey: branchConfig.projectKey,
           storyNumber: options.story,
           name: options.name,
-          storyIssueType: branchConfig.storyIssueType,
-          inProgressStatus: branchConfig.inProgressStatus,
+          storyIssueTypeId: branchConfig.storyIssueTypeId,
+          inProgressStatusId: branchConfig.inProgressStatusId,
         },
         new JiraClient({
           baseUrl: branchConfig.baseUrl,
@@ -353,17 +336,17 @@ async function getBranchConfig(
   config: Awaited<ReturnType<typeof loadJiraTaskConfig>>,
   environment: NodeJS.ProcessEnv,
   credentials: KeyringCredentialStore,
-): Promise<{ projectKey: string; baseUrl: string; storyIssueType: string; inProgressStatus: string; email: string; apiToken: string }> {
-  const storyIssueType = config.jira?.issueTypes?.story?.name ?? config.jira?.storyIssueType;
-  const inProgressStatus = config.jira?.statuses?.story?.start?.name ?? config.jira?.inProgressStatus;
+): Promise<{ projectKey: string; baseUrl: string; storyIssueTypeId: string; inProgressStatusId: string; email: string; apiToken: string }> {
+  const storyIssueTypeId = config.jira?.issueTypes?.story?.id;
+  const inProgressStatusId = config.jira?.statuses?.story?.start?.id;
   const email = environment.JIRA_EMAIL ?? config.jira?.email;
   const baseUrl = config.jira?.baseUrl;
   const apiToken = environment.JIRA_API_TOKEN ?? (baseUrl && email ? await credentials.get(baseUrl, email) : undefined);
   const missing = [
-    !config.projectKey ? "프로젝트 키(config set --project)" : undefined,
-    !baseUrl ? "Jira 주소(config set --base-url)" : undefined,
-    !storyIssueType ? "스토리 타입(config setup 또는 config set --story-type)" : undefined,
-    !inProgressStatus ? "진행 상태(config setup 또는 config set --in-progress-status)" : undefined,
+    !config.projectKey ? "프로젝트 키(config setup)" : undefined,
+    !baseUrl ? "Jira 주소(config setup)" : undefined,
+    !storyIssueTypeId ? "스토리 타입(config setup)" : undefined,
+    !inProgressStatusId ? "진행 상태(config setup)" : undefined,
     !email ? "JIRA_EMAIL 또는 초기 설정 이메일" : undefined,
     !apiToken ? "JIRA_API_TOKEN 또는 운영체제 자격 증명 저장소의 토큰" : undefined,
   ].filter((value): value is string => Boolean(value));
@@ -375,8 +358,8 @@ async function getBranchConfig(
   return {
     projectKey: config.projectKey!,
     baseUrl: baseUrl!,
-    storyIssueType: storyIssueType!,
-    inProgressStatus: inProgressStatus!,
+    storyIssueTypeId: storyIssueTypeId!,
+    inProgressStatusId: inProgressStatusId!,
     email: email!,
     apiToken: apiToken!,
   };

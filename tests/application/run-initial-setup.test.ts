@@ -69,18 +69,84 @@ describe("최초 Jira 설정", () => {
 
     await expect(
       runInitialSetup({
-        prompter: prompts({ selections: ["10001", "10", "10", "12", "3", "4"], confirm: true }),
+        prompter: prompts({ selections: ["10001", "999", "4"], confirm: true }),
         createJira: () => jiraReader(),
         saveConfig,
         credentials: { save: saveCredential },
       }),
     ).rejects.toBeInstanceOf(SetupSelectionError);
   });
+
+  it("스토리/작업/에픽 이슈 유형은 영어 이름도 자동으로 찾는다", async () => {
+    const saveConfig = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      runInitialSetup({
+        prompter: prompts({ confirm: true }),
+        createJira: () => ({
+          ...jiraReader(),
+          listIssueTypesWithStatuses: vi.fn().mockResolvedValue([
+            { id: "10", name: "Story", statuses: [{ id: "3", name: "진행 중" }] },
+            { id: "11", name: "Task", statuses: [{ id: "4", name: "완료" }] },
+            { id: "12", name: "Epic", statuses: [{ id: "5", name: "해야 할 일" }] },
+          ]),
+        }),
+        saveConfig,
+        credentials: { save: vi.fn().mockResolvedValue(undefined) },
+      }),
+    ).resolves.toMatchObject({ storyIssueType: "Story" });
+    expect(saveConfig).toHaveBeenCalled();
+  });
+
+  it.each([
+    ["스토리", [{ id: "11", name: "작업" }, { id: "12", name: "에픽" }]],
+    ["작업", [{ id: "10", name: "스토리" }, { id: "12", name: "에픽" }]],
+    ["에픽", [{ id: "10", name: "스토리" }, { id: "11", name: "작업" }]],
+  ])("%s 이슈 유형이 프로젝트에 없으면 묻지 않고 바로 실패한다", async (_label, availableTypes) => {
+    const saveConfig = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      runInitialSetup({
+        prompter: prompts({ confirm: true }),
+        createJira: () => ({
+          ...jiraReader(),
+          listIssueTypesWithStatuses: vi
+            .fn()
+            .mockResolvedValue(availableTypes.map((item) => ({ ...item, statuses: [{ id: "4", name: "완료" }] }))),
+        }),
+        saveConfig,
+        credentials: { save: vi.fn().mockResolvedValue(undefined) },
+      }),
+    ).rejects.toBeInstanceOf(SetupSelectionError);
+    expect(saveConfig).not.toHaveBeenCalled();
+  });
+
+  it("이름이 겹치는 이슈 유형이 여러 개면 묻지 않고 바로 실패한다", async () => {
+    const saveConfig = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      runInitialSetup({
+        prompter: prompts({ confirm: true }),
+        createJira: () => ({
+          ...jiraReader(),
+          listIssueTypesWithStatuses: vi.fn().mockResolvedValue([
+            { id: "10", name: "스토리", statuses: [{ id: "3", name: "진행 중" }] },
+            { id: "13", name: "Story", statuses: [{ id: "3", name: "진행 중" }] },
+            { id: "11", name: "작업", statuses: [{ id: "4", name: "완료" }] },
+            { id: "12", name: "에픽", statuses: [{ id: "5", name: "해야 할 일" }] },
+          ]),
+        }),
+        saveConfig,
+        credentials: { save: vi.fn().mockResolvedValue(undefined) },
+      }),
+    ).rejects.toBeInstanceOf(SetupSelectionError);
+    expect(saveConfig).not.toHaveBeenCalled();
+  });
 });
 
 function prompts(options: { credentials?: string[]; selections?: string[]; confirm: boolean }) {
   const credentials = options.credentials ?? ["secret"];
-  const selections = options.selections ?? ["10001", "10", "11", "12", "3", "4"];
+  const selections = options.selections ?? ["10001", "3", "4"];
   let credentialIndex = 0;
   let selectionIndex = 0;
 

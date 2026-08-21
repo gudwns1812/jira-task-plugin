@@ -57,11 +57,23 @@ describe("정책 설정 저장소", () => {
       await initializePolicyConfig(configPath);
       await setProjectKey("S15P11A108", configPath);
       await setJiraTaskConfig({ jira: { baseUrl: "http://127.0.0.1:8080" } }, configPath);
-      await setJiraTaskConfig({ jira: { storyIssueType: "Story", inProgressStatus: "In Progress" } }, configPath);
+      await setJiraTaskConfig(
+        {
+          jira: {
+            issueTypes: { story: { id: "10001", name: "스토리" } },
+            statuses: { story: { start: { id: "21", name: "진행 중" } } },
+          },
+        },
+        configPath,
+      );
 
       await expect(loadJiraTaskConfig(configPath)).resolves.toMatchObject({
         projectKey: "S15P11A108",
-        jira: { baseUrl: "http://127.0.0.1:8080", storyIssueType: "Story", inProgressStatus: "In Progress" },
+        jira: {
+          baseUrl: "http://127.0.0.1:8080",
+          issueTypes: { story: { id: "10001", name: "스토리" } },
+          statuses: { story: { start: { id: "21", name: "진행 중" } } },
+        },
         policy: { storyPoints: [1, 2, 3, 5, 8] },
       });
     } finally {

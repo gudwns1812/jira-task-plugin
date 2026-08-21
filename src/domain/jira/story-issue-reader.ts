@@ -1,12 +1,14 @@
 export interface JiraIssue {
   key: string;
-  issueType: string;
-  status: string;
+  issueTypeId: string;
+  issueTypeName: string;
+  statusId: string;
+  statusName: string;
 }
 
 export interface StoryIssueReader {
   getIssue(issueKey: string): Promise<JiraIssue>;
-  findTransitionId(issueKey: string, targetStatus: string): Promise<string | undefined>;
+  findTransitionId(issueKey: string, targetStatusId: string): Promise<string | undefined>;
   transition(issueKey: string, transitionId: string): Promise<void>;
 }
 

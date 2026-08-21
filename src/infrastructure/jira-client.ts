@@ -29,16 +29,24 @@ export class JiraClient implements StoryIssueReader, JiraSetupReader {
     const response = await this.request(`/rest/api/3/issue/${encodeURIComponent(issueKey)}?fields=issuetype,status`);
     const body = (await response.json()) as {
       key?: unknown;
-      fields?: { issuetype?: { name?: unknown }; status?: { name?: unknown } };
+      fields?: { issuetype?: { id?: unknown; name?: unknown }; status?: { id?: unknown; name?: unknown } };
     };
-    const issueType = body.fields?.issuetype?.name;
-    const status = body.fields?.status?.name;
+    const issueTypeId = body.fields?.issuetype?.id;
+    const issueTypeName = body.fields?.issuetype?.name;
+    const statusId = body.fields?.status?.id;
+    const statusName = body.fields?.status?.name;
 
-    if (typeof body.key !== "string" || typeof issueType !== "string" || typeof status !== "string") {
+    if (
+      typeof body.key !== "string" ||
+      typeof issueTypeId !== "string" ||
+      typeof issueTypeName !== "string" ||
+      typeof statusId !== "string" ||
+      typeof statusName !== "string"
+    ) {
       throw new JiraRequestError("Jira 이슈 응답 형식이 올바르지 않습니다.");
     }
 
-    return { key: body.key, issueType, status };
+    return { key: body.key, issueTypeId, issueTypeName, statusId, statusName };
   }
 
   async verifyIdentity(): Promise<void> {
@@ -89,7 +97,7 @@ export class JiraClient implements StoryIssueReader, JiraSetupReader {
     return body.map((issueType) => decodeIssueTypeWithStatuses(issueType));
   }
 
-  async findTransitionId(issueKey: string, targetStatus: string): Promise<string | undefined> {
+  async findTransitionId(issueKey: string, targetStatusId: string): Promise<string | undefined> {
     const response = await this.request(`/rest/api/3/issue/${encodeURIComponent(issueKey)}/transitions`);
     const body = (await response.json()) as { transitions?: unknown };
     if (!Array.isArray(body.transitions)) {
@@ -105,8 +113,8 @@ export class JiraClient implements StoryIssueReader, JiraSetupReader {
         typeof transition.id === "string" &&
         typeof transition.to === "object" &&
         transition.to !== null &&
-        "name" in transition.to &&
-        transition.to.name === targetStatus
+        "id" in transition.to &&
+        transition.to.id === targetStatusId
       ) {
         return transition.id;
       }

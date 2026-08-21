@@ -6,7 +6,7 @@ import type { GitRepositoryPort } from "../../src/domain/branch/git-repository.j
 
 function readers(overrides: Partial<StoryIssueReader> = {}): StoryIssueReader {
   return {
-    getIssue: vi.fn().mockResolvedValue({ key: "S15P11A108-100", issueType: "Story", status: "To Do" }),
+    getIssue: vi.fn().mockResolvedValue({ key: "S15P11A108-100", issueTypeId: "10", issueTypeName: "Story", statusId: "1", statusName: "To Do" }),
     findTransitionId: vi.fn().mockResolvedValue("31"),
     transition: vi.fn().mockResolvedValue(undefined),
     ...overrides,
@@ -31,8 +31,8 @@ const command = {
   projectKey: "S15P11A108",
   storyNumber: "100",
   name: "signup",
-  storyIssueType: "Story",
-  inProgressStatus: "In Progress",
+  storyIssueTypeId: "10",
+  inProgressStatusId: "2",
 };
 
 describe("createBranch", () => {
@@ -47,20 +47,37 @@ describe("createBranch", () => {
       transitioned: true,
     });
     expect(repository.createAndSwitch).toHaveBeenCalledWith("feat/100-signup");
-    expect(reader.findTransitionId).toHaveBeenCalledWith("S15P11A108-100", "In Progress");
+    expect(reader.findTransitionId).toHaveBeenCalledWith("S15P11A108-100", "2");
     expect(reader.transition).toHaveBeenCalledWith("S15P11A108-100", "31");
   });
 
   it("Story가 아니면 Git을 변경하지 않는다", async () => {
-    const reader = readers({ getIssue: vi.fn().mockResolvedValue({ key: "S15P11A108-100", issueType: "Task", status: "To Do" }) });
+    const reader = readers({
+      getIssue: vi.fn().mockResolvedValue({ key: "S15P11A108-100", issueTypeId: "20", issueTypeName: "Task", statusId: "1", statusName: "To Do" }),
+    });
     const repository = git();
 
-    await expect(createBranch(command, reader, repository)).resolves.toMatchObject({ kind: "failure", exitCode: 1 });
+    await expect(createBranch(command, reader, repository)).resolves.toMatchObject({
+      kind: "failure",
+      exitCode: 1,
+      message: "S15P11A108-100 이슈는 스토리 타입이 아닙니다. (실제 타입: Task)",
+    });
     expect(repository.createAndSwitch).not.toHaveBeenCalled();
   });
 
+  it("이슈 유형 이름이 Jira 응답 엔드포인트마다 다르게 와도 ID로 정확히 비교한다", async () => {
+    const reader = readers({
+      getIssue: vi.fn().mockResolvedValue({ key: "S15P11A108-100", issueTypeId: "10", issueTypeName: "스토리", statusId: "1", statusName: "할 일" }),
+    });
+    const repository = git();
+
+    await expect(createBranch(command, reader, repository)).resolves.toMatchObject({ kind: "success" });
+  });
+
   it("이미 진행 중이면 브랜치만 만들고 transition 호출은 건너뛴다", async () => {
-    const reader = readers({ getIssue: vi.fn().mockResolvedValue({ key: "S15P11A108-100", issueType: "Story", status: "In Progress" }) });
+    const reader = readers({
+      getIssue: vi.fn().mockResolvedValue({ key: "S15P11A108-100", issueTypeId: "10", issueTypeName: "Story", statusId: "2", statusName: "In Progress" }),
+    });
 
     await expect(createBranch(command, reader, git())).resolves.toMatchObject({ kind: "success", transitioned: false });
     expect(reader.findTransitionId).not.toHaveBeenCalled();

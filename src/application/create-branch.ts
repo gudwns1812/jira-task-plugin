@@ -11,8 +11,8 @@ export interface CreateBranchCommand {
   projectKey: string;
   storyNumber: string;
   name: string;
-  storyIssueType: string;
-  inProgressStatus: string;
+  storyIssueTypeId: string;
+  inProgressStatusId: string;
 }
 
 export type CreateBranchResult =
@@ -41,8 +41,12 @@ export async function createBranch(
     return toPreBranchJiraFailure(error);
   }
 
-  if (issue.issueType !== command.storyIssueType) {
-    return { kind: "failure", exitCode: 1, message: `${storyKey} 이슈는 ${command.storyIssueType} 타입이 아닙니다.` };
+  if (issue.issueTypeId !== command.storyIssueTypeId) {
+    return {
+      kind: "failure",
+      exitCode: 1,
+      message: `${storyKey} 이슈는 스토리 타입이 아닙니다. (실제 타입: ${issue.issueTypeName})`,
+    };
   }
 
   try {
@@ -54,12 +58,12 @@ export async function createBranch(
     return { kind: "failure", exitCode: 5, message: messageOf(error) };
   }
 
-  if (issue.status === command.inProgressStatus) {
+  if (issue.statusId === command.inProgressStatusId) {
     return { kind: "success", branchName, storyKey, transitioned: false };
   }
 
   try {
-    const transitionId = await storyIssueReader.findTransitionId(storyKey, command.inProgressStatus);
+    const transitionId = await storyIssueReader.findTransitionId(storyKey, command.inProgressStatusId);
     if (!transitionId) {
       return partialSuccess(branchName, storyKey, "진행 중 상태로 전환할 수 있는 Jira 워크플로를 찾지 못했습니다.");
     }
