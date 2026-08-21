@@ -15,9 +15,38 @@ const projectKeySchema = requiredText.regex(/^[A-Z][A-Z0-9_]*$/, {
   message: "프로젝트 키는 대문자 영문으로 시작하고 대문자 영문·숫자·밑줄만 사용할 수 있습니다.",
 });
 const jiraBaseUrlSchema = z.url({ message: "Jira 주소는 http 또는 https URL이어야 합니다." });
+const jiraNamedValueSchema = z
+  .object({
+    id: requiredText,
+    name: requiredText,
+  })
+  .strict();
 const jiraSettingsSchema = z
   .object({
     baseUrl: jiraBaseUrlSchema.optional(),
+    email: requiredText.optional(),
+    project: z
+      .object({
+        id: requiredText,
+        name: requiredText,
+      })
+      .strict()
+      .optional(),
+    issueTypes: z
+      .object({
+        story: jiraNamedValueSchema.optional(),
+        task: jiraNamedValueSchema.optional(),
+        epic: jiraNamedValueSchema.optional(),
+      })
+      .strict()
+      .optional(),
+    statuses: z
+      .object({
+        story: z.object({ start: jiraNamedValueSchema.optional() }).strict().optional(),
+        task: z.object({ done: jiraNamedValueSchema.optional() }).strict().optional(),
+      })
+      .strict()
+      .optional(),
     storyIssueType: requiredText.optional(),
     inProgressStatus: requiredText.optional(),
   })

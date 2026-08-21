@@ -42,6 +42,22 @@ describe("resolveWorkPolicy", () => {
     });
   });
 
+  it("설정 마법사가 저장한 Jira ID와 표시 이름을 유지한다", () => {
+    expect(
+      resolveJiraTaskConfig({
+        projectKey: "S15P11A108",
+        jira: {
+          baseUrl: "https://team.atlassian.net",
+          project: { id: "10001", name: "특화 프로젝트" },
+          issueTypes: { story: { id: "10", name: "스토리" }, task: { id: "11", name: "작업" }, epic: { id: "12", name: "에픽" } },
+          statuses: { story: { start: { id: "3", name: "진행 중" } }, task: { done: { id: "4", name: "완료" } } },
+        },
+      }),
+    ).toMatchObject({
+      jira: { issueTypes: { story: { id: "10", name: "스토리" } }, statuses: { story: { start: { id: "3" } } } },
+    });
+  });
+
   it("비어 있거나 형식이 잘못된 Jira 프로젝트 키를 거부한다", () => {
     expect(() => resolveJiraTaskConfig({ projectKey: "" })).toThrow(PolicyConfigurationError);
     expect(() => resolveJiraTaskConfig({ projectKey: "team project" })).toThrow(PolicyConfigurationError);

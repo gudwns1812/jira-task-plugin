@@ -10,34 +10,27 @@ npm install -g task-jira-cli
 jira-task --help
 ```
 
-Node.js 22 이상과 Git이 필요합니다.
+Node.js 22.13 이상과 Git이 필요합니다.
 
 ## 처음 한 번 설정하기
 
-### 1. 정책 파일 만들기
+### 1. 초기 설정 마법사 실행
 
 ```bash
-jira-task config init
-jira-task config show
+jira-task
+```
+
+Jira 주소·이메일·API 토큰을 입력하면 연결을 확인한 뒤, 접근 가능한 프로젝트와 실제 이슈 유형·상태를 선택합니다. API 토큰은 설정 파일이 아닌 운영체제 자격 증명 저장소에 보관됩니다.
+
+중간에 취소하면 어떤 설정도 저장하지 않습니다. 설정을 다시 하려면 다음 명령을 사용하세요.
+
+```bash
+jira-task config setup
 ```
 
 기본 설정 파일은 `~/.jira-task/policy.json`입니다. 팀 설정 파일을 따로 쓰려면 명령에 `--config ./team-policy.json`을 추가하면 됩니다.
 
-### 2. Jira와 브랜치 생성 설정하기
-
-Story 브랜치를 만들려면 프로젝트와 Jira 워크플로 이름을 설정합니다.
-
-```bash
-jira-task config set \
-  --project S15P11A108 \
-  --base-url https://team.atlassian.net \
-  --story-type Story \
-  --in-progress-status "In Progress"
-```
-
-`--story-type`과 `--in-progress-status`에는 Jira 화면에 표시되는 이름을 그대로 입력하세요. 팀 Jira가 한국어라면 `스토리`, `진행 중`처럼 설정할 수 있습니다.
-
-Jira 인증 정보는 환경 변수로 설정합니다.
+자동화 환경에서는 마법사 대신 환경 변수를 사용할 수 있습니다. 환경 변수는 저장된 자격 증명보다 우선합니다.
 
 ```bash
 export JIRA_EMAIL="user@example.com"
@@ -152,17 +145,14 @@ jira-task branch create --story 100 --name signup
 ## 설정 명령
 
 ```bash
-# 기본 파일 생성
-jira-task config init
+# 설정 마법사 다시 실행
+jira-task config setup
 
-# 현재 설정 보기
+# 현재 설정 보기 (이메일·토큰은 출력하지 않음)
 jira-task config show
 
-# 프로젝트 키만 변경
+# 자동화 스크립트에서 비밀이 아닌 설정 변경
 jira-task config set --project S15P11A108
-
-# 진행 상태 이름만 변경
-jira-task config set --in-progress-status "In Progress"
 ```
 
 정책 파일에서 허용 영역, 업무 분류, 포인트, 레이블도 조정할 수 있습니다.

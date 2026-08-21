@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -20,6 +20,15 @@ export async function loadWorkPolicy(configPath?: string): Promise<WorkPolicy> {
 
 export async function loadJiraTaskConfig(configPath?: string): Promise<JiraTaskConfig> {
   return loadStoredConfig(configPath ?? DEFAULT_POLICY_CONFIG_PATH, !configPath);
+}
+
+export async function hasJiraTaskConfig(configPath = DEFAULT_POLICY_CONFIG_PATH): Promise<boolean> {
+  try {
+    await access(configPath);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function setProjectKey(projectKey: string, configPath?: string): Promise<string> {
