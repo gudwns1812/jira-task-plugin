@@ -174,10 +174,16 @@ T18부터 새로 작성하는 코드도 이 네 가지 규칙을 따른다.
 - **산출물**: `application/EditSettings.kt`(`SettingsSnapshot`/`SettingsEdit`/`SettingsLoad`/`EditSettingsUseCase`), `ui/JiraTaskConfigurable.kt`, `plugin.xml`에 `applicationConfigurable`(id `io.github.gudwns1812.jiratask.settings`, parentId `tools`) 등록. 테스트: `application/EditSettingsTest.kt` (13 tests, Swing 없이 저장·검증·이메일 미노출 검증), `ui/JiraTaskConfigurableTest.kt` (10 tests, `BasePlatformTestCase`에서 실제 패널을 만들어 컴포넌트 트리의 모든 문자열을 훑어 표시값·이메일 미노출·`JPasswordField` 부재까지 확인).
 - **검증**: `./gradlew test` 149개 전부 통과(신규 23개), `./gradlew build buildPlugin` 통과, 컴파일 경고 0건. `buildSearchableOptions`가 만든 `p-io.github.gudwns1812.jiratask-searchableOptions.json`에 이 패널이 `{"id":"io.github.gudwns1812.jiratask.settings","name":"Jira Task"}`로 색인되어(항목: Jira 프로젝트 키/Jira 주소/스토리 유형/… ) 실제 헤드리스 IDE가 패널을 로드·렌더링했음을 확인. CLI 기존 테스트(`npm test`) 101개도 그대로 통과.
 
-### T19. 초기 설정 마법사 다이얼로그 구현 (`config setup` 대체)
+### T19. 초기 설정 마법사 다이얼로그 구현 (`config setup` 대체) — (완료)
 - **내용**: T18에서 보류한 "설정 마법사 다시 실행" 버튼을 Settings 패널에 추가하고, `SetupPrompter`의 IntelliJ 구현체 — Jira 주소/이메일/API 토큰 입력 다이얼로그(토큰은 `JBPasswordField`), 프로젝트/이슈유형/상태 선택 콤보박스, 최종 확인 다이얼로그. 플러그인 최초 사용 시(설정 없음) 자동 트리거 옵션도 포함.
 - **의존**: T17, T18.
 - **완료 기준**: 정상 흐름 수동 시나리오 테스트 + 취소 시 아무 것도 저장되지 않는 것을 검증하는 테스트(가능한 범위에서 헤드리스 테스트, UI 부분은 수동 검증 문서화).
+- **설계**: 다이얼로그 껍데기(`DialogWrapper`)와 입력 폼을 분리했다 — `SetupConnectionForm`/`SetupChoiceForm`은 순수 Swing 컴포넌트라 다이얼로그를 띄우지 않고 검증·정규화·선택 매핑을 테스트할 수 있고, `SetupConnectionDialog`/`SetupChoiceDialog`/`SetupConfirmDialog`는 그 폼을 감싸는 얇은 껍데기다. 입력 검증 규칙 자체는 애플리케이션 계층(`SetupConnection.problemOf`/`of`)에 두어 CLI 프롬프트의 `validate`와 같은 위치에 맞췄다.
+- **스레드**: 유스케이스는 `Task.Backgroundable`(백그라운드)에서 돌고, `DialogSetupPrompter`가 각 물음을 `invokeAndWait`로 EDT에 넘겨 응답을 기다린다. Jira 네트워크 호출이 EDT를 막지 않으면서도 CLI와 같은 동기 흐름을 유지한다.
+- **자동 트리거 결정**: CLI는 인자 없이 실행하면 곧바로 대화형 설정을 시작하지만, IDE 시작 직후 모달 다이얼로그를 강제로 띄우는 것은 침습적이다. 대신 `postStartupActivity`가 설정이 없을 때 "설정 시작" 액션이 붙은 알림 하나를 띄운다.
+- **산출물**: `application/RunInitialSetup.kt`에 `SetupConnection.problemOf`/`of`, `SetupInputError`, `SetupSummary.toDisplayLines` 추가, `domain/policy/PolicyConfig.kt`의 `JiraSettings.toRawMap()` 공개(마법사 저장 경로에서 필요), `ui/JiraTaskNotifications.kt`(CLI 종료 코드 → 알림 심각도), `ui/setup/SetupForms.kt`, `ui/setup/SetupDialogs.kt`(`DialogSetupPrompter` 포함), `ui/setup/SetupWizard.kt`(`SetupWizard`, `SetupWizardResult`, `SetupFailureMessages`, `SetupWizardLauncher`), `ui/RunSetupWizardAction.kt`(액션 + `JiraTaskSetupStartupActivity`), Settings 패널에 "설정 마법사 다시 실행" 버튼(T18에서 보류한 항목), `plugin.xml`에 `notificationGroup`/`postStartupActivity`/액션 등록.
+- **테스트**: `ui/setup/SetupWizardTest.kt` (12 tests — 정상 흐름 저장 내용 전체 검증, 연결 취소/요약 거부 시 설정·토큰 모두 미저장, 인증 실패 후 재시도하면 성공한 토큰만 저장, 프로젝트 없음/이슈 유형 누락 시 이유 그대로 안내, 네트워크 오류 세부 내용은 일반 문구로 감춤, 자격 증명 저장 실패 시 설정도 저장 안 됨, 요약에 이메일·토큰 미포함), `ui/setup/SetupFormsTest.kt` (6 tests), `ui/JiraTaskConfigurableTest.kt`에 마법사 버튼 동작·자동 트리거 조건 테스트 2건 추가. `./gradlew test` 169개 전부 통과, 컴파일 경고 0건.
+- **수동 검증 필요 항목**: 실제 다이얼로그 모양과 `runIde` 샌드박스에서의 전체 흐름(연결 → 프로젝트 선택 → 상태 선택 → 저장)은 T25의 수동 확인 항목으로 남긴다.
 
 ### T20. 이슈 생성/검증 다이얼로그 구현 (`template` + `validate` + `create --dry-run` 대체)
 - **내용**: 이슈 타입(에픽/스토리/작업) 선택 → 타입별 입력 폼(제목, 담당자, 우선순위, 포인트, 스프린트, 기한, 설명/결과물 목록 등) → 입력 변경 시 실시간 검증 결과(오류/경고) 표시 → "미리보기"로 `CreateRequestDraft` JSON 표시. 설명 필드에는 T8의 템플릿을 placeholder로 제공.

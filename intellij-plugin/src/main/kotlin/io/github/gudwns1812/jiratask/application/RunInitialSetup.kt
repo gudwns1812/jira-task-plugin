@@ -7,8 +7,12 @@ import io.github.gudwns1812.jiratask.domain.jira.JiraProject
 import io.github.gudwns1812.jiratask.domain.jira.JiraSetupReader
 import io.github.gudwns1812.jiratask.domain.policy.JiraProjectRef
 import io.github.gudwns1812.jiratask.domain.policy.JiraSettings
+import java.net.URI
+import java.net.URISyntaxException
 
-data class SetupConnection(val baseUrl: String, val email: String, val apiToken: String)
+data class SetupConnection(val baseUrl: String, val email: String, val apiToken: String) {
+    companion object
+}
 
 data class SetupChoice(val value: String, val label: String)
 
@@ -155,4 +159,42 @@ class RunInitialSetupUseCase(
         private val TASK_ISSUE_TYPE_NAMES = setOf("작업", "task")
         private val EPIC_ISSUE_TYPE_NAMES = setOf("에픽", "epic")
     }
+}
+
+class SetupInputError(message: String) : Exception(message)
+
+/**
+ * 연결 입력값의 문제를 사람이 읽을 문구로 돌려준다. 문제가 없으면 null.
+ * 마법사 폼이 입력 중에도 같은 규칙으로 안내할 수 있도록 검증만 분리했다(CLI 프롬프트의 validate와 동일).
+ */
+fun SetupConnection.Companion.problemOf(baseUrl: String, email: String, apiToken: String): String? = when {
+    baseUrl.isBlank() -> "Jira 주소를 입력하세요."
+    !isHttpUrl(baseUrl.trim()) -> "https://team.atlassian.net 형식으로 입력하세요."
+    email.isBlank() -> "Jira 이메일을 입력하세요."
+    apiToken.isEmpty() -> "Jira API Token을 입력하세요."
+    else -> null
+}
+
+/** 검증한 뒤 정규화(주소 끝 슬래시 제거, 공백 제거)한 연결 정보를 만든다. */
+fun SetupConnection.Companion.of(baseUrl: String, email: String, apiToken: String): SetupConnection {
+    SetupConnection.problemOf(baseUrl, email, apiToken)?.let { throw SetupInputError(it) }
+    return SetupConnection(baseUrl.trim().trimEnd('/'), email.trim(), apiToken)
+}
+
+/** 최종 확인 화면에 보여줄 항목들. 이메일과 API 토큰은 담지 않는다. */
+fun SetupSummary.toDisplayLines(): List<Pair<String, String>> = listOf(
+    "Jira 주소" to baseUrl,
+    "프로젝트" to "${project.key} - ${project.name}",
+    "스토리 유형" to storyIssueType.name,
+    "작업 유형" to taskIssueType.name,
+    "에픽 유형" to epicIssueType.name,
+    "스토리 시작 상태" to storyStartStatus.name,
+    "작업 완료 상태" to taskDoneStatus.name,
+)
+
+private fun isHttpUrl(value: String): Boolean = try {
+    val scheme = URI(value).scheme
+    scheme == "http" || scheme == "https"
+} catch (error: URISyntaxException) {
+    false
 }

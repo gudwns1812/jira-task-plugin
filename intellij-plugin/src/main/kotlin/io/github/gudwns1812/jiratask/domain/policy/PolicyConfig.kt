@@ -117,7 +117,8 @@ fun JiraTaskConfig.toRawMap(): Map<String, Any?> {
     return result
 }
 
-private fun JiraSettings.toRawMap(): Map<String, Any?> {
+/** 설정 저장소가 다시 읽을 수 있는 원시 구조로 되돌린다(초기 설정 마법사가 저장할 때 사용). */
+fun JiraSettings.toRawMap(): Map<String, Any?> {
     val result = mutableMapOf<String, Any?>()
     baseUrl?.let { result["baseUrl"] = it }
     email?.let { result["email"] = it }

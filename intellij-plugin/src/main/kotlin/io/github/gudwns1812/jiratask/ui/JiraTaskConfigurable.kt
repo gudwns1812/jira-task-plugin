@@ -15,6 +15,7 @@ import io.github.gudwns1812.jiratask.application.SettingsSnapshot
 import io.github.gudwns1812.jiratask.application.empty
 import io.github.gudwns1812.jiratask.domain.policy.PolicyConfigurationError
 import io.github.gudwns1812.jiratask.infrastructure.PolicyConfigRepository
+import io.github.gudwns1812.jiratask.ui.setup.SetupWizardLauncher
 import javax.swing.JComponent
 
 /**
@@ -26,6 +27,7 @@ import javax.swing.JComponent
  */
 class JiraTaskConfigurable @JvmOverloads constructor(
     private val settings: EditSettingsUseCase = persistedSettings(),
+    private val launchSetupWizard: () -> Unit = { SetupWizardLauncher.launch(null) },
 ) : Configurable {
 
     private val projectKeyField = JBTextField()
@@ -72,6 +74,10 @@ class JiraTaskConfigurable @JvmOverloads constructor(
                 row("업무 분류:") { cell(workCategoriesLabel) }
                 row("스토리 포인트:") { cell(storyPointsLabel) }
             }
+
+            row {
+                button(RUN_WIZARD_BUTTON) { launchSetupWizard() }
+            }.rowComment("Jira 연결·프로젝트·이슈 유형·상태를 마법사로 처음부터 다시 설정합니다.")
 
             row { cell(problemLabel) }
         }
@@ -126,6 +132,7 @@ class JiraTaskConfigurable @JvmOverloads constructor(
 
     companion object {
         const val NOT_CONFIGURED: String = "설정되지 않음"
+        const val RUN_WIZARD_BUTTON: String = "설정 마법사 다시 실행"
     }
 }
 

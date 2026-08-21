@@ -8,6 +8,8 @@
     <depends>com.intellij.modules.platform</depends>
 
     <extensions defaultExtensionNs="com.intellij">
+        <notificationGroup id="Jira Task" displayType="BALLOON"/>
+        <postStartupActivity implementation="io.github.gudwns1812.jiratask.ui.JiraTaskSetupStartupActivity"/>
         <applicationConfigurable id="io.github.gudwns1812.jiratask.settings"
                                  parentId="tools"
                                  instance="io.github.gudwns1812.jiratask.ui.JiraTaskConfigurable"
@@ -15,6 +17,12 @@
     </extensions>
 
     <actions>
+        <action id="JiraTask.RunSetupWizard"
+                class="io.github.gudwns1812.jiratask.ui.RunSetupWizardAction"
+                text="Jira Task 설정 마법사"
+                description="Jira 연결과 프로젝트 기본값을 마법사로 설정합니다">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+        </action>
         <action id="JiraTask.CreateIssue"
                 class="io.github.gudwns1812.jiratask.CreateJiraIssueAction"
                 text="Create Jira Issue"

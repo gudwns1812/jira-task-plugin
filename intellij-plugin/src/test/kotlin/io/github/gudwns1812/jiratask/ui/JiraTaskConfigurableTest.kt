@@ -204,6 +204,33 @@ class JiraTaskConfigurableTest : BasePlatformTestCase() {
         assertEquals("Jira Task", registered.single().displayName)
     }
 
+    fun `test offers a button that starts the setup wizard`() {
+        var launched = 0
+        val configurable = JiraTaskConfigurable(
+            EditSettingsUseCase(configuredRepository()::loadConfig, configuredRepository()::saveConfig),
+        ) { launched++ }
+
+        val button = buttonsOf(configurable.createComponent())
+            .single { it.text == JiraTaskConfigurable.RUN_WIZARD_BUTTON }
+        button.doClick()
+
+        assertEquals(1, launched)
+    }
+
+    fun `test reports the setup as needed only while nothing is configured`() {
+        assertTrue(JiraTaskSetupStartupActivity.setupNeeded(repository()))
+        assertFalse(JiraTaskSetupStartupActivity.setupNeeded(configuredRepository()))
+    }
+
+    private fun buttonsOf(container: Container): List<javax.swing.JButton> {
+        val found = mutableListOf<javax.swing.JButton>()
+        if (container is javax.swing.JButton) {
+            found += container
+        }
+        container.components.filterIsInstance<Container>().forEach { found += buttonsOf(it) }
+        return found
+    }
+
     private fun projectKeyFieldOf(component: JComponent): JTextComponent = editableFieldsOf(component)[0]
 
     private fun baseUrlFieldOf(component: JComponent): JTextComponent = editableFieldsOf(component)[1]
