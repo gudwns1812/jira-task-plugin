@@ -185,10 +185,15 @@ T18부터 새로 작성하는 코드도 이 네 가지 규칙을 따른다.
 - **테스트**: `ui/setup/SetupWizardTest.kt` (12 tests — 정상 흐름 저장 내용 전체 검증, 연결 취소/요약 거부 시 설정·토큰 모두 미저장, 인증 실패 후 재시도하면 성공한 토큰만 저장, 프로젝트 없음/이슈 유형 누락 시 이유 그대로 안내, 네트워크 오류 세부 내용은 일반 문구로 감춤, 자격 증명 저장 실패 시 설정도 저장 안 됨, 요약에 이메일·토큰 미포함), `ui/setup/SetupFormsTest.kt` (6 tests), `ui/JiraTaskConfigurableTest.kt`에 마법사 버튼 동작·자동 트리거 조건 테스트 2건 추가. `./gradlew test` 169개 전부 통과, 컴파일 경고 0건.
 - **수동 검증 필요 항목**: 실제 다이얼로그 모양과 `runIde` 샌드박스에서의 전체 흐름(연결 → 프로젝트 선택 → 상태 선택 → 저장)은 T25의 수동 확인 항목으로 남긴다.
 
-### T20. 이슈 생성/검증 다이얼로그 구현 (`template` + `validate` + `create --dry-run` 대체)
+### T20. 이슈 생성/검증 다이얼로그 구현 (`template` + `validate` + `create --dry-run` 대체) — (완료)
 - **내용**: 이슈 타입(에픽/스토리/작업) 선택 → 타입별 입력 폼(제목, 담당자, 우선순위, 포인트, 스프린트, 기한, 설명/결과물 목록 등) → 입력 변경 시 실시간 검증 결과(오류/경고) 표시 → "미리보기"로 `CreateRequestDraft` JSON 표시. 설명 필드에는 T8의 템플릿을 placeholder로 제공.
 - **의존**: T14.
 - **완료 기준**: 정상 입력 시 미리보기 정상 생성, 필수값 누락/형식 오류 시 실시간 오류 표시, 경고와 오류 UI 구분 테스트.
+- **설계**: 폼 문자열 → 원시 입력(`IssueFormInput.toRawInput()`) → 검증·초안(`IssueDraftPresenter.present`)까지를 Swing 없는 순수 코드로 두고, `IssueDraftForm`/`CreateIssueDraftDialog`는 위젯과 값의 왕복만 담당한다. 빈 칸은 키 자체를 넣지 않아 CLI가 JSON에서 필드를 빼먹었을 때와 똑같은 검증 메시지가 나온다. 유형을 바꾸면 그 유형의 키만 전송하므로 파서의 "허용되지 않는 필드" 오류가 나지 않는다.
+- **실제 생성 기능 없음**: CLI의 `create`도 `--dry-run` 없이는 "실제 Jira 생성은 아직 지원하지 않습니다"로 거부한다(`src/cli/index.ts`). 이식 대상이 없으므로 플러그인도 실제 생성(POST)을 하지 않고, 확인 버튼은 만들어진 초안 JSON을 클립보드로 복사한다. 실제 생성은 이식이 아닌 신규 기능이므로 별도 작업으로 남긴다.
+- **설정 확인 공통화**: 액션이 실행 전에 설정을 확인하는 부분(CLI `index.ts`의 `getBranchConfig` 등)을 `ui/JiraTaskSettings.kt`로 모았다. 프로젝트 키/Jira 주소/스토리 타입/진행 상태/이메일/토큰이 없으면 무엇이 없는지 한 번에 알려주고, `JIRA_EMAIL`·`JIRA_API_TOKEN` 환경 변수를 CLI와 같은 우선순위로 먼저 본다.
+- **산출물**: `ui/issue/IssueDraftPresenter.kt`(`IssueFormInput`, `IssueDraftView`), `ui/issue/IssueDraftForm.kt`, `ui/issue/CreateIssueDraftDialog.kt`, `ui/issue/CreateIssueDraftAction.kt`, `ui/JiraTaskSettings.kt`, `plugin.xml`에 액션 등록.
+- **테스트**: `ui/issue/IssueDraftPresenterTest.kt` (15 tests — 유형별 정상 초안, 결과물 줄 파싱, 필수값 누락 다건 동시 보고, 정책 밖 스토리 포인트, 숫자가 아닌 포인트, 불가능한 날짜, 제목 형식·미지의 영역, 경고만 있을 때 초안 유지, 커스텀 정책, 유형별 키 전송), `ui/issue/CreateIssueDraftDialogTest.kt` (8 tests — 빈 폼에서 확인 비활성, 타이핑 중 검증, 미리보기 전/후, 입력이 바뀌면 낡은 미리보기 지움, 유형 전환, 작성 예시 표시), `ui/JiraTaskSettingsTest.kt` (9 tests). `./gradlew test` 201개 전부 통과.
 
 ### T21. "Create Story Branch" 액션 구현 (`branch create` 대체)
 - **내용**: 스토리 번호·작업명(name) 입력 다이얼로그 → T15 유스케이스 실행 → 성공/부분성공/실패를 `Notification`으로 표시. 기존 `CreateJiraIssueAction` 자리표시자를 대체하거나 별도 액션으로 추가(`plugin.xml` 갱신).
