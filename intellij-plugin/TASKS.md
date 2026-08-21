@@ -195,15 +195,23 @@ T18부터 새로 작성하는 코드도 이 네 가지 규칙을 따른다.
 - **산출물**: `ui/issue/IssueDraftPresenter.kt`(`IssueFormInput`, `IssueDraftView`), `ui/issue/IssueDraftForm.kt`, `ui/issue/CreateIssueDraftDialog.kt`, `ui/issue/CreateIssueDraftAction.kt`, `ui/JiraTaskSettings.kt`, `plugin.xml`에 액션 등록.
 - **테스트**: `ui/issue/IssueDraftPresenterTest.kt` (15 tests — 유형별 정상 초안, 결과물 줄 파싱, 필수값 누락 다건 동시 보고, 정책 밖 스토리 포인트, 숫자가 아닌 포인트, 불가능한 날짜, 제목 형식·미지의 영역, 경고만 있을 때 초안 유지, 커스텀 정책, 유형별 키 전송), `ui/issue/CreateIssueDraftDialogTest.kt` (8 tests — 빈 폼에서 확인 비활성, 타이핑 중 검증, 미리보기 전/후, 입력이 바뀌면 낡은 미리보기 지움, 유형 전환, 작성 예시 표시), `ui/JiraTaskSettingsTest.kt` (9 tests). `./gradlew test` 201개 전부 통과.
 
-### T21. "Create Story Branch" 액션 구현 (`branch create` 대체)
+### T21. "Create Story Branch" 액션 구현 (`branch create` 대체) — (완료)
 - **내용**: 스토리 번호·작업명(name) 입력 다이얼로그 → T15 유스케이스 실행 → 성공/부분성공/실패를 `Notification`으로 표시. 기존 `CreateJiraIssueAction` 자리표시자를 대체하거나 별도 액션으로 추가(`plugin.xml` 갱신).
 - **의존**: T15, T18(설정 값 읽기).
 - **완료 기준**: 성공/partial-success/실패 각 케이스에서 올바른 알림 메시지와 심각도(정보/경고/오류)가 표시되는지 테스트.
+- **설계**: 다이얼로그 입력 검증은 도메인 규칙(`BranchNames`)을 그대로 호출해(`BranchFormInput.problem()`) 입력 중 안내와 실행 시 판단이 어긋나지 않게 했다. 결과 → 알림 매핑은 `BranchReports`로 분리해 심각도까지 단위 테스트한다(성공=정보, 부분 성공=경고, 실패=오류 — CLI 종료 코드 0/4/그 외에 대응).
+- **작업 디렉터리**: `GitRepository`는 CLI에서 프로세스의 현재 디렉터리를 쓰지만, 플러그인에서는 `project.basePath`를 넘긴다. 프로젝트가 없으면 액션 자체를 비활성화한다.
+- **산출물**: `ui/branch/CreateStoryBranch.kt`(`BranchFormInput`, `BranchReports`), `ui/branch/CreateStoryBranchAction.kt`(다이얼로그 + 액션), `plugin.xml` 등록.
+- **테스트**: `ui/branch/CreateStoryBranchTest.kt` (7 tests), `ui/branch/CreateStoryBranchDialogTest.kt` (4 tests — 유효할 때까지 확인 버튼 비활성, 검증 문구, 입력 트림, 프로젝트 없을 때 액션 비활성).
 
-### T22. 작업 번호 관리 UI 구현 (`task start` 대체)
+### T22. 작업 번호 관리 UI 구현 (`task start` 대체) — (완료)
 - **내용**: "Start Jira Task" 액션(작업 번호 입력) + 현재 저장된 작업 번호를 보여주는 상태 표시(예: 상태 표시줄 위젯 또는 툴 윈도우).
 - **의존**: T16.
 - **완료 기준**: 저장 후 상태 표시 갱신 확인, 저장소가 아닌 프로젝트에서 액션 비활성화 확인.
+- **설계**: 값의 정본은 CLI와 같은 로컬 git 설정(`jira-task.current-task`)이지만, 상태 표시줄이 그릴 때마다 git을 호출하면 EDT를 막으므로 프로젝트 서비스 `CurrentTaskState`에 캐시한다. 작업 시작 직후에는 저장한 값을 그대로 반영하고, 위젯이 설치될 때는 백그라운드에서 git을 읽어 갱신한다.
+- **완료 기준 보정**: "저장소가 아닌 프로젝트에서 비활성화"는 액션 시점에 git 저장소 여부를 확인하는 대신(그 자체가 git 호출이라 EDT에서 할 수 없다) `project.basePath` 유무로 판단하고, 저장소가 아닌 경우는 유스케이스가 CLI와 같은 메시지("Git 저장소에서 실행해야 합니다.")로 실패시켜 오류 알림으로 안내한다.
+- **산출물**: `ui/task/CurrentTask.kt`(`TaskFormInput`, `CurrentTaskText`, `StartTaskReports`, `CurrentTaskState`), `ui/task/CurrentTaskWidget.kt`(상태 표시줄 위젯 + 팩토리, 클릭하면 작업 번호 변경), `ui/task/StartTaskAction.kt`, `plugin.xml`에 `statusBarWidgetFactory`와 액션 등록.
+- **테스트**: `ui/task/CurrentTaskTest.kt` (6 tests), `ui/task/CurrentTaskWidgetTest.kt` (6 tests — 캐시 반영, 팩토리 가용성, git 저장소가 아닐 때 빈 값, 다이얼로그 기본값·검증, 프로젝트 없을 때 액션 비활성).
 
 ### T23. 커밋 메시지 자동 완성 연동 (`commit` 대체)
 - **내용**: `CheckinHandlerFactory`/`VcsCheckinHandlerFactory`를 구현해 Git 커밋 다이얼로그에서 저장된 작업 번호 + 설정된 프로젝트 키로 이슈 키를 자동 접두(prefix)하거나, 별도 "Commit with Jira Task" 액션 제공.

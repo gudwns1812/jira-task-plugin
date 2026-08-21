@@ -9,6 +9,9 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <notificationGroup id="Jira Task" displayType="BALLOON"/>
+        <statusBarWidgetFactory id="JiraTask.CurrentTask"
+                                implementation="io.github.gudwns1812.jiratask.ui.task.CurrentTaskWidgetFactory"
+                                order="last"/>
         <postStartupActivity implementation="io.github.gudwns1812.jiratask.ui.JiraTaskSetupStartupActivity"/>
         <applicationConfigurable id="io.github.gudwns1812.jiratask.settings"
                                  parentId="tools"
@@ -21,6 +24,18 @@
                 class="io.github.gudwns1812.jiratask.ui.RunSetupWizardAction"
                 text="Jira Task 설정 마법사"
                 description="Jira 연결과 프로젝트 기본값을 마법사로 설정합니다">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+        </action>
+        <action id="JiraTask.StartTask"
+                class="io.github.gudwns1812.jiratask.ui.task.StartTaskAction"
+                text="Start Jira Task"
+                description="커밋에 사용할 현재 Jira 작업 번호를 저장합니다">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+        </action>
+        <action id="JiraTask.CreateStoryBranch"
+                class="io.github.gudwns1812.jiratask.ui.branch.CreateStoryBranchAction"
+                text="Create Story Branch"
+                description="스토리 번호로 브랜치를 만들고 Jira 스토리를 진행 중으로 전환합니다">
             <add-to-group group-id="ToolsMenu" anchor="last"/>
         </action>
         <action id="JiraTask.CreateIssueDraft"
