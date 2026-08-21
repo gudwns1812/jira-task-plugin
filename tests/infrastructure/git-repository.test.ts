@@ -41,6 +41,43 @@ describe("GitRepository", () => {
       await rm(directory, { recursive: true, force: true });
     }
   });
+
+  it("현재 작업 번호를 저장소별로 저장하고 읽는다", async () => {
+    const directory = await createRepository();
+
+    try {
+      const repository = new GitRepository(directory);
+      await expect(repository.getCurrentTaskNumber()).resolves.toBeUndefined();
+
+      await repository.setCurrentTaskNumber("105");
+      await expect(repository.getCurrentTaskNumber()).resolves.toBe("105");
+
+      await repository.setCurrentTaskNumber("210");
+      await expect(repository.getCurrentTaskNumber()).resolves.toBe("210");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("스테이지된 변경 사항 여부를 확인하고 커밋한다", async () => {
+    const directory = await createRepository();
+
+    try {
+      const repository = new GitRepository(directory);
+      await expect(repository.ensureStagedChanges()).rejects.toBeInstanceOf(GitRepositoryError);
+
+      await writeFile(join(directory, "feature.txt"), "feature");
+      await execFileAsync("git", ["add", "feature.txt"], { cwd: directory });
+      await expect(repository.ensureStagedChanges()).resolves.toBeUndefined();
+
+      await repository.commit("S15P11A108-105 기능 추가");
+      await expect(execFileAsync("git", ["log", "-1", "--pretty=%s"], { cwd: directory })).resolves.toMatchObject({
+        stdout: "S15P11A108-105 기능 추가\n",
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
 });
 
 async function createRepository(): Promise<string> {

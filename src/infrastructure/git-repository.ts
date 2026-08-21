@@ -48,6 +48,34 @@ export class GitRepository implements GitRepositoryPort {
     await this.run(["switch", "-c", branchName]);
   }
 
+  async setCurrentTaskNumber(taskNumber: string): Promise<void> {
+    await this.run(["config", "--local", "jira-task.current-task", taskNumber]);
+  }
+
+  async getCurrentTaskNumber(): Promise<string | undefined> {
+    try {
+      const result = await execFileAsync("git", ["config", "--local", "--get", "jira-task.current-task"], { cwd: this.cwd });
+      const taskNumber = result.stdout.trim();
+      return taskNumber.length > 0 ? taskNumber : undefined;
+    } catch (error) {
+      if (isExitCode(error, 1)) {
+        return undefined;
+      }
+      throw new GitRepositoryError("Git 명령을 실행하지 못했습니다.");
+    }
+  }
+
+  async ensureStagedChanges(): Promise<void> {
+    const { stdout } = await this.run(["diff", "--cached", "--name-only"]);
+    if (stdout.trim().length === 0) {
+      throw new GitRepositoryError("커밋할 스테이지된 변경 사항이 없습니다.");
+    }
+  }
+
+  async commit(message: string): Promise<void> {
+    await this.run(["commit", "-m", message]);
+  }
+
   private async run(args: string[]): Promise<{ stdout: string }> {
     try {
       const result = await execFileAsync("git", args, { cwd: this.cwd });
@@ -56,4 +84,8 @@ export class GitRepository implements GitRepositoryPort {
       throw new GitRepositoryError("Git 명령을 실행하지 못했습니다.");
     }
   }
+}
+
+function isExitCode(error: unknown, code: number): boolean {
+  return typeof error === "object" && error !== null && "code" in error && (error as { code: unknown }).code === code;
 }

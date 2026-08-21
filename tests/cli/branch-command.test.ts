@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest";
 const execFileAsync = promisify(execFile);
 const projectRoot = resolve(fileURLToPath(new URL(".", import.meta.url)), "../..");
 const cliPath = resolve(projectRoot, "src/cli/index.ts");
-const tsxLoader = resolve(projectRoot, "node_modules/tsx/dist/loader.mjs");
+const tsxLoader = pathToFileURL(resolve(projectRoot, "node_modules/tsx/dist/loader.mjs")).href;
 
 describe("branch create CLI", () => {
   it("프로젝트 키와 숫자 스토리 번호를 조립해 브랜치를 만들고 Jira 상태를 전환한다", async () => {

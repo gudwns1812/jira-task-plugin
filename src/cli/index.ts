@@ -3,8 +3,10 @@
 import { Command } from "commander";
 
 import { createBranch } from "../application/create-branch.js";
+import { createCommit } from "../application/create-commit.js";
 import { createDraft } from "../application/create-draft.js";
 import { runInitialSetup, SetupCancelledError, SetupSelectionError } from "../application/run-initial-setup.js";
+import { startTask } from "../application/start-task.js";
 import { validateRawIssue } from "../application/validate-issue.js";
 import { PolicyConfigurationError, resolveJiraTaskConfig } from "../domain/policy/policy-config.js";
 import { getIssueTemplate } from "../domain/template/issue-template.js";
@@ -253,6 +255,57 @@ branchCommand
     } catch (error) {
       const message = error instanceof PolicyConfigurationError || error instanceof CredentialStorageError ? error.message : "브랜치를 만들지 못했습니다.";
       console.error(`브랜치 생성 실패: ${message}`);
+      process.exitCode = 2;
+    }
+  });
+
+const taskCommand = program.command("task").description("현재 작업 중인 Jira 작업 번호를 관리합니다");
+
+taskCommand
+  .command("start")
+  .description("커밋에 사용할 현재 작업 번호를 저장합니다")
+  .requiredOption("--number <number>", "현재 프로젝트의 Jira 작업 번호")
+  .action(async (options: { number: string }) => {
+    try {
+      const result = await startTask(options.number, new GitRepository());
+
+      if (result.kind === "success") {
+        console.log(`현재 작업 번호를 저장했습니다: ${result.taskNumber}`);
+        return;
+      }
+
+      console.error(`작업 시작 실패: ${result.message}`);
+      process.exitCode = result.exitCode;
+    } catch {
+      console.error("작업 시작 실패: 작업 번호를 저장하지 못했습니다.");
+      process.exitCode = 2;
+    }
+  });
+
+program
+  .command("commit")
+  .description("현재 작업 번호로 Jira 이슈 키를 붙여 스테이지된 변경 사항을 커밋합니다")
+  .requiredOption("-m, --message <text>", "커밋 메시지")
+  .option("-c, --config <path>", "Jira 프로젝트 키를 읽을 설정 파일")
+  .action(async (options: { message: string; config?: string }) => {
+    try {
+      const config = await loadJiraTaskConfig(options.config);
+      if (!config.projectKey) {
+        throw new PolicyConfigurationError("Jira 프로젝트 키가 없습니다. config set --project <key>로 기본값을 설정하세요.");
+      }
+
+      const result = await createCommit({ projectKey: config.projectKey, message: options.message }, new GitRepository());
+
+      if (result.kind === "success") {
+        console.log(`커밋했습니다: ${result.commitMessage}`);
+        return;
+      }
+
+      console.error(`커밋 실패: ${result.message}`);
+      process.exitCode = result.exitCode;
+    } catch (error) {
+      const message = error instanceof PolicyConfigurationError ? error.message : "커밋하지 못했습니다.";
+      console.error(`커밋 실패: ${message}`);
       process.exitCode = 2;
     }
   });

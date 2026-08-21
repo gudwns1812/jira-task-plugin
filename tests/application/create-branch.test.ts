@@ -19,6 +19,10 @@ function git(overrides: Partial<GitRepositoryPort> = {}): GitRepositoryPort {
     ensureCleanWorkingTree: vi.fn().mockResolvedValue(undefined),
     ensureBranchAbsent: vi.fn().mockResolvedValue(undefined),
     createAndSwitch: vi.fn().mockResolvedValue(undefined),
+    setCurrentTaskNumber: vi.fn().mockResolvedValue(undefined),
+    getCurrentTaskNumber: vi.fn().mockResolvedValue(undefined),
+    ensureStagedChanges: vi.fn().mockResolvedValue(undefined),
+    commit: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }

@@ -142,6 +142,22 @@ jira-task branch create --story 100 --name signup
 
 브랜치 생성 후 Jira 상태 전환에 실패하면 브랜치는 남아 있습니다. 출력된 브랜치명과 Story 키를 확인한 뒤 Jira에서 상태를 전환하면 됩니다.
 
+### 6. 커밋하기
+
+```bash
+git add .
+jira-task commit -m "이메일 회원가입 화면 구현"
+```
+
+현재 브랜치명(`feat/100-signup`)에서 Story 번호를 읽고 설정된 프로젝트 키와 조합해 `S15P11A108-100 이메일 회원가입 화면 구현` 형태로 커밋 메시지를 만든 뒤 `git commit`을 실행합니다. 별도로 이슈 키를 입력할 필요가 없습니다.
+
+다음 상태에서는 커밋하지 않습니다.
+
+- 현재 디렉터리가 Git 저장소가 아닌 경우
+- 현재 브랜치명이 `feat/<번호>-<이름>` 형식이 아닌 경우 (Story 브랜치가 아닌 경우)
+- 스테이지된 변경 사항이 없는 경우
+- Jira 프로젝트 키가 설정되지 않은 경우
+
 ## 설정 명령
 
 ```bash
@@ -187,4 +203,5 @@ jira-task config --help
 jira-task validate --help
 jira-task create --help
 jira-task branch create --help
+jira-task commit --help
 ```

@@ -56,6 +56,7 @@ jira-task template task
 jira-task validate --file task.json
 jira-task create --file task.json --dry-run
 jira-task branch create --story 100 --name signup
+jira-task commit --message "이메일 회원가입 화면 구현"
 ```
 
 ### 명령별 책임
@@ -68,6 +69,7 @@ jira-task branch create --story 100 --name signup
 | `validate --file <path>` | 입력값과 규칙 검증, 오류 목록 출력 | 기본 없음 |
 | `create --dry-run` | Jira 요청 본문을 출력하고 생성하지 않음 | 없음 |
 | `branch create` | 스토리 번호와 작업명으로 Git 브랜치를 생성하고 스토리를 진행 중으로 전환 | Jira 조회·전환 |
+| `commit` | 현재 브랜치명에서 읽은 스토리 번호로 이슈 키를 만들어 커밋 메시지에 붙이고 커밋 | 없음 |
 
 `create --dry-run`은 내부에서 항상 `validate`와 동일한 검증기를 호출해야 한다. 검증 명령과 초안 명령의 규칙이 갈라지는 일을 막는다.
 
