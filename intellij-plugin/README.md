@@ -12,6 +12,7 @@
 | 이슈 초안 검증·미리보기 | `Tools > Jira Task > Create Issue Draft` | `template`, `validate --file`, `create --dry-run` |
 | 스토리 브랜치 생성 | `Tools > Jira Task > Create Story Branch` | `branch create` |
 | 현재 작업 번호 저장 | `Tools > Jira Task > Start Jira Task`, 상태 표시줄 위젯(클릭하면 변경) | `task start` |
+| 현재 상태 한눈에 보기 | 오른쪽 사이드바 `Jira Task` 툴 윈도우(설정·작업 번호·브랜치 + 실행 버튼) | — |
 | 커밋 | `Tools > Jira Task > Commit with Jira Task`, Git 커밋 창의 이슈 키 자동 접두 | `commit` |
 
 Jira API 토큰은 설정 파일에 저장하지 않고 IDE 비밀번호 저장소(PasswordSafe)에만 보관하며,

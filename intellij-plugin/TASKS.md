@@ -251,6 +251,18 @@ T18부터 새로 작성하는 코드도 이 네 가지 규칙을 따른다.
 
 ---
 
+## 6단계 — 이식 이후 추가 작업
+
+### T26. Jira Task 툴 윈도우 (오른쪽 사이드바) — (완료)
+- **배경**: T22에서 "상태 표시줄 위젯 또는 툴 윈도우" 중 위젯을 골랐는데, 오른쪽 사이드바에서 상태를 보고 싶다는 요구가 나왔다. 위젯(`statusBarWidgetFactory`)과 툴 윈도우(`toolWindow`)는 서로 다른 확장 지점이라 별도 구현이 필요하다.
+- **내용**: 오른쪽 사이드바에 **Jira Task** 툴 윈도우를 추가한다. 저장된 설정(프로젝트 키·Jira 주소·프로젝트·스토리 유형·시작 상태), 현재 작업 번호, 현재 Git 브랜치를 한자리에 보여주고, 이슈 초안·브랜치 만들기·작업 시작·커밋·설정 마법사·새로 고침 버튼으로 기존 액션을 바로 실행한다. 위젯은 그대로 두어 작업 번호만 빠르게 보는 용도로 남긴다.
+- **설계**: 그릴 내용을 결정하는 부분(`JiraTaskStatus`, `JiraTaskStatus.of`)은 Swing 없는 순수 코드로 두고 패널은 값 반영만 한다. 설정이 없으면 "설정 마법사를 실행하세요", 손상됐으면 그 오류 문구를 보여주되 git 정보는 계속 표시한다. 이메일·토큰은 담지 않는다(T18의 `SettingsSnapshot`을 재사용).
+- **git 읽기**: 현재 브랜치 조회(`GitRepository.currentBranch()`)를 인프라 어댑터에만 추가했다. 유스케이스가 쓰지 않는 표시용 정보라 도메인 포트(`GitRepositoryPort`)는 건드리지 않았다. 패널은 이 조회를 백그라운드 스레드에서 하고 결과만 EDT에서 반영한다.
+- **산출물**: `ui/toolwindow/JiraTaskStatus.kt`, `ui/toolwindow/JiraTaskToolWindow.kt`(패널 + `ToolWindowFactory`), `infrastructure/GitRepository.kt`에 `currentBranch()`, `plugin.xml`에 `toolWindow`(anchor=right) 등록.
+- **테스트**: `ui/toolwindow/JiraTaskStatusTest.kt` (6 tests — 설정된 상태 표시, 설정 없음 안내, 손상된 설정에서도 git 정보 유지, 빈 값 대신 안내 문구, 이메일·토큰 미노출), `ui/toolwindow/JiraTaskToolWindowTest.kt` (5 tests — 실제 패널의 라벨·버튼 구성, 캐시된 작업 번호 반영, 확장 지점 등록과 anchor), `infrastructure/GitRepositoryBranchTest.kt` (3 tests — 브랜치 조회, 저장소 아님, 커밋 없는 저장소). `./gradlew test` 262개 전부 통과, `build`·`buildPlugin`·`verifyPluginStructure` 통과.
+
+---
+
 ## 참고: 기존 CLI 소스 위치
 
 | 레이어 | 경로 |

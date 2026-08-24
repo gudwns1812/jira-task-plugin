@@ -19,6 +19,10 @@
         <statusBarWidgetFactory id="JiraTask.CurrentTask"
                                 implementation="io.github.gudwns1812.jiratask.ui.task.CurrentTaskWidgetFactory"
                                 order="last"/>
+        <toolWindow id="Jira Task"
+                    anchor="right"
+                    icon="AllIcons.Vcs.Branch"
+                    factoryClass="io.github.gudwns1812.jiratask.ui.toolwindow.JiraTaskToolWindowFactory"/>
         <postStartupActivity implementation="io.github.gudwns1812.jiratask.ui.JiraTaskSetupStartupActivity"/>
         <applicationConfigurable id="io.github.gudwns1812.jiratask.settings"
                                  parentId="tools"
