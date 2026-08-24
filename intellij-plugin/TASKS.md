@@ -42,11 +42,16 @@ MIGRATION-LOG.md에 정리한 코틀린 코드 스타일 규칙(companion 팩토
 - **완료 기준**: 기존 테스트가 문구를 문자열 리터럴로 비교하던 부분을 번들 조회로 바꿔도 전부 통과. 번들에 없는 키를 조회하면 실패하는 테스트 1건 추가.
 - **주의**: 도메인·애플리케이션 계층의 검증 메시지는 CLI와 문구가 같아야 하므로 **옮기지 않는다**(플랫폼 번들은 UI 계층 문구만).
 
-### W2. 툴 윈도우 골격을 `SimpleToolWindowPanel` + 툴바로 교체
+### W2. 툴 윈도우 골격을 `SimpleToolWindowPanel` + 툴바로 교체 — (완료)
 - **내용**: `JiraTaskToolWindowPanel`을 `SimpleToolWindowPanel(vertical = true, borderless = true)` 기반으로 다시 만든다. 상단에 `ActionManager.createActionToolbar("JiraTaskToolWindow", group, true)`, 본문은 `JBScrollPane`. `plugin.xml`에 툴바용 액션 그룹 `JiraTask.ToolWindowToolbar`를 선언하고 기존 액션 4개(이슈 초안·브랜치·작업 시작·커밋)를 넣는다. `button()` 6개는 제거한다.
 - **의존**: 없음(W1과 독립).
 - **완료 기준**: 툴바 액션 그룹의 자식 액션 ID가 기대 순서와 같은지, 패널에 `JButton`이 더 이상 없는지, 툴바 `targetComponent`가 설정되어 있는지(미설정 시 플랫폼 경고 발생) 테스트.
-- **산출물 예상**: `ui/toolwindow/JiraTaskToolWindowPanel.kt`, `plugin.xml` 액션 그룹.
+- **산출물**: `ui/toolwindow/JiraTaskToolWindow.kt`(패널이 `SimpleToolWindowPanel(true, true)`를 상속해 자체가 컴포넌트가 됨 — 툴바는 `toolbar`, 본문은 `setContent(JBScrollPane(...))`), `plugin.xml`에 `JiraTask.ToolWindowToolbar` 그룹.
+- **결정 1 — 액션 아이콘을 W3에서 앞당겼다**: 아이콘 없는 액션은 툴바에서 빈 칸으로 보여 툴바 자체가 못 쓰는 상태가 된다. 그래서 액션 5개에 `AllIcons`(Add / Vcs.Branch / Actions.Execute / Actions.Commit / General.Settings)를 이번에 지정했다. 활성/비활성 판단과 비활성 이유 툴팁은 W3에 그대로 남는다.
+- **결정 2 — 툴바가 메뉴와 같은 액션을 참조한다**: `Tools > Jira Task` 메뉴에서 선언한 액션을 `<reference>`로 재사용해 두 경로의 동작이 갈라지지 않게 했다.
+- **결정 3 — 새로 고침은 잠시 툴바에 둔다**: 버튼 6개를 없애면 새로 고침 수단이 사라지므로, 패널이 자체 `RefreshStatusAction`(등록된 ID 없는 로컬 액션)을 툴바 끝에 덧붙였다. W6에서 제목 표시줄로 옮긴다.
+- **테스트**: `ui/toolwindow/JiraTaskToolWindowTest.kt` — 폼 버튼이 하나도 없는지, 툴바가 하나이고 `place`·`targetComponent`가 설정됐는지, 툴바 그룹의 자식 액션 ID가 기대 순서와 같은지, 모든 툴바 액션에 아이콘이 있는지(스텁이 아니라 `ActionManager.getAction`으로 실제 액션의 프레젠테이션 확인), 패널이 새로 고침을 덧붙이는지. 총 265개 테스트 통과, `build`·`buildPlugin`·`verifyPluginStructure` 통과.
+- **테스트 작성 중 알게 된 것**: `ActionToolbar.getActions()`는 툴바가 비동기로 갱신되기 전까지 비어 있고, 그룹의 `childActionsOrStubs`는 아직 인스턴스화되지 않은 `ActionStub`이라 아이콘이 null이다. 그래서 아이콘 검증은 ID로 실제 액션을 얻어서 한다.
 
 ### W3. 액션에 활성/비활성 판단 넣기
 - **내용**: `CreateIssueDraftAction`·`CreateStoryBranchAction`·`StartTaskAction`·`CommitWithJiraTaskAction`의 `update()`가 `JiraTaskSettings` 결과까지 보고 `isEnabled`를 정하고, 비활성일 때 `presentation.description`에 이유를 넣는다(툴팁으로 보인다). 각 액션에 아이콘(`AllIcons.*`)을 지정한다. 툴바가 액션을 직접 실행하므로 `performAction`/`createFromDataContext` 경로는 삭제한다.
