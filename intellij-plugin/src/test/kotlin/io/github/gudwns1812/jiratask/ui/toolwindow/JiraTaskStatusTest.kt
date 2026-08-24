@@ -49,7 +49,8 @@ class JiraTaskStatusTest {
         val status = JiraTaskStatus.of(SettingsLoad.Loaded(SettingsSnapshot.empty()), null, "main")
 
         assertFalse(status.isConfigured)
-        assertEquals(JiraTaskStatus.NEEDS_SETUP, status.problem)
+        assertEquals(JiraTaskStatus.NEEDS_SETUP, status.problem?.message)
+        assertEquals(StatusProblem.Kind.NEEDS_SETUP, status.problem?.kind)
         assertEquals(JiraTaskStatus.NOT_CONFIGURED, rowsOf(status)["프로젝트 키"])
     }
 
@@ -58,7 +59,8 @@ class JiraTaskStatusTest {
         val status = JiraTaskStatus.of(SettingsLoad.Broken("설정 형식이 올바르지 않습니다."), "257", "feat/100-signup")
 
         assertFalse(status.isConfigured)
-        assertEquals("설정 형식이 올바르지 않습니다.", status.problem)
+        assertEquals("설정 형식이 올바르지 않습니다.", status.problem?.message)
+        assertEquals(StatusProblem.Kind.BROKEN, status.problem?.kind)
         assertEquals("257", rowsOf(status)["현재 작업 번호"])
         assertEquals("feat/100-signup", rowsOf(status)["현재 브랜치"])
         assertEquals(JiraTaskStatus.NOT_CONFIGURED, rowsOf(status)["Jira 주소"])

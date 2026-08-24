@@ -46,6 +46,22 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
         return texts
     }
 
+    /** 지금 화면에 보이는 컴포넌트의 문구만 모은다(숨은 화면은 제외). */
+    private fun visibleTextsOf(container: Container): List<String> {
+        if (!container.isVisible) {
+            return emptyList()
+        }
+        val texts = mutableListOf<String>()
+        if (container is JLabel) {
+            texts += container.text.orEmpty()
+        }
+        if (container is AbstractButton) {
+            texts += container.text.orEmpty()
+        }
+        container.components.filterIsInstance<Container>().forEach { texts += visibleTextsOf(it) }
+        return texts
+    }
+
     private fun buttonsOf(container: Container): List<JButton> {
         val buttons = mutableListOf<JButton>()
         if (container is JButton) {
@@ -113,14 +129,54 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
         assertTrue(panel.currentStatus().isConfigured)
     }
 
-    fun `test shows the setup guidance when nothing is configured`() {
+    fun `test guides the setup instead of listing empty rows`() {
         val panel = JiraTaskToolWindowPanel(project)
 
         panel.show(JiraTaskStatus.of(SettingsLoad.Loaded(SettingsSnapshot.empty()), null, null))
 
+        assertEquals(JiraTaskToolWindowPanel.Shown.SETUP_NEEDED, panel.shown())
         val texts = textsOf(panel)
         assertTrue(texts.contains(JiraTaskStatus.NEEDS_SETUP))
-        assertTrue(texts.contains(JiraTaskStatus.NO_TASK))
+        assertTrue(texts.contains(JiraTaskToolWindowPanel.RUN_WIZARD))
+        assertTrue(texts.contains(JiraTaskToolWindowPanel.OPEN_SETTINGS))
+        assertFalse("설정되지 않음 일곱 줄을 보여주지 않는다", visibleTextsOf(panel).contains(JiraTaskStatus.NOT_CONFIGURED))
+    }
+
+    fun `test the setup guidance links run the wizard and open the settings`() {
+        var wizard = 0
+        var settings = 0
+        val panel = JiraTaskToolWindowPanel(project, {}, launchWizard = { wizard++ }, openSettings = { settings++ })
+
+        panel.show(JiraTaskStatus.of(SettingsLoad.Loaded(SettingsSnapshot.empty()), null, null))
+        linksOf(panel).single { it.text == JiraTaskToolWindowPanel.RUN_WIZARD }.doClick()
+        linksOf(panel).first { it.text == JiraTaskToolWindowPanel.OPEN_SETTINGS }.doClick()
+
+        assertEquals(1, wizard)
+        assertEquals(1, settings)
+    }
+
+    fun `test explains a broken configuration and offers the settings`() {
+        var settings = 0
+        val panel = JiraTaskToolWindowPanel(project, {}, openSettings = { settings++ })
+
+        panel.show(JiraTaskStatus.of(SettingsLoad.Broken("설정 형식이 올바르지 않습니다."), "257", "main"))
+
+        assertEquals(JiraTaskToolWindowPanel.Shown.PROBLEM, panel.shown())
+        assertTrue(textsOf(panel).contains("설정 형식이 올바르지 않습니다."))
+        linksOf(panel).first { it.text == JiraTaskToolWindowPanel.OPEN_SETTINGS }.doClick()
+        assertEquals(1, settings)
+    }
+
+    fun `test shows the rows again once the setup is complete`() {
+        val panel = JiraTaskToolWindowPanel(project)
+
+        panel.show(JiraTaskStatus.of(SettingsLoad.Loaded(SettingsSnapshot.empty()), null, null))
+        assertEquals(JiraTaskToolWindowPanel.Shown.SETUP_NEEDED, panel.shown())
+
+        panel.show(configuredStatus())
+
+        assertEquals(JiraTaskToolWindowPanel.Shown.STATUS, panel.shown())
+        assertTrue(visibleTextsOf(panel).contains("S15P11A108"))
     }
 
     fun `test is operated by an action toolbar instead of plain buttons`() {
@@ -211,11 +267,10 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
 
     fun `test opens the jira address in a browser`() {
         val opened = mutableListOf<String>()
-        val panel = JiraTaskToolWindowPanel(project) { opened += it }
+        val panel = JiraTaskToolWindowPanel(project, browse = { opened += it })
 
         panel.show(configuredStatus())
-        val link = linksOf(panel).single()
-        assertEquals("https://team.atlassian.net", link.text)
+        val link = linksOf(panel).single { it.text == "https://team.atlassian.net" }
         assertTrue(link.isEnabled)
         link.doClick()
 
@@ -224,13 +279,12 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
 
     fun `test does not offer a link when no address is configured`() {
         val opened = mutableListOf<String>()
-        val panel = JiraTaskToolWindowPanel(project) { opened += it }
+        val panel = JiraTaskToolWindowPanel(project, browse = { opened += it })
 
         panel.show(JiraTaskStatus.of(SettingsLoad.Loaded(SettingsSnapshot.empty()), null, null))
-        val link = linksOf(panel).single()
+        val link = linksOf(panel).single { it.text == JiraTaskStatus.NOT_CONFIGURED }
         link.doClick()
 
-        assertEquals(JiraTaskStatus.NOT_CONFIGURED, link.text)
         assertFalse("열 곳이 없으면 링크가 아니어야 한다", link.isEnabled)
         assertEmpty(opened)
     }

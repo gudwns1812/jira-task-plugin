@@ -17,6 +17,14 @@ data class StatusRow(
 }
 
 /**
+ * 상태 행을 보여줄 수 없는 이유. 종류에 따라 화면이 달라진다 —
+ * [Kind.NEEDS_SETUP]은 마법사를 안내하는 빈 상태, [Kind.BROKEN]은 오류와 설정 열기 안내.
+ */
+data class StatusProblem(val kind: Kind, val message: String) {
+    enum class Kind { NEEDS_SETUP, BROKEN }
+}
+
+/**
  * 툴 윈도우가 보여줄 현재 상태. 저장된 설정(프로젝트·이슈 유형·상태), 현재 작업 번호,
  * 현재 Git 브랜치를 한자리에 모은다. 이메일과 API 토큰은 담지 않는다.
  */
@@ -28,7 +36,7 @@ data class JiraTaskStatus(
     val storyStartStatus: String?,
     val taskNumber: String?,
     val branch: String?,
-    val problem: String?,
+    val problem: StatusProblem?,
 ) {
     /** 이슈 초안·브랜치·커밋을 실행할 수 있는 상태인지 — 프로젝트 키가 있어야 한다. */
     val isConfigured: Boolean get() = problem == null && !projectKey.isNullOrEmpty()
@@ -83,7 +91,7 @@ fun JiraTaskStatus.Companion.of(load: SettingsLoad, taskNumber: String?, branch:
             storyStartStatus = null,
             taskNumber = taskNumber,
             branch = branch,
-            problem = load.message,
+            problem = StatusProblem(StatusProblem.Kind.BROKEN, load.message),
         )
         is SettingsLoad.Loaded -> load.snapshot.toStatus(taskNumber, branch)
     }
@@ -96,5 +104,9 @@ private fun SettingsSnapshot.toStatus(taskNumber: String?, branch: String?): Jir
     storyStartStatus = storyStartStatus,
     taskNumber = taskNumber,
     branch = branch,
-    problem = if (projectKey.isEmpty()) JiraTaskStatus.NEEDS_SETUP else null,
+    problem = if (projectKey.isEmpty()) {
+        StatusProblem(StatusProblem.Kind.NEEDS_SETUP, JiraTaskStatus.NEEDS_SETUP)
+    } else {
+        null
+    },
 )
