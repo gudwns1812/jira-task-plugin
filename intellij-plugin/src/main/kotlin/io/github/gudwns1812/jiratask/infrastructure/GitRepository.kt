@@ -82,6 +82,18 @@ class GitRepository(
         return result
     }
 
+    /**
+     * 현재 브랜치 이름. 툴 윈도우 표시용으로만 쓰는 읽기 전용 정보이므로 도메인 포트에는 두지 않았다.
+     * 저장소가 아니거나 커밋이 없는 상태(detached/unborn)면 null.
+     */
+    fun currentBranch(): String? {
+        val result = run("branch", "--show-current") ?: return null
+        if (result.exitCode != 0) {
+            return null
+        }
+        return result.stdout.trim().ifEmpty { null }
+    }
+
     private fun run(vararg args: String): ProcessResult? = try {
         val process = ProcessBuilder(listOf("git") + args)
             .directory(workingDirectory)
