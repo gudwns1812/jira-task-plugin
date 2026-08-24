@@ -143,7 +143,7 @@ class CreateIssueUseCase(private val creator: JiraIssueCreator) {
         val resolvedSprintId = sprintId
             ?: runCatching { creator.findSprintId(projectKey, sprintName) }.getOrNull()
         if (resolvedSprintId == null) {
-            unset += "스프린트($sprintName: 진행 중·예정 스프린트에서 같은 이름을 찾지 못했습니다)"
+            unset += "스프린트($sprintName: 프로젝트 보드의 진행 중·예정 스프린트에서 같은 이름을 찾지 못했습니다)"
             return
         }
         fields[fieldId] = resolvedSprintId

@@ -185,6 +185,45 @@ class JiraClientTest {
     }
 
     @Test
+    fun `has no sprint to offer when the project has no board`() {
+        val transport = ScriptedJiraHttpTransport(
+            mutableListOf(JiraHttpResponse(200, """{"values":[],"isLast":true}""")),
+        )
+        val client = JiraClient("https://team.atlassian.net", "user@example.com", "secret", transport)
+
+        assertNull(client.findSprintId("S15P11A601", "Sprint 7"))
+        assertEquals(1, transport.calls.size)
+    }
+
+    @Test
+    fun `counts the same sprint shared by two boards only once`() {
+        val transport = ScriptedJiraHttpTransport(
+            mutableListOf(
+                JiraHttpResponse(200, """{"values":[{"id":17},{"id":18}],"isLast":true}"""),
+                JiraHttpResponse(200, """{"values":[{"id":314,"name":"Sprint 7"}],"isLast":true}"""),
+                JiraHttpResponse(200, """{"values":[{"id":314,"name":"Sprint 7"}],"isLast":true}"""),
+            ),
+        )
+        val client = JiraClient("https://team.atlassian.net", "user@example.com", "secret", transport)
+
+        assertEquals("같은 스프린트가 두 보드에 걸쳐 있어도 모호한 것이 아니다", 314, client.findSprintId("S15P11A601", "Sprint 7"))
+    }
+
+    @Test
+    fun `keeps looking at other boards when one board cannot be read`() {
+        val transport = ScriptedJiraHttpTransport(
+            mutableListOf(
+                JiraHttpResponse(200, """{"values":[{"id":17},{"id":18}],"isLast":true}"""),
+                JiraHttpResponse(403, """{"errorMessages":["no permission"]}"""),
+                JiraHttpResponse(200, """{"values":[{"id":314,"name":"Sprint 7"}],"isLast":true}"""),
+            ),
+        )
+        val client = JiraClient("https://team.atlassian.net", "user@example.com", "secret", transport)
+
+        assertEquals("보드 하나가 막혀도 나머지에서 찾는다", 314, client.findSprintId("S15P11A601", "Sprint 7"))
+    }
+
+    @Test
     fun `does not choose between different sprints with the same name`() {
         val transport = ScriptedJiraHttpTransport(
             mutableListOf(

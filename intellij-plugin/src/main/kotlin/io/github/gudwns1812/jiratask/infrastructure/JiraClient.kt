@@ -160,34 +160,50 @@ class JiraClient(
     override fun findSprintId(projectKey: String, sprintName: String): Int? {
         val matchingIds = linkedSetOf<Int>()
         for (boardId in boardIds(projectKey)) {
-            var startAt = 0
-            while (true) {
-                val page = requestObject(
-                    "/rest/agile/1.0/board/$boardId/sprint?state=active,future&startAt=$startAt&maxResults=50",
-                )
-                val sprints = page.arrayOrNull("values")
-                    ?: throw JiraRequestError("Jira 스프린트 목록 응답 형식이 올바르지 않습니다.")
-                sprints.asSequence()
-                    .mapNotNull { it.takeIf { sprint -> sprint.isJsonObject }?.asJsonObject }
-                    .filter { it.stringOrNull("name") == sprintName }
-                    .mapNotNull { it.intOrNull("id") }
-                    .forEach { matchingIds += it }
-                if (matchingIds.size > 1) {
-                    return null
-                }
-
-                val isLast = page.booleanOrNull("isLast")
-                    ?: throw JiraRequestError("Jira 스프린트 목록 응답 형식이 올바르지 않습니다.")
-                if (isLast) {
-                    break
-                }
-                if (sprints.isEmpty) {
-                    throw JiraRequestError("Jira 스프린트 목록의 다음 페이지를 확인할 수 없습니다.")
-                }
-                startAt += sprints.size()
+            // 권한이 없거나 응답이 깨진 보드 하나가 나머지 보드 탐색을 막지 않게 한다.
+            val found = try {
+                sprintIdsNamed(boardId, sprintName)
+            } catch (error: Exception) {
+                continue
+            }
+            matchingIds += found
+            // 같은 이름의 서로 다른 스프린트가 있으면 잘못 지정하지 않도록 포기한다.
+            if (matchingIds.size > 1) {
+                return null
             }
         }
         return matchingIds.singleOrNull()
+    }
+
+    /** 보드 하나에서 이름이 정확히 일치하는 진행 중·예정 스프린트 ID들. 두 개를 찾으면 더 보지 않는다. */
+    private fun sprintIdsNamed(boardId: Int, sprintName: String): List<Int> {
+        val ids = linkedSetOf<Int>()
+        var startAt = 0
+        while (true) {
+            val page = requestObject(
+                "/rest/agile/1.0/board/$boardId/sprint?state=active,future&startAt=$startAt&maxResults=50",
+            )
+            val sprints = page.arrayOrNull("values")
+                ?: throw JiraRequestError("Jira 스프린트 목록 응답 형식이 올바르지 않습니다.")
+            sprints.asSequence()
+                .mapNotNull { it.takeIf { sprint -> sprint.isJsonObject }?.asJsonObject }
+                .filter { it.stringOrNull("name") == sprintName }
+                .mapNotNull { it.intOrNull("id") }
+                .forEach { ids += it }
+            if (ids.size > 1) {
+                return ids.toList()
+            }
+
+            val isLast = page.booleanOrNull("isLast")
+                ?: throw JiraRequestError("Jira 스프린트 목록 응답 형식이 올바르지 않습니다.")
+            if (isLast) {
+                return ids.toList()
+            }
+            if (sprints.isEmpty) {
+                throw JiraRequestError("Jira 스프린트 목록의 다음 페이지를 확인할 수 없습니다.")
+            }
+            startAt += sprints.size()
+        }
     }
 
     private fun boardIds(projectKey: String): List<Int> {
@@ -257,7 +273,8 @@ class JiraClient(
             if (isLast) {
                 return projects
             }
-            startAt += 50
+            // 요청한 maxResults가 아니라 실제로 받은 개수만큼 넘긴다(서버가 더 적게 줄 수 있다).
+            startAt += values.size()
         }
     }
 

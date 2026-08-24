@@ -143,7 +143,7 @@ class CreateIssueTest {
         val result = execute(creator, sprintId = null)
 
         assertEquals(
-            listOf("스프린트(Sprint 7: 진행 중·예정 스프린트에서 같은 이름을 찾지 못했습니다)"),
+            listOf("스프린트(Sprint 7: 프로젝트 보드의 진행 중·예정 스프린트에서 같은 이름을 찾지 못했습니다)"),
             (result as CreateIssueResult.Created).unsetFields,
         )
         assertFalse(creator.createdFields!!.containsKey("customfield_10020"))
