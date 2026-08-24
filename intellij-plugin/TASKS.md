@@ -75,10 +75,16 @@ MIGRATION-LOG.md에 정리한 코틀린 코드 스타일 규칙(companion 팩토
 - **테스트**: `JiraTaskStatusTest`에 3건(자리 문구 표시, 종류 지정, 값이 없어도 종류 유지), `JiraTaskToolWindowTest`에 5건(복사 가능·회색 자리 문구, 고정폭 폰트 적용 범위, 링크 클릭이 저장된 주소를 여는지, 주소가 없으면 클릭되지 않는지, 이메일 미노출). 총 288개 통과.
 - **플랫폼 동작 기록 2건**: (1) `JBLabel`에는 `isCopyable` 게터가 없어 `setCopyable(true)`가 붙이는 텍스트 컴포넌트 자식으로 확인한다. (2) `ActionLink`는 `JButton`을 상속하므로 "폼 버튼이 없어야 한다" 검사에서 제외해야 한다.
 
-### W5. 미설정·손상 상태를 빈 상태로 보여주기
+### W5. 미설정·손상 상태를 빈 상태로 보여주기 — (완료)
 - **내용**: 프로젝트 키가 없으면 상태 행 대신 `JBPanelWithEmptyText`의 `emptyText`에 안내 + `설정 마법사 실행`·`설정 열기` 링크(`SimpleTextAttributes.LINK_PLAIN_ATTRIBUTES` + 클릭 리스너)를 보여준다. 설정이 손상된 경우에는 경고 아이콘과 오류 문구, `설정 열기` 링크를 보여준다.
 - **의존**: W2, W4. `JiraTaskStatus.isConfigured`/`problem`은 이미 있으므로 그대로 쓴다.
 - **완료 기준**: 미설정 / 손상 / 정상 세 상태에서 보이는 컴포넌트가 각각 빈 상태·오류·상태 행인지, 링크 클릭이 마법사·설정 화면 호출로 이어지는지(호출을 람다로 주입해 검증) 테스트.
+- **설계**: 본문을 세 화면(상태 행 / 설정 안내 / 오류)으로 나누고 한 번에 하나만 보이게 한다. 어느 화면인지는 순수 모델이 정한다 — `StatusProblem(kind, message)`를 도입해 `NEEDS_SETUP`과 `BROKEN`을 구분하고(이전에는 문구 하나뿐이라 화면을 문구 비교로 골라야 했다), 패널은 `problem?.kind`만 보고 가시성을 정한다. 어떤 화면인지 테스트에서 볼 수 있게 `shown()`을 공개했다.
+- **결정 — `JBPanelWithEmptyText`의 `emptyText` 대신 실제 컴포넌트로 빈 상태를 만들었다**: 계획은 `emptyText`에 링크를 넣는 것이었지만, (1) `StatusText`의 링크는 클릭을 테스트로 확인할 마땅한 공개 API가 없고, (2) 경고 아이콘을 함께 보여주기 어렵다. 아이콘 + 안내 문구 + `ActionLink` 두 개를 Kotlin UI DSL로 구성해 관례를 지키면서 클릭까지 검증한다.
+- **결정 — 미설정 상태에서는 git 정보도 감춘다**: "설정되지 않음" 일곱 줄 대신 할 일을 보여주는 것이 이 화면의 목적이고, 브랜치·작업 번호는 상태 표시줄 위젯에서 계속 볼 수 있다. 손상된 설정일 때는 오류 문구와 설정 열기 링크를 보여준다.
+- **링크 동작**: `launchWizard`·`openSettings`를 생성자로 주입(기본값은 `SetupWizardLauncher.launch`와 `ShowSettingsUtil.showSettingsDialog(project, JiraTaskConfigurable::class.java)`)해 테스트가 실제 마법사·설정 창을 열지 않고 호출만 센다.
+- **테스트**: 미설정에서 안내 화면과 두 링크가 보이고 "설정되지 않음" 행은 보이지 않는지, 링크 클릭이 마법사·설정 호출로 이어지는지, 손상된 설정에서 오류 문구와 설정 열기 링크가 나오는지, 설정을 마치면 상태 행으로 돌아오는지. `JiraTaskStatusTest`의 문구 검증은 `problem?.message`·`problem?.kind`로 갱신. 총 291개 통과.
+- **주의(테스트 작성 중 발견)**: 생성자에 람다 파라미터를 더하면 기존 테스트의 후행 람다(`Panel(project) { ... }`)가 마지막 파라미터에 붙어 조용히 다른 인자로 해석된다. W4의 `browse` 인자를 이름 있는 인자로 바꿔 고쳤다.
 
 ### W6. 제목 표시줄 액션과 자동 갱신
 - **내용**: `toolWindow.setTitleActions(listOf(새로 고침, 설정 열기))` — 새로 고침은 `AllIcons.Actions.Refresh`, 설정 열기는 `AllIcons.General.Settings` + `ShowSettingsUtil.showSettingsDialog(project, JiraTaskConfigurable::class.java)`. 자동 갱신은 (1) `ToolWindowManagerListener`로 툴 윈도우가 보일 때, (2) 작업 번호 저장·브랜치 생성·커밋 성공 시 자체 메시지 버스 토픽(`JiraTaskStateListener`)을 발행해 구독.
