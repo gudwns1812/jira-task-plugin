@@ -95,6 +95,7 @@ class JiraTaskConfigurable @JvmOverloads constructor(
             throw ConfigurationException(error.message, "Jira Task 설정")
         }
         show(saved, problem = null)
+        JiraTaskStateListener.publishToAllProjects()
     }
 
     override fun reset() {

@@ -18,7 +18,9 @@ import io.github.gudwns1812.jiratask.infrastructure.CredentialStorageError
 import io.github.gudwns1812.jiratask.infrastructure.JiraClient
 import io.github.gudwns1812.jiratask.infrastructure.PasswordSafeCredentialStore
 import io.github.gudwns1812.jiratask.infrastructure.PolicyConfigRepository
+import com.intellij.notification.NotificationType
 import io.github.gudwns1812.jiratask.ui.JiraTaskNotifications
+import io.github.gudwns1812.jiratask.ui.notifyAndRefresh
 
 sealed interface SetupWizardResult {
     data class Completed(
@@ -96,8 +98,9 @@ object SetupWizardLauncher {
     }
 
     fun report(project: Project?, result: SetupWizardResult): Unit = when (result) {
-        is SetupWizardResult.Completed -> JiraTaskNotifications.info(
+        is SetupWizardResult.Completed -> notifyAndRefresh(
             project,
+            NotificationType.INFORMATION,
             "Jira Task 설정을 저장했습니다. (프로젝트 ${result.projectKey}, 스토리 ${result.storyIssueType}, 시작 상태 ${result.storyStartStatus})",
         )
         is SetupWizardResult.Cancelled -> JiraTaskNotifications.info(project, "Jira Task 초기 설정을 취소했습니다.")

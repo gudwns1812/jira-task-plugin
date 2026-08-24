@@ -21,6 +21,7 @@ import io.github.gudwns1812.jiratask.ui.JiraTaskAvailability
 import io.github.gudwns1812.jiratask.ui.JiraTaskCommand
 import io.github.gudwns1812.jiratask.ui.JiraTaskNotifications
 import io.github.gudwns1812.jiratask.ui.applyAvailability
+import io.github.gudwns1812.jiratask.ui.notifyAndRefresh
 import java.io.File
 import javax.swing.JComponent
 import javax.swing.event.DocumentEvent
@@ -93,7 +94,7 @@ class StartTaskAction @JvmOverloads constructor(
                     }
 
                     val report = StartTaskReports.of(result)
-                    JiraTaskNotifications.notify(project, report.message, report.type)
+                    notifyAndRefresh(project, report.type, report.message)
                 }
             })
         }
