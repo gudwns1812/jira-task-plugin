@@ -13,16 +13,12 @@ class CreateIssueDraftDialogTest : BasePlatformTestCase() {
 
     private fun context(
         featureId: String? = "AUTH-001",
-        remembered: RememberedInput = RememberedInput(
-            assignee = "박형준",
-            priority = "High",
-            storyPoints = 3,
-            sprint = "Sprint 1",
-            dueDate = "2026-08-31",
-        ),
+        remembered: RememberedInput = RememberedInput(storyPoints = 3, dueDate = "2026-08-31"),
         storyKey: String? = "S15P11A108-100",
         epicKey: String? = "S15P11A108-1",
         branch: String? = "feat/100-signup",
+        sprint: String? = "Sprint 7",
+        currentUser: String? = "박형준",
         lookupNote: String? = null,
     ) = IssueDraftContext(
         projectKey = "S15P11A108",
@@ -30,7 +26,9 @@ class CreateIssueDraftDialogTest : BasePlatformTestCase() {
         storyKey = storyKey,
         epicKey = epicKey,
         featureId = featureId,
+        sprint = sprint,
         branch = branch,
+        currentUser = currentUser,
         remembered = remembered,
         lookupNote = lookupNote,
     )
@@ -55,10 +53,10 @@ class CreateIssueDraftDialogTest : BasePlatformTestCase() {
 
             assertEquals("S15P11A108-1", form.epicKeyField.text)
             assertEquals("S15P11A108-100", form.storyKeyField.text)
-            assertEquals("박형준", form.assigneeField.text)
-            assertEquals("High", form.priorityField.text)
+            assertEquals("담당자는 나 자신이 기본", "박형준", form.assigneeField.text)
+            assertEquals("우선순위 기본은 Low", "Low", form.priorityComboBox.selectedItem)
             assertEquals(3, form.storyPointsComboBox.selectedItem)
-            assertEquals("Sprint 1", form.sprintField.text)
+            assertEquals("스프린트는 스토리에서 물려받는다", "Sprint 7", form.sprintField.text)
             assertEquals("2026-08-31", form.dueDateField.text)
             assertEquals("브랜치에서 알아낸 기능 ID가 기본 구분이다", "AUTH-001", form.scopeComboBox.selectedItem)
         }
@@ -190,6 +188,50 @@ class CreateIssueDraftDialogTest : BasePlatformTestCase() {
         }
     }
 
+    fun `test never asks for the epic or the sprint when the story tells them`() {
+        withDialog { dialog ->
+            dialog.form.selectType("task")
+
+            assertEquals("S15P11A108-1", dialog.form.epicKeyField.text)
+            assertEquals("Sprint 7", dialog.form.sprintField.text)
+            assertTrue(
+                "스토리에서 온 값은 물어보지 않는다",
+                dialog.form.visiblePaths().none { it == "epicKey" || it == "sprint" },
+            )
+        }
+    }
+
+    fun `test asks for the epic only when the story does not tell it`() {
+        withDialog(context(epicKey = null, sprint = null)) { dialog ->
+            dialog.form.selectType("task")
+
+            assertTrue(dialog.form.visiblePaths().containsAll(setOf("epicKey", "sprint")))
+        }
+    }
+
+    fun `test picks the priority from a list instead of typing it`() {
+        withDialog { dialog ->
+            val items = (0 until dialog.form.priorityComboBox.itemCount).map { dialog.form.priorityComboBox.getItemAt(it) }
+
+            assertEquals(IssueDraftContext.DEFAULT_PRIORITIES, items)
+            assertEquals("Low", dialog.form.priorityComboBox.selectedItem)
+
+            dialog.form.priorityComboBox.selectedItem = "High"
+            assertEquals("High", dialog.form.values().priority)
+        }
+    }
+
+    fun `test offers a calendar for the due date`() {
+        withDialog { dialog ->
+            assertSize(1, dialog.form.dueDateField.extensions)
+
+            dialog.form.applyDueDate(java.time.LocalDate.of(2026, 9, 15))
+
+            assertEquals("2026-09-15", dialog.form.dueDateField.text)
+            assertEquals("2026-09-15", dialog.form.values().dueDate)
+        }
+    }
+
     fun `test shows the writing example as placeholders instead of an extra field`() {
         withDialog { dialog ->
             val form = dialog.form
@@ -220,11 +262,21 @@ class CreateIssueDraftDialogTest : BasePlatformTestCase() {
     }
 
     fun `test keeps the empty required fields on screen`() {
-        withDialog(context(remembered = RememberedInput(storyPoints = 3), epicKey = null)) { dialog ->
+        // 아무것도 알아내지 못한 상황: 스토리도 못 읽고 Jira 사용자도 모른다.
+        val nothingKnown = context(
+            remembered = RememberedInput(storyPoints = 3),
+            epicKey = null,
+            sprint = null,
+            currentUser = null,
+        )
+        withDialog(nothingKnown) { dialog ->
             dialog.form.selectType("task")
 
             val visible = dialog.form.visiblePaths()
-            assertTrue("비어 있는 필수 칸은 숨기지 않는다", visible.containsAll(setOf("epicKey", "assignee", "priority", "sprint", "dueDate")))
+            assertTrue(
+                "비어 있는 필수 칸은 숨기지 않는다",
+                visible.containsAll(setOf("epicKey", "assignee", "sprint", "dueDate")),
+            )
         }
     }
 
@@ -243,7 +295,7 @@ class CreateIssueDraftDialogTest : BasePlatformTestCase() {
     }
 
     fun `test paints the errors red with the field name`() {
-        withDialog(context(remembered = RememberedInput())) { dialog ->
+        withDialog(context(remembered = RememberedInput(), currentUser = null)) { dialog ->
             dialog.form.selectType("task")
 
             val labels = dialog.problemLabels()

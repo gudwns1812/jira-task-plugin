@@ -9,7 +9,7 @@ import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
-import io.github.gudwns1812.jiratask.domain.jira.StoryIssueReader
+import io.github.gudwns1812.jiratask.domain.jira.JiraDraftReader
 import io.github.gudwns1812.jiratask.infrastructure.GitRepository
 import io.github.gudwns1812.jiratask.infrastructure.JiraClient
 import io.github.gudwns1812.jiratask.ui.IssueDraftSettings
@@ -70,11 +70,11 @@ class CreateIssueDraftAction @JvmOverloads constructor(
             settings = draftSettings,
             remembered = project?.let { IssueDraftMemory.getInstance(it).remembered() } ?: RememberedInput(),
             branch = project?.basePath?.let { GitRepository(File(it)).currentBranch() },
-            createStoryReader = storyReaderFactory(),
+            createReader = draftReaderFactory(),
         )
 
-    /** Jira 연결 정보가 있을 때만 스토리를 조회한다. 토큰 조회는 이미 백그라운드다. */
-    private fun storyReaderFactory(): (() -> StoryIssueReader)? =
+    /** Jira 연결 정보가 있을 때만 조회한다. 토큰 조회는 이미 백그라운드다. */
+    private fun draftReaderFactory(): (() -> JiraDraftReader)? =
         when (val branch = settings.forBranch()) {
             is SettingsLookup.Ready -> {
                 { JiraClient(branch.value.baseUrl, branch.value.email, branch.value.apiToken) }

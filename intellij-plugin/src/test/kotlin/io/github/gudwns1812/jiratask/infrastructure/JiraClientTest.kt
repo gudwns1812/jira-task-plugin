@@ -130,4 +130,73 @@ class JiraClientTest {
 
         assertNull(client.findTransitionId("S15P11A108-100", "99"))
     }
+
+    @Test
+    fun `reads the story context from the agile api`() {
+        val transport = ScriptedJiraHttpTransport(
+            mutableListOf(
+                JiraHttpResponse(
+                    200,
+                    """{"key":"S15P11A108-100","fields":{"summary":"[AUTH-001] 이메일 회원가입","epic":{"key":"S15P11A108-1"},"sprint":{"name":"Sprint 7"}}}""",
+                ),
+            ),
+        )
+        val client = JiraClient("https://team.atlassian.net", "user@example.com", "secret", transport)
+
+        val story = client.storyContext("S15P11A108-100")
+
+        assertEquals("[AUTH-001] 이메일 회원가입", story.summary)
+        assertEquals("S15P11A108-1", story.epicKey)
+        assertEquals("Sprint 7", story.sprint)
+        assertTrue(transport.calls.single().url.contains("/rest/agile/1.0/issue/S15P11A108-100"))
+    }
+
+    @Test
+    fun `falls back to the rest api when the agile api is unavailable`() {
+        val transport = ScriptedJiraHttpTransport(
+            mutableListOf(
+                JiraHttpResponse(404, """{"errorMessages":["not found"]}"""),
+                JiraHttpResponse(
+                    200,
+                    """{"key":"S15P11A108-100","fields":{"summary":"[AUTH-001] 이메일 회원가입","parent":{"key":"S15P11A108-1"}}}""",
+                ),
+            ),
+        )
+        val client = JiraClient("https://team.atlassian.net", "user@example.com", "secret", transport)
+
+        val story = client.storyContext("S15P11A108-100")
+
+        assertEquals("S15P11A108-1", story.epicKey)
+        assertNull("REST v3로는 스프린트를 안정적으로 읽을 수 없다", story.sprint)
+        assertEquals(2, transport.calls.size)
+        assertTrue(transport.calls[1].url.contains("/rest/api/3/issue/"))
+    }
+
+    @Test
+    fun `reads the current user name and the priorities`() {
+        val transport = ScriptedJiraHttpTransport(
+            mutableListOf(
+                JiraHttpResponse(200, """{"accountId":"abc","displayName":"박형준"}"""),
+                JiraHttpResponse(200, """[{"name":"Highest"},{"name":"Low"}]"""),
+            ),
+        )
+        val client = JiraClient("https://team.atlassian.net", "user@example.com", "secret", transport)
+
+        assertEquals("박형준", client.currentUserName())
+        assertEquals(listOf("Highest", "Low"), client.listPriorities())
+    }
+
+    @Test
+    fun `treats a rejected lookup as unknown instead of failing`() {
+        val transport = ScriptedJiraHttpTransport(
+            mutableListOf(
+                JiraHttpResponse(404, "{}"),
+                JiraHttpResponse(404, "{}"),
+            ),
+        )
+        val client = JiraClient("https://team.atlassian.net", "user@example.com", "secret", transport)
+
+        assertNull(client.currentUserName())
+        assertEquals(emptyList<String>(), client.listPriorities())
+    }
 }

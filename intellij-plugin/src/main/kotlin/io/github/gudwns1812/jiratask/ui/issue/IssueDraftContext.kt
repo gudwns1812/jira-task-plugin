@@ -41,9 +41,16 @@ data class IssueDraftContext(
     val projectKey: String,
     val policy: WorkPolicy,
     val storyKey: String? = null,
+    /** 스토리의 에픽. 작업은 스토리와 같은 에픽에 속하므로 사람이 입력할 값이 아니다. */
     val epicKey: String? = null,
     val featureId: String? = null,
+    /** 스토리가 들어 있는 스프린트. 작업도 같은 스프린트에서 진행한다. */
+    val sprint: String? = null,
     val branch: String? = null,
+    /** 지금 Jira에 연결된 사용자 — 담당자 기본값. */
+    val currentUser: String? = null,
+    /** 이 Jira에 정의된 우선순위 목록. */
+    val priorities: List<String> = DEFAULT_PRIORITIES,
     val remembered: RememberedInput = RememberedInput(),
     /** 스토리를 조회하지 못한 이유(권한·네트워크 등). 화면에서 조용히 안내만 한다. */
     val lookupNote: String? = null,
@@ -56,6 +63,24 @@ data class IssueDraftContext(
     fun defaultArea(): String? = remembered.area ?: policy.areas.firstOrNull()
 
     fun defaultStoryPoints(): Int? = remembered.storyPoints ?: policy.storyPoints.firstOrNull()
+
+    /** 담당자는 나 자신이 기본이다. 지난번에 다른 사람을 지정했다면 그 값을 잇는다. */
+    fun defaultAssignee(): String? = remembered.assignee ?: currentUser
+
+    /** 스프린트는 스토리에서 물려받고, 알 수 없으면 지난번 값을 쓴다. */
+    fun defaultSprint(): String? = sprint ?: remembered.sprint
+
+    /** 우선순위 기본값은 가장 낮은 쪽(Low) — 급한 일만 사람이 올려 잡게 한다. */
+    fun defaultPriority(): String? = remembered.priority
+        ?: priorities.firstOrNull { it.equals(PREFERRED_PRIORITY, ignoreCase = true) }
+        ?: priorities.lastOrNull()
+
+    companion object {
+        const val PREFERRED_PRIORITY: String = "Low"
+
+        /** Jira에서 목록을 읽지 못했을 때 쓰는 표준 우선순위. */
+        val DEFAULT_PRIORITIES: List<String> = listOf("Highest", "High", "Medium", "Low", "Lowest")
+    }
 }
 
 /** 프로젝트별로 기억해 둔 지난번 입력. 스프린트 중에는 거의 바뀌지 않는 값들이다. */

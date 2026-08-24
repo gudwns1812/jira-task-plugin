@@ -7,6 +7,7 @@ import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
 import com.intellij.ui.components.JBTextField
+import com.intellij.ui.components.fields.ExtendableTextField
 import com.intellij.ui.dsl.builder.COLUMNS_LARGE
 import com.intellij.ui.dsl.builder.COLUMNS_MEDIUM
 import com.intellij.ui.dsl.builder.Row
@@ -14,6 +15,7 @@ import com.intellij.ui.dsl.builder.columns
 import com.intellij.ui.dsl.builder.panel
 import javax.swing.DefaultComboBoxModel
 import javax.swing.JComponent
+import java.time.LocalDate
 import javax.swing.event.DocumentEvent
 
 /**
@@ -44,12 +46,12 @@ class IssueDraftForm(
     val epicKeyField: JBTextField = JBTextField(context.epicKey.orEmpty())
     val storyKeyField: JBTextField = JBTextField(context.storyKey.orEmpty())
     val branchField: JBTextField = JBTextField(context.branch.orEmpty())
-    val assigneeField: JBTextField = JBTextField(context.remembered.assignee.orEmpty())
-    val priorityField: JBTextField = JBTextField(context.remembered.priority.orEmpty())
+    val assigneeField: JBTextField = JBTextField(context.defaultAssignee().orEmpty())
+    val priorityComboBox: ComboBox<String> = ComboBox(DefaultComboBoxModel(context.priorities.toTypedArray()))
     val storyPointsComboBox: ComboBox<Int> =
         ComboBox(DefaultComboBoxModel(context.policy.storyPoints.toTypedArray()))
-    val sprintField: JBTextField = JBTextField(context.remembered.sprint.orEmpty())
-    val dueDateField: JBTextField = JBTextField(context.remembered.dueDate.orEmpty())
+    val sprintField: JBTextField = JBTextField(context.defaultSprint().orEmpty())
+    val dueDateField: ExtendableTextField = ExtendableTextField(context.remembered.dueDate.orEmpty())
 
     /** 이미 채워진 칸까지 모두 펼쳐 보고 싶을 때. */
     val showAllCheckBox: JBCheckBox = JBCheckBox("채워진 값도 모두 보기")
@@ -79,12 +81,14 @@ class IssueDraftForm(
             .rowComment("한 줄에 하나씩 입력합니다.")
 
         val epicKeyRow = row("에픽 키:") { cell(epicKeyField).columns(COLUMNS_MEDIUM) }
+            .rowComment("작업은 스토리와 같은 에픽에 속합니다. 스토리를 읽으면 자동으로 채워집니다.")
         val storyKeyRow = row("스토리 키:") { cell(storyKeyField).columns(COLUMNS_MEDIUM) }
         val branchRow = row("브랜치:") { cell(branchField).columns(COLUMNS_MEDIUM) }
         val assigneeRow = row("담당자:") { cell(assigneeField).columns(COLUMNS_MEDIUM) }
-        val priorityRow = row("우선순위:") { cell(priorityField).columns(COLUMNS_MEDIUM) }
+        val priorityRow = row("우선순위:") { cell(priorityComboBox) }
         val storyPointsRow = row("스토리 포인트:") { cell(storyPointsComboBox) }
         val sprintRow = row("스프린트:") { cell(sprintField).columns(COLUMNS_MEDIUM) }
+            .rowComment("스토리가 들어 있는 스프린트를 그대로 씁니다.")
         val dueDateRow = row("기한:") { cell(dueDateField).columns(COLUMNS_MEDIUM) }
 
         rowsByPath = mapOf(
@@ -109,10 +113,12 @@ class IssueDraftForm(
         context.defaultScope()?.let { scopeComboBox.selectedItem = it }
         areaComboBox.selectedItem = context.defaultArea() ?: NO_AREA
         context.defaultStoryPoints()?.let { storyPointsComboBox.selectedItem = it }
+        context.defaultPriority()?.let { priorityComboBox.selectedItem = it }
+        dueDateField.addBrowseExtension({ pickDueDate() }, null)
 
         listOf(
             summaryField, titleField, epicKeyField, storyKeyField, branchField,
-            assigneeField, priorityField, sprintField, dueDateField,
+            assigneeField, sprintField, dueDateField,
         ).forEach { field ->
             field.document.addDocumentListener(object : DocumentAdapter() {
                 override fun textChanged(event: DocumentEvent) = changed()
@@ -127,7 +133,7 @@ class IssueDraftForm(
             applyLayout()
             onChange()
         }
-        listOf(scopeComboBox, areaComboBox, storyPointsComboBox).forEach { combo ->
+        listOf(scopeComboBox, areaComboBox, storyPointsComboBox, priorityComboBox).forEach { combo ->
             combo.addActionListener { changed() }
         }
         showAllCheckBox.addActionListener {
@@ -158,7 +164,7 @@ class IssueDraftForm(
         branch = branchField.text,
         sprint = sprintField.text,
         assignee = assigneeField.text,
-        priority = priorityField.text,
+        priority = priority(),
         storyPoints = (storyPointsComboBox.selectedItem as? Int)?.toString().orEmpty(),
         dueDate = dueDateField.text,
         summary = descriptionArea.text,
@@ -170,7 +176,7 @@ class IssueDraftForm(
         scope = scope(),
         area = area(),
         assignee = assigneeField.text,
-        priority = priorityField.text,
+        priority = priority(),
         storyPoints = storyPointsComboBox.selectedItem as? Int,
         sprint = sprintField.text,
         dueDate = dueDateField.text,
@@ -186,6 +192,18 @@ class IssueDraftForm(
     fun visiblePaths(): Set<String> = shownPaths.toSet()
 
     private fun scope(): String = scopeComboBox.selectedItem as? String ?: ""
+
+    private fun priority(): String = priorityComboBox.selectedItem as? String ?: ""
+
+    /** 달력에서 고른 날짜를 기한 칸에 넣는다. 직접 타이핑도 그대로 된다. */
+    fun applyDueDate(date: LocalDate) {
+        dueDateField.text = date.toString()
+    }
+
+    private fun pickDueDate() {
+        val current = runCatching { LocalDate.parse(dueDateField.text.trim()) }.getOrNull()
+        DueDateDialog(current).choose()?.let { applyDueDate(it) }
+    }
 
     private fun area(): String? = (areaComboBox.selectedItem as? String)?.takeUnless { it == NO_AREA }
 
@@ -240,7 +258,7 @@ class IssueDraftForm(
         "storyKey" -> storyKeyField.text
         "branch" -> branchField.text
         "assignee" -> assigneeField.text
-        "priority" -> priorityField.text
+        "priority" -> priority()
         "storyPoints" -> (storyPointsComboBox.selectedItem as? Int)?.toString().orEmpty()
         "sprint" -> sprintField.text
         "dueDate" -> dueDateField.text
@@ -257,7 +275,6 @@ class IssueDraftForm(
         storyKeyField.emptyText.text = "${context.projectKey}-100"
         branchField.emptyText.text = "feat/100-signup"
         assigneeField.emptyText.text = "담당자 이름"
-        priorityField.emptyText.text = "High"
         sprintField.emptyText.text = "Sprint 1"
         dueDateField.emptyText.text = "2026-08-31"
     }

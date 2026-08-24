@@ -6,6 +6,7 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import io.github.gudwns1812.jiratask.domain.jira.JiraAuthenticationError
+import io.github.gudwns1812.jiratask.domain.jira.JiraDraftReader
 import io.github.gudwns1812.jiratask.domain.jira.JiraIssue
 import io.github.gudwns1812.jiratask.domain.jira.JiraIssueTypeWithStatuses
 import io.github.gudwns1812.jiratask.domain.jira.JiraNamedValue
@@ -13,6 +14,7 @@ import io.github.gudwns1812.jiratask.domain.jira.JiraNetworkError
 import io.github.gudwns1812.jiratask.domain.jira.JiraProject
 import io.github.gudwns1812.jiratask.domain.jira.JiraRequestError
 import io.github.gudwns1812.jiratask.domain.jira.JiraSetupReader
+import io.github.gudwns1812.jiratask.domain.jira.JiraStoryContext
 import io.github.gudwns1812.jiratask.domain.jira.StoryIssueReader
 import java.net.URI
 import java.net.URLEncoder
@@ -47,7 +49,7 @@ class JiraClient(
     email: String,
     apiToken: String,
     private val transport: JiraHttpTransport = HttpClientJiraTransport(),
-) : StoryIssueReader, JiraSetupReader {
+) : StoryIssueReader, JiraSetupReader, JiraDraftReader {
 
     private val baseUrl = baseUrl.trimEnd('/')
     private val authorization = "Basic " + Base64.getEncoder().encodeToString("$email:$apiToken".toByteArray())
@@ -69,6 +71,48 @@ class JiraClient(
         }
 
         return JiraIssue(key, issueTypeId, issueTypeName, statusId, statusName, fields.stringOrNull("summary").orEmpty())
+    }
+
+    override fun currentUserName(): String? = try {
+        requestObject("/rest/api/3/myself").stringOrNull("displayName")
+    } catch (error: JiraRequestError) {
+        null
+    }
+
+    override fun listPriorities(): List<String> = try {
+        val json = requestJson("/rest/api/3/priority")
+        (json as? JsonArray)?.mapNotNull { it.takeIf { item -> item.isJsonObject }?.asJsonObject?.stringOrNull("name") }
+            ?: emptyList()
+    } catch (error: JiraRequestError) {
+        emptyList()
+    }
+
+    /**
+     * 스토리에서 물려받을 값. 스프린트는 Jira 사이트마다 커스텀 필드 ID가 달라 REST v3로는 안정적으로
+     * 읽을 수 없으므로, 이름이 고정된 Agile API를 먼저 쓰고 실패하면 v3의 `parent`만 읽는다.
+     */
+    override fun storyContext(storyKey: String): JiraStoryContext {
+        agileStoryContext(storyKey)?.let { return it }
+
+        val fields = requestObject("/rest/api/3/issue/${encode(storyKey)}?fields=summary,parent").objectOrNull("fields")
+        return JiraStoryContext(
+            summary = fields?.stringOrNull("summary"),
+            epicKey = fields?.objectOrNull("parent")?.stringOrNull("key"),
+            sprint = null,
+        )
+    }
+
+    private fun agileStoryContext(storyKey: String): JiraStoryContext? = try {
+        val fields = requestObject("/rest/agile/1.0/issue/${encode(storyKey)}?fields=summary,epic,sprint,parent")
+            .objectOrNull("fields") ?: return null
+        JiraStoryContext(
+            summary = fields.stringOrNull("summary"),
+            epicKey = fields.objectOrNull("epic")?.stringOrNull("key")
+                ?: fields.objectOrNull("parent")?.stringOrNull("key"),
+            sprint = fields.objectOrNull("sprint")?.stringOrNull("name"),
+        )
+    } catch (error: JiraRequestError) {
+        null
     }
 
     override fun verifyIdentity() {

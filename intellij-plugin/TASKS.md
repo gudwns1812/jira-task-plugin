@@ -141,6 +141,18 @@ MIGRATION-LOG.md에 정리한 코틀린 코드 스타일 규칙(companion 팩토
 - **테스트**: `IssueDraftPresenterTest`에 3건(칸 이름으로 보여주기, 결과물 번호, 문제 있는 경로 목록), `CreateIssueDraftDialogTest`에 5건(자리 문구, 채워진 값은 접기, 비어 있는 필수 칸은 유지, 모두 보기, 오류가 빨간색이고 칸 이름을 쓰는지, 문제 없을 때 안내). 총 328개 통과.
 - **플랫폼 동작 기록**: Kotlin UI DSL의 `Row.visible()`은 setter만 있어 현재 가시성을 되읽을 수 없다 — 지금 보이는 칸을 폼이 따로 기억한다.
 
+### W12. 물어보지 말고 Jira에서 알아내기 — (완료)
+- **문제(사용자 지적 4건)**: (1) 작업을 만드는데 에픽 키를 왜 입력하나. (2) 담당자를 자기 자신으로 기본 지정 못 하나. (3) 우선순위는 자유 입력이 아니라 선택이어야 하고 기본값은 낮은 쪽. (4) 스프린트는 스토리에 딸린 값인데 왜 입력하나. 기한은 달력으로.
+- **답**: 모두 사람이 입력할 값이 아니다. 작업은 스토리에 속하므로 **에픽과 스프린트를 스토리에서 물려받고**, 담당자는 **지금 연결된 Jira 사용자**, 우선순위는 **Jira에 정의된 목록에서 선택**, 기한은 **달력**에서 고른다.
+- **새 Jira 조회(`domain/jira/JiraDraftReader.kt` 포트, `JiraClient` 구현)**:
+  - `storyContext(storyKey)` — 스토리의 제목·에픽·스프린트. 스프린트는 사이트마다 커스텀 필드 ID가 달라 REST v3로는 안정적으로 읽을 수 없으므로 이름이 고정된 **Agile API(`/rest/agile/1.0/issue/...`)를 먼저** 쓰고, 실패하면 v3의 `parent`만 읽는다(스프린트는 알 수 없음으로 둔다).
+  - `currentUserName()` — `/rest/api/3/myself`의 `displayName`.
+  - `listPriorities()` — `/rest/api/3/priority`. 읽지 못하면 표준 목록(Highest~Lowest)으로 대체한다.
+- **기본값 규칙**: 담당자 = 지난번 값 → 없으면 나 자신. 스프린트 = 스토리의 스프린트 → 없으면 지난번 값. 우선순위 = 지난번 값 → `Low` → 목록의 가장 낮은 항목. 에픽 키 = 스토리의 에픽 → 없으면 지난번 값.
+- **UI 변경**: 우선순위는 콤보박스, 기한은 `ExtendableTextField`의 `...` 버튼으로 플랫폼 `CalendarView` 대화상자(`DueDateDialog`)를 열어 고른다(직접 타이핑도 그대로 된다). 스토리에서 온 에픽 키·스프린트는 값이 있으니 접힌 상태가 되어 화면에서 사라진다 — 못 읽었을 때만 물어본다.
+- **산출물**: `domain/jira/JiraDraftReader.kt`, `JiraClient`의 세 조회, `IssueDraftContext`에 `sprint`·`currentUser`·`priorities`와 기본값 함수들, `IssueDraftContextReader` 재작성, `IssueDraftForm`(우선순위 콤보·달력 버튼·기본값), `ui/issue/DueDateDialog.kt`.
+- **테스트**: `IssueDraftContextTest`에 7건(에픽·스프린트 물려받기, 나 자신 기본 담당자와 기억값 우선, Low 기본 우선순위, 사이트 정의 목록 사용, 목록을 못 읽으면 표준값, 스토리에 에픽이 없으면 기억값 유지), `JiraClientTest`에 4건(Agile API 조회, 실패 시 v3 대체, 사용자·우선순위 조회, 거부되면 예외 대신 "모름"), `CreateIssueDraftDialogTest`에 4건(스토리가 알려준 값은 묻지 않음, 모르면 묻음, 우선순위 선택, 달력 확장 버튼과 날짜 적용). 총 343개 통과.
+
 ## 3. 하지 않을 것 (이번 범위 밖)
 
 - **실제 Jira 이슈 생성(POST)**: CLI에도 없는 기능이라 이식 대상이 아니다. 필요하면 별도 작업으로 설계부터 시작한다.
