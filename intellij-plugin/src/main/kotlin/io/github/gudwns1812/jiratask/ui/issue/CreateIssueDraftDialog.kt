@@ -6,7 +6,6 @@ import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
 import com.intellij.ui.dsl.builder.panel
-import io.github.gudwns1812.jiratask.domain.policy.WorkPolicy
 import java.awt.datatransfer.StringSelection
 import javax.swing.JComponent
 
@@ -17,18 +16,18 @@ import javax.swing.JComponent
  * 실제 Jira 생성은 CLI에도 없는 기능이라(`create`는 `--dry-run` 없이는 거부한다) 여기서도 제공하지 않는다.
  * 대신 확인 버튼은 만들어진 초안 JSON을 클립보드로 복사한다.
  */
-class CreateIssueDraftDialog(
+class CreateIssueDraftDialog @JvmOverloads constructor(
     project: Project?,
-    private val projectKey: String,
-    private val policy: WorkPolicy = WorkPolicy.DEFAULT,
+    private val context: IssueDraftContext,
+    private val onRemember: (RememberedInput) -> Unit = {},
 ) : DialogWrapper(project, false) {
 
-    val form: IssueDraftForm = IssueDraftForm { refresh() }
+    val form: IssueDraftForm = IssueDraftForm(context) { refresh() }
 
     private val problemsArea: JBTextArea = readOnlyArea(4)
     private val previewArea: JBTextArea = readOnlyArea(10)
 
-    private var view: IssueDraftView = IssueDraftPresenter.present(form.values(), projectKey, policy)
+    private var view: IssueDraftView = IssueDraftPresenter.present(form.values(), context.projectKey, context.policy)
 
     init {
         title = "Jira 이슈 초안"
@@ -60,7 +59,7 @@ class CreateIssueDraftDialog(
     fun previewText(): String = previewArea.text
 
     fun refresh() {
-        view = IssueDraftPresenter.present(form.values(), projectKey, policy)
+        view = IssueDraftPresenter.present(form.values(), context.projectKey, context.policy)
         problemsArea.text = problemsText(view)
         isOKActionEnabled = view.isValid
         if (!view.isValid) {
@@ -72,9 +71,12 @@ class CreateIssueDraftDialog(
         previewArea.text = view.json ?: NO_DRAFT
     }
 
-    override fun doOKAction() {
+    // 다이얼로그를 띄우지 않고 확인 동작(복사 + 기억)을 검증할 수 있게 공개 범위를 넓힌다.
+    public override fun doOKAction() {
         val json = view.json ?: return
         CopyPasteManager.getInstance().setContents(StringSelection(json))
+        // 다음에 열 때 다시 타이핑하지 않도록 이번에 쓴 값을 기억한다.
+        onRemember(form.rememberedInput())
         super.doOKAction()
     }
 

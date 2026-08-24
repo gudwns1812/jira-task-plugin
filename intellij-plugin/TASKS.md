@@ -117,6 +117,20 @@ MIGRATION-LOG.md에 정리한 코틀린 코드 스타일 규칙(companion 팩토
 
 ---
 
+### W10. 작업 이슈 입력을 간단 모드로 줄이기 — (완료)
+- **문제**: 작업(task) 하나를 만들려면 필드 10개(에픽 키·스토리 키·제목·담당자·우선순위·포인트·스프린트·기한·설명·결과물)를 손으로 채워야 했다. CLI가 JSON으로 받던 것을 폼으로 그대로 옮겨놨을 뿐이라, JSON을 쓰지 않기 위해 만든 플러그인인데도 타이핑량이 줄지 않았다.
+- **결정(사용자 확인)**: (1) 간단 모드를 기본으로 하고 자동으로 채운 값은 접힌 "고급"에 둔다. (2) 제목 접두는 Jira를 조회해 자동 생성한다.
+- **자동으로 채우는 값**:
+  - 스토리 키 ← 현재 브랜치. `feat/100-signup`이면 규칙상 스토리 번호는 100 → `<프로젝트 키>-100` (`BranchNames.storyNumberOf`, `createBranchName`의 역함수로 도메인에 추가)
+  - 기능 ID ← 그 스토리의 Jira 제목. `[AUTH-001] 이메일 회원가입` → `AUTH-001` (기존 `TitleParser.parseStoryTitle` 재사용, `JiraIssue`에 `summary` 추가)
+  - 담당자·우선순위·스프린트·기한·에픽 키·영역·포인트 ← 프로젝트별로 기억한 지난번 입력(`IssueDraftMemory`, 프로젝트 레벨 `PersistentStateComponent`)
+  - 포인트·영역 ← 자유 입력 대신 정책 값 콤보박스
+- **타이핑량**: 작업 기준 10칸 → **요약 한 줄 + 설명 + 결과물** (구분·영역은 콤보 선택). 제목은 `TaskTitles.compose(구분, 영역, 요약)`가 `[AUTH-001 | FE] 회원가입 폼` 형태로 조립하고 "만들어질 제목"으로 미리 보여준다. 공통 업무는 구분에서 업무 분류(PLAN 등)를 고르고 영역을 `(없음)`으로 두면 `[PLAN] …`이 된다.
+- **조회 실패는 막지 않는다**: 브랜치가 규칙에 맞지 않거나 Jira를 못 읽으면 아는 값까지만 채우고 이유를 폼 아래 주석으로만 알린다(검증 오류로 다루지 않는다). 조회는 액션이 `Task.Backgroundable`에서 하고 다이얼로그는 그 뒤에 열린다.
+- **산출물**: `domain/branch/BranchName.kt`에 `storyNumberOf`, `domain/jira/StoryIssueReader.kt`의 `JiraIssue.summary`(+`JiraClient`가 `fields=…,summary` 조회), `ui/issue/IssueDraftContext.kt`(`TaskTitles`, `IssueDraftContext`, `RememberedInput`), `ui/issue/IssueDraftContextReader.kt`, `ui/issue/IssueDraftMemory.kt`, `IssueDraftForm` 전면 개편(간단 모드 + `collapsibleGroup("고급")`), `CreateIssueDraftDialog`가 컨텍스트를 받고 확인 시 값을 기억, `CreateIssueDraftAction`이 컨텍스트를 먼저 읽는다.
+- **테스트**: `ui/issue/IssueDraftContextTest.kt` (10 tests — 브랜치에서 스토리·기능 ID 유도, 기능 ID를 구분 후보 맨 앞에, 평범한 브랜치면 Jira를 부르지 않음, 조회 실패·연결 없음·기능 ID 없는 제목의 안내, 기억값/정책 기본값, 제목 조립, 스토리 제목만 기능 ID로 인정), `ui/issue/IssueDraftMemoryTest.kt` (6 tests — 빈 값으로 기억을 지우지 않음, 트림, 저장·복원, 프로젝트 서비스), `domain/branch/BranchNameTest.kt`에 2건, `CreateIssueDraftDialogTest` 재작성(11 tests — 자동 채움 확인, 제목 조립·미리보기, 요약과 결과물만으로 유효, 공통 업무 제목, 브랜치가 알려주지 않을 때 업무 분류 후보, 조회 실패 안내가 검증 오류가 아님, 확인 시 기억, 스토리·에픽은 제목 그대로). 총 320개 통과.
+- **버그 수정 기록**: 폼이 생성 중에 `onChange`를 부르면 아직 만들어지지 않은 다이얼로그 필드를 건드려 NPE가 났다(`applyType` → `changed()` → 다이얼로그 `refresh()`). 생성 중에는 미리보기만 갱신하고 `onChange`는 사용자 조작에서만 부르도록 분리했다.
+
 ## 3. 하지 않을 것 (이번 범위 밖)
 
 - **실제 Jira 이슈 생성(POST)**: CLI에도 없는 기능이라 이식 대상이 아니다. 필요하면 별도 작업으로 설계부터 시작한다.

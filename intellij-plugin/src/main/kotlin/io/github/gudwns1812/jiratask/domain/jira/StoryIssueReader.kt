@@ -6,6 +6,8 @@ data class JiraIssue(
     val issueTypeName: String,
     val statusId: String,
     val statusName: String,
+    /** 이슈 제목. 작업 제목의 기능 ID를 스토리에서 따올 때 쓴다(브랜치 전환에는 필요 없다). */
+    val summary: String = "",
 )
 
 /**

@@ -53,7 +53,7 @@ class JiraClient(
     private val authorization = "Basic " + Base64.getEncoder().encodeToString("$email:$apiToken".toByteArray())
 
     override fun getIssue(issueKey: String): JiraIssue {
-        val body = requestObject("/rest/api/3/issue/${encode(issueKey)}?fields=issuetype,status")
+        val body = requestObject("/rest/api/3/issue/${encode(issueKey)}?fields=issuetype,status,summary")
         val fields = body.objectOrNull("fields")
         val issuetype = fields?.objectOrNull("issuetype")
         val status = fields?.objectOrNull("status")
@@ -68,7 +68,7 @@ class JiraClient(
             throw JiraRequestError("Jira 이슈 응답 형식이 올바르지 않습니다.")
         }
 
-        return JiraIssue(key, issueTypeId, issueTypeName, statusId, statusName)
+        return JiraIssue(key, issueTypeId, issueTypeName, statusId, statusName, fields.stringOrNull("summary").orEmpty())
     }
 
     override fun verifyIdentity() {
