@@ -24,6 +24,7 @@ import io.github.gudwns1812.jiratask.ui.JiraTaskNotifications
 import io.github.gudwns1812.jiratask.ui.JiraTaskSettings
 import io.github.gudwns1812.jiratask.ui.SettingsLookup
 import io.github.gudwns1812.jiratask.ui.applyAvailability
+import io.github.gudwns1812.jiratask.ui.notifyAndRefresh
 import io.github.gudwns1812.jiratask.ui.setup.SetupWizardLauncher
 import java.io.File
 import javax.swing.JComponent
@@ -104,7 +105,7 @@ class CommitWithJiraTaskAction @JvmOverloads constructor(
                     .execute(CreateCommitCommand(commitSettings.projectKey, message))
 
                 val report = CommitReports.of(result)
-                JiraTaskNotifications.notify(project, report.message, report.type)
+                notifyAndRefresh(project, report.type, report.message)
             }
         })
     }

@@ -7,7 +7,9 @@ import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.actionSystem.Separator
 import com.intellij.openapi.extensions.ExtensionPointName
 import com.intellij.openapi.wm.ToolWindowEP
+import com.intellij.testFramework.TestActionEvent
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import io.github.gudwns1812.jiratask.ui.JiraTaskStateListener
 import io.github.gudwns1812.jiratask.application.SettingsLoad
 import io.github.gudwns1812.jiratask.application.SettingsSnapshot
 import io.github.gudwns1812.jiratask.application.empty
@@ -117,7 +119,7 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
     )
 
     fun `test draws the status it is given`() {
-        val panel = JiraTaskToolWindowPanel(project)
+        val panel = JiraTaskToolWindowPanel(project, testRootDisposable)
 
         panel.show(configuredStatus())
 
@@ -130,7 +132,7 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
     }
 
     fun `test guides the setup instead of listing empty rows`() {
-        val panel = JiraTaskToolWindowPanel(project)
+        val panel = JiraTaskToolWindowPanel(project, testRootDisposable)
 
         panel.show(JiraTaskStatus.of(SettingsLoad.Loaded(SettingsSnapshot.empty()), null, null))
 
@@ -145,7 +147,7 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
     fun `test the setup guidance links run the wizard and open the settings`() {
         var wizard = 0
         var settings = 0
-        val panel = JiraTaskToolWindowPanel(project, {}, launchWizard = { wizard++ }, openSettings = { settings++ })
+        val panel = JiraTaskToolWindowPanel(project, testRootDisposable, {}, launchWizard = { wizard++ }, openSettings = { settings++ })
 
         panel.show(JiraTaskStatus.of(SettingsLoad.Loaded(SettingsSnapshot.empty()), null, null))
         linksOf(panel).single { it.text == JiraTaskToolWindowPanel.RUN_WIZARD }.doClick()
@@ -157,7 +159,7 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
 
     fun `test explains a broken configuration and offers the settings`() {
         var settings = 0
-        val panel = JiraTaskToolWindowPanel(project, {}, openSettings = { settings++ })
+        val panel = JiraTaskToolWindowPanel(project, testRootDisposable, {}, openSettings = { settings++ })
 
         panel.show(JiraTaskStatus.of(SettingsLoad.Broken("설정 형식이 올바르지 않습니다."), "257", "main"))
 
@@ -168,7 +170,7 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
     }
 
     fun `test shows the rows again once the setup is complete`() {
-        val panel = JiraTaskToolWindowPanel(project)
+        val panel = JiraTaskToolWindowPanel(project, testRootDisposable)
 
         panel.show(JiraTaskStatus.of(SettingsLoad.Loaded(SettingsSnapshot.empty()), null, null))
         assertEquals(JiraTaskToolWindowPanel.Shown.SETUP_NEEDED, panel.shown())
@@ -180,7 +182,7 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
     }
 
     fun `test is operated by an action toolbar instead of plain buttons`() {
-        val panel = JiraTaskToolWindowPanel(project)
+        val panel = JiraTaskToolWindowPanel(project, testRootDisposable)
 
         assertEmpty(
             "툴 윈도우는 폼 버튼이 아니라 툴바로 조작한다(ActionLink는 JButton을 상속하므로 제외)",
@@ -223,24 +225,101 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
         assertEmpty("아이콘 없는 액션은 툴바에서 빈 칸으로 보인다", withoutIcon)
     }
 
-    fun `test the panel adds its own refresh action to the toolbar`() {
-        val panel = JiraTaskToolWindowPanel(project)
+    fun `test the toolbar holds only the execution actions`() {
+        val panel = JiraTaskToolWindowPanel(project, testRootDisposable)
         val manager = ActionManager.getInstance()
 
         val children = panel.toolbarGroup().childActionsOrStubs.toList()
 
+        assertSize(1, children)
         assertSame(
             "메뉴와 같은 액션 그룹을 그대로 쓴다",
             manager.getAction(JiraTaskToolWindowPanel.TOOLBAR_GROUP_ID),
-            children.first(),
+            children.single(),
         )
-        val refresh = children.last()
-        assertNull("새로 고침은 이 패널에만 있는 액션이다", manager.getId(refresh))
-        assertEquals(AllIcons.Actions.Refresh, refresh.templatePresentation.icon)
+    }
+
+    fun `test the title bar offers refresh and open settings`() {
+        var settings = 0
+        val reads = mutableListOf<Thread>()
+        val panel = JiraTaskToolWindowPanel(
+            project,
+            testRootDisposable,
+            openSettings = { settings++ },
+            statusReader = { reads += Thread.currentThread(); JiraTaskStatus.EMPTY },
+        )
+
+        val titleActions = panel.titleActions()
+
+        assertSize(2, titleActions)
+        assertEquals(AllIcons.Actions.Refresh, titleActions[0].templatePresentation.icon)
+        assertEquals(AllIcons.General.Settings, titleActions[1].templatePresentation.icon)
+
+        titleActions[1].actionPerformed(TestActionEvent.createTestEvent(titleActions[1]))
+        assertEquals(1, settings)
+
+        titleActions[0].actionPerformed(TestActionEvent.createTestEvent(titleActions[0]))
+        assertTrue("새로 고침은 상태를 다시 읽는다", waitForReads(reads, 1))
+    }
+
+    fun `test never reads git on the event dispatch thread`() {
+        val reads = mutableListOf<Thread>()
+        val panel = JiraTaskToolWindowPanel(
+            project,
+            testRootDisposable,
+            statusReader = { reads += Thread.currentThread(); JiraTaskStatus.EMPTY },
+        )
+
+        panel.refreshInBackground()
+
+        assertTrue(waitForReads(reads, 1))
+        assertFalse("git 조회가 EDT에서 일어나면 IDE가 멈춘다", reads.single().name.contains("AWT-EventQueue"))
+    }
+
+    fun `test refreshes itself when the state changes`() {
+        val reads = mutableListOf<Thread>()
+        JiraTaskToolWindowPanel(
+            project,
+            testRootDisposable,
+            statusReader = { reads += Thread.currentThread(); JiraTaskStatus.EMPTY },
+        )
+
+        JiraTaskStateListener.publish(project)
+
+        assertTrue("상태 변경 통지를 받으면 다시 읽는다", waitForReads(reads, 1))
+    }
+
+    fun `test refreshes itself when the tool window is shown again`() {
+        val reads = mutableListOf<Thread>()
+        val panel = JiraTaskToolWindowPanel(
+            project,
+            testRootDisposable,
+            statusReader = { reads += Thread.currentThread(); JiraTaskStatus.EMPTY },
+        )
+
+        panel.onToolWindowShown("Other")
+        assertFalse("다른 툴 윈도우가 열린 것에는 반응하지 않는다", waitForReads(reads, 1, timeoutMillis = 300))
+
+        panel.onToolWindowShown(JiraTaskToolWindowPanel.TOOL_WINDOW_ID)
+        assertTrue(waitForReads(reads, 1))
+    }
+
+    /** 갱신은 백그라운드 스레드에서 일어나므로 정해진 시간까지 기다린다. */
+    private fun waitForReads(reads: List<Thread>, count: Int, timeoutMillis: Long = 5_000): Boolean {
+        val deadline = System.nanoTime() + timeoutMillis * 1_000_000
+        while (System.nanoTime() < deadline) {
+            synchronized(reads) {
+                if (reads.size >= count) {
+                    return true
+                }
+            }
+            Thread.sleep(20)
+        }
+        return reads.size >= count
     }
 
     fun `test shows a real value as copyable text and a missing one in grey`() {
-        val panel = JiraTaskToolWindowPanel(project)
+        val panel = JiraTaskToolWindowPanel(project, testRootDisposable)
 
         panel.show(configuredStatus())
         val projectKey = labelWith("S15P11A108", panel)
@@ -256,7 +335,7 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
     }
 
     fun `test draws keys and branches in a fixed width font`() {
-        val panel = JiraTaskToolWindowPanel(project)
+        val panel = JiraTaskToolWindowPanel(project, testRootDisposable)
 
         panel.show(configuredStatus())
 
@@ -267,7 +346,7 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
 
     fun `test opens the jira address in a browser`() {
         val opened = mutableListOf<String>()
-        val panel = JiraTaskToolWindowPanel(project, browse = { opened += it })
+        val panel = JiraTaskToolWindowPanel(project, testRootDisposable, browse = { opened += it })
 
         panel.show(configuredStatus())
         val link = linksOf(panel).single { it.text == "https://team.atlassian.net" }
@@ -279,7 +358,7 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
 
     fun `test does not offer a link when no address is configured`() {
         val opened = mutableListOf<String>()
-        val panel = JiraTaskToolWindowPanel(project, browse = { opened += it })
+        val panel = JiraTaskToolWindowPanel(project, testRootDisposable, browse = { opened += it })
 
         panel.show(JiraTaskStatus.of(SettingsLoad.Loaded(SettingsSnapshot.empty()), null, null))
         val link = linksOf(panel).single { it.text == JiraTaskStatus.NOT_CONFIGURED }
@@ -290,7 +369,7 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
     }
 
     fun `test never shows the email even after a refresh`() {
-        val panel = JiraTaskToolWindowPanel(project)
+        val panel = JiraTaskToolWindowPanel(project, testRootDisposable)
 
         panel.show(configuredStatus())
 
@@ -299,7 +378,7 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
 
     fun `test reads the current task number from the cache`() {
         CurrentTaskState.getInstance(project).apply("257")
-        val panel = JiraTaskToolWindowPanel(project)
+        val panel = JiraTaskToolWindowPanel(project, testRootDisposable)
 
         val status = panel.readStatus()
 

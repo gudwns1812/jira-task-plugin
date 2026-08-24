@@ -4,6 +4,8 @@ import com.intellij.icons.AllIcons
 import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionToolbar
+import com.intellij.openapi.Disposable
+import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.application.ApplicationManager
@@ -13,6 +15,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.SimpleToolWindowPanel
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
+import com.intellij.openapi.wm.ex.ToolWindowManagerListener
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.content.ContentFactory
@@ -21,6 +24,7 @@ import io.github.gudwns1812.jiratask.application.EditSettingsUseCase
 import io.github.gudwns1812.jiratask.infrastructure.GitRepository
 import io.github.gudwns1812.jiratask.infrastructure.PolicyConfigRepository
 import io.github.gudwns1812.jiratask.ui.JiraTaskConfigurable
+import io.github.gudwns1812.jiratask.ui.JiraTaskStateListener
 import io.github.gudwns1812.jiratask.ui.setup.SetupWizardLauncher
 import io.github.gudwns1812.jiratask.ui.task.CurrentTaskState
 import java.io.File
@@ -38,11 +42,14 @@ import javax.swing.JComponent
  */
 class JiraTaskToolWindowPanel @JvmOverloads constructor(
     private val project: Project,
+    parentDisposable: Disposable,
     browse: (String) -> Unit = { BrowserUtil.browse(it) },
     private val launchWizard: () -> Unit = { SetupWizardLauncher.launch(project) },
     private val openSettings: () -> Unit = {
         ShowSettingsUtil.getInstance().showSettingsDialog(project, JiraTaskConfigurable::class.java)
     },
+    /** 상태를 읽는 방법. 기본은 설정 저장소와 git을 읽는 [readStatus]이고, 테스트에서 갈아 끼운다. */
+    private val statusReader: (() -> JiraTaskStatus)? = null,
 ) : SimpleToolWindowPanel(true, true) {
 
     /** 본문에 보이는 화면. */
@@ -97,7 +104,33 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
         toolbar = createToolbar().component
         setContent(JBScrollPane(body))
         show(JiraTaskStatus.EMPTY)
+        subscribe(parentDisposable)
     }
+
+    /**
+     * 스스로 갱신하는 경로 두 가지: 액션이 성공해 상태가 바뀌었다는 통지([JiraTaskStateListener]),
+     * 그리고 툴 윈도우가 다시 보이는 순간. 후자는 다른 창에서 브랜치를 바꾸고 돌아온 경우를 잡아준다.
+     */
+    private fun subscribe(parentDisposable: Disposable) {
+        val connection = project.messageBus.connect(parentDisposable)
+        connection.subscribe(JiraTaskStateListener.TOPIC, JiraTaskStateListener { refreshInBackground() })
+        connection.subscribe(
+            ToolWindowManagerListener.TOPIC,
+            object : ToolWindowManagerListener {
+                override fun toolWindowShown(toolWindow: ToolWindow) = onToolWindowShown(toolWindow.id)
+            },
+        )
+    }
+
+    /** 이 툴 윈도우가 보일 때만 다시 읽는다. */
+    fun onToolWindowShown(toolWindowId: String) {
+        if (toolWindowId == TOOL_WINDOW_ID) {
+            refreshInBackground()
+        }
+    }
+
+    /** 제목 표시줄(gear 줄)에 놓을 액션들. */
+    fun titleActions(): List<AnAction> = listOf(RefreshStatusAction(), OpenSettingsAction())
 
     /** 지금 그려진 상태. 테스트와 새로 고침 판단에 쓴다. */
     fun currentStatus(): JiraTaskStatus = status
@@ -112,7 +145,7 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
     /** git을 읽어야 하므로 백그라운드에서 상태를 다시 만든 뒤 화면에 반영한다. */
     fun refreshInBackground() {
         ApplicationManager.getApplication().executeOnPooledThread {
-            val next = readStatus()
+            val next = statusReader?.invoke() ?: readStatus()
             ApplicationManager.getApplication().invokeLater({ show(next) }) { project.isDisposed }
         }
     }
@@ -144,12 +177,10 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
         return toolbar
     }
 
-    /** plugin.xml의 액션 그룹에 이 패널에만 있는 새로 고침을 덧붙인 툴바 구성. */
+    /** 툴바 구성. 새로 고침·설정 열기는 제목 표시줄에 있으므로 여기에는 실행 액션만 둔다. */
     fun toolbarGroup(): DefaultActionGroup {
         val group = DefaultActionGroup()
         ActionManager.getInstance().getAction(TOOLBAR_GROUP_ID)?.let { group.add(it) }
-        group.addSeparator()
-        group.add(RefreshStatusAction())
         return group
     }
 
@@ -161,20 +192,30 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
         override fun actionPerformed(event: AnActionEvent) = refreshInBackground()
     }
 
+    private inner class OpenSettingsAction : DumbAwareAction(
+        "설정 열기",
+        "Settings | Tools | Jira Task를 엽니다",
+        AllIcons.General.Settings,
+    ) {
+        override fun actionPerformed(event: AnActionEvent) = openSettings()
+    }
+
     companion object {
         const val TOOLBAR_PLACE: String = "JiraTaskToolWindow"
         const val TOOLBAR_GROUP_ID: String = "JiraTask.ToolWindowToolbar"
         const val RUN_WIZARD: String = "설정 마법사 실행"
         const val OPEN_SETTINGS: String = "설정 열기"
+        const val TOOL_WINDOW_ID: String = "Jira Task"
     }
 }
 
 class JiraTaskToolWindowFactory : ToolWindowFactory {
 
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
-        val panel = JiraTaskToolWindowPanel(project)
+        val panel = JiraTaskToolWindowPanel(project, toolWindow.disposable)
         val content = ContentFactory.getInstance().createContent(panel, null, false)
         toolWindow.contentManager.addContent(content)
+        toolWindow.setTitleActions(panel.titleActions())
         panel.refreshInBackground()
     }
 

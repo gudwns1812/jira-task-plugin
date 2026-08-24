@@ -86,11 +86,17 @@ MIGRATION-LOG.md에 정리한 코틀린 코드 스타일 규칙(companion 팩토
 - **테스트**: 미설정에서 안내 화면과 두 링크가 보이고 "설정되지 않음" 행은 보이지 않는지, 링크 클릭이 마법사·설정 호출로 이어지는지, 손상된 설정에서 오류 문구와 설정 열기 링크가 나오는지, 설정을 마치면 상태 행으로 돌아오는지. `JiraTaskStatusTest`의 문구 검증은 `problem?.message`·`problem?.kind`로 갱신. 총 291개 통과.
 - **주의(테스트 작성 중 발견)**: 생성자에 람다 파라미터를 더하면 기존 테스트의 후행 람다(`Panel(project) { ... }`)가 마지막 파라미터에 붙어 조용히 다른 인자로 해석된다. W4의 `browse` 인자를 이름 있는 인자로 바꿔 고쳤다.
 
-### W6. 제목 표시줄 액션과 자동 갱신
+### W6. 제목 표시줄 액션과 자동 갱신 — (완료)
 - **내용**: `toolWindow.setTitleActions(listOf(새로 고침, 설정 열기))` — 새로 고침은 `AllIcons.Actions.Refresh`, 설정 열기는 `AllIcons.General.Settings` + `ShowSettingsUtil.showSettingsDialog(project, JiraTaskConfigurable::class.java)`. 자동 갱신은 (1) `ToolWindowManagerListener`로 툴 윈도우가 보일 때, (2) 작업 번호 저장·브랜치 생성·커밋 성공 시 자체 메시지 버스 토픽(`JiraTaskStateListener`)을 발행해 구독.
 - **의존**: W2.
 - **완료 기준**: 토픽을 발행하면 패널이 다시 읽는지, 툴 윈도우 표시 이벤트에 반응하는지 테스트. 새로 고침이 EDT에서 git을 호출하지 않는 것을 확인(백그라운드 호출 여부를 스레드 이름으로 검증하거나, 읽기 함수를 주입해 호출 스레드를 기록).
 - **검토 항목**: Git 브랜치 변경 자동 감지는 `git4idea`의 `GitRepositoryChangeListener`가 필요하다. MIGRATION-LOG.md의 T13 결정(Git4Idea 의존 추가 보류)과 충돌하므로, 이 작업에서는 **툴 윈도우 표시 시 갱신으로 대신하고** git4idea 의존은 별도 작업으로 판단한다.
+- **구현**: 제목 표시줄에 새로 고침(`AllIcons.Actions.Refresh`)과 설정 열기(`AllIcons.General.Settings` → `ShowSettingsUtil.showSettingsDialog(project, JiraTaskConfigurable::class.java)`)를 `toolWindow.setTitleActions`로 달고, 툴바에서 새로 고침을 뺐다(툴바는 실행 액션만).
+- **자동 갱신 경로 두 가지**: (1) `JiraTaskStateListener`(프로젝트 레벨 토픽) — 작업 번호 저장·브랜치 생성·커밋·설정 마법사 완료·Settings 저장이 알린다. (2) `ToolWindowManagerListener.toolWindowShown` — 다른 창에서 브랜치를 바꾸고 툴 윈도우로 돌아온 경우를 잡는다(git4idea 없이 브랜치 변경을 따라가는 현실적인 대안).
+- **알림과 갱신을 묶었다**: `notifyAndRefresh(project, type, message)` 하나로 결과 알림과 상태 변경 통지를 함께 처리해, 알림만 띄우고 화면 갱신을 잊는 실수를 막는다. Settings 패널은 프로젝트가 없으므로 `publishToAllProjects()`로 열린 프로젝트 전부에 알린다.
+- **테스트 가능성**: 상태를 읽는 함수(`statusReader`)를 생성자로 주입할 수 있게 해, 갱신 횟수와 **호출 스레드**를 기록한다. 그래서 "git을 EDT에서 읽지 않는다"를 테스트로 고정할 수 있다.
+- **산출물**: `ui/JiraTaskStateListener.kt`(토픽 + `notifyAndRefresh`), 패널의 `titleActions()`·`onToolWindowShown()`·구독, 액션 3개와 마법사·Settings의 통지 호출, 팩토리에서 `setTitleActions` 연결.
+- **테스트**: `ui/JiraTaskStateTest.kt` (4 tests — 통지 전달, 알림과 통지 동시 처리, 프로젝트가 없을 때, 애플리케이션 레벨 통지), `JiraTaskToolWindowTest`에 5건(툴바에는 실행 액션만, 제목 표시줄 액션 2개와 각 동작, EDT에서 git을 읽지 않음, 상태 변경 통지 시 갱신, 이 툴 윈도우가 보일 때만 갱신). 총 299개 통과.
 
 ### W7. 플러그인·툴 윈도우 아이콘
 - **내용**: 13x13 / 16x16 SVG 아이콘을 만들어 `icons/`에 넣고 `IconLoader.getIcon`으로 상수화, `plugin.xml`의 `toolWindow icon`을 그것으로 바꾼다. 다크 테마용 `_dark.svg`도 함께 둔다.
