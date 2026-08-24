@@ -23,6 +23,12 @@ interface JiraIssueCreator {
     /** 스토리 포인트·스프린트 커스텀 필드 ID를 이름으로 찾는다. */
     fun findFieldIds(): JiraFieldIds
 
+    /**
+     * 프로젝트의 보드에서 이름이 정확히 일치하는 진행 중·예정 스프린트 ID를 찾는다.
+     * 같은 이름의 서로 다른 스프린트가 있거나 찾지 못하면 잘못 지정하지 않도록 `null`을 돌려준다.
+     */
+    fun findSprintId(projectKey: String, sprintName: String): Int?
+
     /** 두 이슈를 연결한다(RULE.md의 스토리 → 작업 분할 관계). */
     fun linkIssues(inwardKey: String, outwardKey: String, linkTypeName: String)
 }

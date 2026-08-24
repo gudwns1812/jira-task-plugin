@@ -78,7 +78,7 @@ class CreateIssueUseCase(private val creator: JiraIssueCreator) {
         }
         applyAssignee(draft.assignee, fields, unset)
         applyStoryPoints(draft.policyFields.storyPoints, fieldIds, fields, unset)
-        applySprint(draft.policyFields.sprint, command.sprintId, fieldIds, fields, unset)
+        applySprint(draft.projectKey, draft.policyFields.sprint, command.sprintId, fieldIds, fields, unset)
 
         val created = try {
             creator.createIssue(fields)
@@ -123,6 +123,7 @@ class CreateIssueUseCase(private val creator: JiraIssueCreator) {
     }
 
     private fun applySprint(
+        projectKey: String,
         sprintName: String?,
         sprintId: Int?,
         fieldIds: JiraFieldIds,
@@ -132,13 +133,20 @@ class CreateIssueUseCase(private val creator: JiraIssueCreator) {
         if (sprintName == null) {
             return
         }
+        // 왜 못 넣었는지까지 알려준다 — 필드가 없는 것과 스프린트를 못 찾은 것은 해야 할 일이 다르다.
         val fieldId = fieldIds.sprint
-        // 스프린트 필드는 이름이 아니라 스프린트 ID를 받는다. 스토리에서 ID까지 읽어야 넣을 수 있다.
-        if (fieldId == null || sprintId == null) {
-            unset += "스프린트($sprintName)"
-        } else {
-            fields[fieldId] = sprintId
+        if (fieldId == null) {
+            unset += "스프린트($sprintName: 이 Jira에서 스프린트 필드를 찾지 못했습니다)"
+            return
         }
+        // 스토리 조회에 ID가 없더라도, 이슈를 만들기 전에 프로젝트 보드에서 이름으로 보완 조회한다.
+        val resolvedSprintId = sprintId
+            ?: runCatching { creator.findSprintId(projectKey, sprintName) }.getOrNull()
+        if (resolvedSprintId == null) {
+            unset += "스프린트($sprintName: 진행 중·예정 스프린트에서 같은 이름을 찾지 못했습니다)"
+            return
+        }
+        fields[fieldId] = resolvedSprintId
     }
 
     private fun messageOf(error: Throwable): String = when (error) {

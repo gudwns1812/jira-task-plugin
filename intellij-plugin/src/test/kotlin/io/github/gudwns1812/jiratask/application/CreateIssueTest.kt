@@ -20,6 +20,8 @@ class CreateIssueTest {
         private val createFailure: Exception? = null,
         private val linkFailure: Exception? = null,
         private val fieldIdsFailure: Exception? = null,
+        private val sprintIds: Map<String, Int> = emptyMap(),
+        private val sprintLookupFailure: Exception? = null,
     ) : JiraIssueCreator {
         var createdFields: Map<String, Any?>? = null
         val links = mutableListOf<Triple<String, String, String>>()
@@ -35,6 +37,11 @@ class CreateIssueTest {
         override fun findFieldIds(): JiraFieldIds {
             fieldIdsFailure?.let { throw it }
             return fieldIds
+        }
+
+        override fun findSprintId(projectKey: String, sprintName: String): Int? {
+            sprintLookupFailure?.let { throw it }
+            return sprintIds[sprintName]
         }
 
         override fun linkIssues(inwardKey: String, outwardKey: String, linkTypeName: String) {
@@ -122,7 +129,10 @@ class CreateIssueTest {
         val result = execute(creator, sprintId = null)
 
         val created = result as CreateIssueResult.Created
-        assertEquals(listOf("담당자(박형준)", "스토리 포인트(3)", "스프린트(Sprint 7)"), created.unsetFields)
+        assertEquals(
+            listOf("담당자(박형준)", "스토리 포인트(3)", "스프린트(Sprint 7: 이 Jira에서 스프린트 필드를 찾지 못했습니다)"),
+            created.unsetFields,
+        )
         assertFalse(creator.createdFields!!.containsKey("assignee"))
     }
 
@@ -132,7 +142,32 @@ class CreateIssueTest {
 
         val result = execute(creator, sprintId = null)
 
-        assertTrue((result as CreateIssueResult.Created).unsetFields.contains("스프린트(Sprint 7)"))
+        assertEquals(
+            listOf("스프린트(Sprint 7: 진행 중·예정 스프린트에서 같은 이름을 찾지 못했습니다)"),
+            (result as CreateIssueResult.Created).unsetFields,
+        )
+        assertFalse(creator.createdFields!!.containsKey("customfield_10020"))
+    }
+
+    @Test
+    fun `resolves the sprint name when the story did not provide its id`() {
+        val creator = FakeCreator(sprintIds = mapOf("Sprint 7" to 314))
+
+        val result = execute(creator, sprintId = null)
+
+        assertEquals(CreateIssueResult.Created("S15P11A108-257"), result)
+        assertEquals(314, creator.createdFields!!["customfield_10020"])
+    }
+
+    @Test
+    fun `leaves the sprint unset when its name lookup fails`() {
+        val creator = FakeCreator(sprintLookupFailure = JiraNetworkError())
+
+        val result = execute(creator, sprintId = null)
+
+        assertTrue(
+            (result as CreateIssueResult.Created).unsetFields.single().contains("같은 이름을 찾지 못했습니다"),
+        )
         assertFalse(creator.createdFields!!.containsKey("customfield_10020"))
     }
 
@@ -143,7 +178,10 @@ class CreateIssueTest {
         val result = execute(creator)
 
         assertTrue(result is CreateIssueResult.Created)
-        assertEquals(listOf("스토리 포인트(3)", "스프린트(Sprint 7)"), (result as CreateIssueResult.Created).unsetFields)
+        assertEquals(
+            listOf("스토리 포인트(3)", "스프린트(Sprint 7: 이 Jira에서 스프린트 필드를 찾지 못했습니다)"),
+            (result as CreateIssueResult.Created).unsetFields,
+        )
     }
 
     @Test

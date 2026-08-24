@@ -157,6 +157,62 @@ class JiraClient(
         )
     }
 
+    override fun findSprintId(projectKey: String, sprintName: String): Int? {
+        val matchingIds = linkedSetOf<Int>()
+        for (boardId in boardIds(projectKey)) {
+            var startAt = 0
+            while (true) {
+                val page = requestObject(
+                    "/rest/agile/1.0/board/$boardId/sprint?state=active,future&startAt=$startAt&maxResults=50",
+                )
+                val sprints = page.arrayOrNull("values")
+                    ?: throw JiraRequestError("Jira 스프린트 목록 응답 형식이 올바르지 않습니다.")
+                sprints.asSequence()
+                    .mapNotNull { it.takeIf { sprint -> sprint.isJsonObject }?.asJsonObject }
+                    .filter { it.stringOrNull("name") == sprintName }
+                    .mapNotNull { it.intOrNull("id") }
+                    .forEach { matchingIds += it }
+                if (matchingIds.size > 1) {
+                    return null
+                }
+
+                val isLast = page.booleanOrNull("isLast")
+                    ?: throw JiraRequestError("Jira 스프린트 목록 응답 형식이 올바르지 않습니다.")
+                if (isLast) {
+                    break
+                }
+                if (sprints.isEmpty) {
+                    throw JiraRequestError("Jira 스프린트 목록의 다음 페이지를 확인할 수 없습니다.")
+                }
+                startAt += sprints.size()
+            }
+        }
+        return matchingIds.singleOrNull()
+    }
+
+    private fun boardIds(projectKey: String): List<Int> {
+        val ids = mutableListOf<Int>()
+        var startAt = 0
+        while (true) {
+            val page = requestObject(
+                "/rest/agile/1.0/board?projectKeyOrId=${encode(projectKey)}&startAt=$startAt&maxResults=50",
+            )
+            val boards = page.arrayOrNull("values")
+                ?: throw JiraRequestError("Jira 보드 목록 응답 형식이 올바르지 않습니다.")
+            ids += boards.mapNotNull { it.takeIf { board -> board.isJsonObject }?.asJsonObject?.intOrNull("id") }
+
+            val isLast = page.booleanOrNull("isLast")
+                ?: throw JiraRequestError("Jira 보드 목록 응답 형식이 올바르지 않습니다.")
+            if (isLast) {
+                return ids
+            }
+            if (boards.isEmpty) {
+                throw JiraRequestError("Jira 보드 목록의 다음 페이지를 확인할 수 없습니다.")
+            }
+            startAt += boards.size()
+        }
+    }
+
     override fun linkIssues(inwardKey: String, outwardKey: String, linkTypeName: String) {
         val body = gson.toJson(
             mapOf(
@@ -321,3 +377,6 @@ private fun JsonObject.stringOrNull(key: String): String? =
 
 private fun JsonObject.booleanOrNull(key: String): Boolean? =
     get(key)?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isBoolean }?.asBoolean
+
+private fun JsonObject.intOrNull(key: String): Int? =
+    get(key)?.takeIf { it.isJsonPrimitive }?.let { runCatching { it.asInt }.getOrNull() }

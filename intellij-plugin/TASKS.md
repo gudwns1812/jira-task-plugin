@@ -167,6 +167,13 @@ MIGRATION-LOG.md에 정리한 코틀린 코드 스타일 규칙(companion 팩토
 - **산출물**: `domain/jira/AdfDocument.kt`, `domain/jira/JiraIssueCreator.kt`, `application/CreateIssue.kt`, `JiraClient`의 생성·사용자·필드·연결 구현, `IssueDraftView`가 JSON 대신 `CreateRequestDraft`를 들고 있음, 다이얼로그의 미리보기 제거와 `onCreate` 콜백, 액션이 백그라운드에서 생성하고 결과를 알림으로 보고(브라우저 링크 포함).
 - **테스트**: `application/CreateIssueTest.kt` (11 tests — 모든 필드 매핑, ADF 설명, 스토리 연결, 연결 실패는 경고로, 못 넣은 값 보고, 스프린트 ID 없으면 미설정, 필드 조회 실패에도 계속, 타입 ID 없으면 거부, Jira 메시지 전달, 예상 못한 오류는 일반 문구, 에픽은 부모·연결 없이), `domain/jira/AdfDocumentTest.kt` (8 tests), 다이얼로그 테스트를 "확인 시 초안을 넘기는지 / 유효하지 않으면 아무것도 만들지 않는지"로 교체. CLI 동등성 JSON 비교 테스트는 직렬화를 테스트 안으로 옮겨 유지했다. 총 358개 통과.
 
+### W14. 스프린트를 이름으로 찾아 넣기 — (완료)
+- **증상**: 실제로 만들어 본 첫 이슈(S15P11A601-260)에서 "Jira에서 직접 채워야 하는 값: 스프린트(단일 JVM에서 REDIS로 변경)"가 나왔다. 스토리 포인트는 들어갔으므로 커스텀 필드 조회 자체는 성공했고, 빠진 것은 **스프린트 ID**였다.
+- **원인**: Jira의 스프린트 필드는 이름이 아니라 숫자 ID를 받는다. W12까지는 그 ID를 스토리 조회 결과(`/rest/agile/1.0/issue`의 `fields.sprint.id`)에서만 가져왔기 때문에, 스토리가 활성 스프린트에 없거나 사용자가 스프린트 이름을 직접 입력한 경우에는 ID가 없어 넣을 수 없었다.
+- **보완**: `JiraIssueCreator.findSprintId(projectKey, sprintName)`을 추가해, ID를 모를 때 프로젝트 보드(`/rest/agile/1.0/board?projectKeyOrId=`)의 진행 중·예정 스프린트(`state=active,future`)를 페이지 단위로 훑어 **이름이 정확히 일치하는** 스프린트를 찾는다. 같은 이름이 둘 이상이면 잘못 넣지 않도록 포기한다(`null`).
+- **실패 이유를 구분한다**: 못 넣었을 때 "스프린트 필드를 찾지 못했습니다"(필드 자체가 없음)와 "진행 중·예정 스프린트에서 같은 이름을 찾지 못했습니다"(필드는 있지만 스프린트를 못 찾음)를 나눠 알린다 — 해야 할 일이 다르기 때문이다.
+- **테스트**: `JiraClientTest`에 3건(보드에서 이름으로 찾기, 다음 페이지까지 탐색, 같은 이름이 둘이면 지정하지 않음), `CreateIssueTest`에 2건(스토리가 ID를 주지 않아도 이름으로 보완, 이름 조회가 실패하면 미설정) + 미설정 문구 구분 검증. 총 363개 통과.
+
 ## 3. 하지 않을 것 (이번 범위 밖)
 
 - **실제 Jira 이슈 생성(POST)**: CLI에도 없는 기능이라 이식 대상이 아니다. 필요하면 별도 작업으로 설계부터 시작한다.

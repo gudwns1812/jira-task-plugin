@@ -152,6 +152,53 @@ class JiraClientTest {
     }
 
     @Test
+    fun `finds an active sprint by exact name from the projects board`() {
+        val transport = ScriptedJiraHttpTransport(
+            mutableListOf(
+                JiraHttpResponse(200, """{"values":[{"id":17,"name":"Backend board"}],"isLast":true}"""),
+                JiraHttpResponse(
+                    200,
+                    """{"values":[{"id":314,"name":"단일 JVM에서 REDIS로 변경","state":"active"}],"isLast":true}""",
+                ),
+            ),
+        )
+        val client = JiraClient("https://team.atlassian.net", "user@example.com", "secret", transport)
+
+        assertEquals(314, client.findSprintId("S15P11A601", "단일 JVM에서 REDIS로 변경"))
+        assertTrue(transport.calls[0].url.contains("/rest/agile/1.0/board?projectKeyOrId=S15P11A601"))
+        assertTrue(transport.calls[1].url.contains("/rest/agile/1.0/board/17/sprint?state=active,future"))
+    }
+
+    @Test
+    fun `searches subsequent sprint pages when the first page does not match`() {
+        val transport = ScriptedJiraHttpTransport(
+            mutableListOf(
+                JiraHttpResponse(200, """{"values":[{"id":17}],"isLast":true}"""),
+                JiraHttpResponse(200, """{"values":[{"id":1,"name":"지난 스프린트"}],"isLast":false}"""),
+                JiraHttpResponse(200, """{"values":[{"id":314,"name":"Sprint 7"}],"isLast":true}"""),
+            ),
+        )
+        val client = JiraClient("https://team.atlassian.net", "user@example.com", "secret", transport)
+
+        assertEquals(314, client.findSprintId("S15P11A601", "Sprint 7"))
+        assertTrue(transport.calls[2].url.contains("startAt=1"))
+    }
+
+    @Test
+    fun `does not choose between different sprints with the same name`() {
+        val transport = ScriptedJiraHttpTransport(
+            mutableListOf(
+                JiraHttpResponse(200, """{"values":[{"id":17},{"id":18}],"isLast":true}"""),
+                JiraHttpResponse(200, """{"values":[{"id":314,"name":"Sprint 7"}],"isLast":true}"""),
+                JiraHttpResponse(200, """{"values":[{"id":315,"name":"Sprint 7"}],"isLast":true}"""),
+            ),
+        )
+        val client = JiraClient("https://team.atlassian.net", "user@example.com", "secret", transport)
+
+        assertNull(client.findSprintId("S15P11A601", "Sprint 7"))
+    }
+
+    @Test
     fun `falls back to the rest api when the agile api is unavailable`() {
         val transport = ScriptedJiraHttpTransport(
             mutableListOf(
