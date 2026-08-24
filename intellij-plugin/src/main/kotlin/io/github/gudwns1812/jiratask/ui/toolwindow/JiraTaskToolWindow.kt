@@ -1,6 +1,7 @@
 package io.github.gudwns1812.jiratask.ui.toolwindow
 
 import com.intellij.icons.AllIcons
+import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionToolbar
 import com.intellij.openapi.actionSystem.AnActionEvent
@@ -29,18 +30,25 @@ import javax.swing.JComponent
  * 툴바가 액션을 직접 실행하므로 각 액션의 `update()`가 활성/비활성과 툴팁을 결정한다 —
  * 이전처럼 이벤트를 손으로 만들어 `actionPerformed`를 부르지 않는다.
  */
-class JiraTaskToolWindowPanel(private val project: Project) : SimpleToolWindowPanel(true, true) {
+class JiraTaskToolWindowPanel @JvmOverloads constructor(
+    private val project: Project,
+    browse: (String) -> Unit = { BrowserUtil.browse(it) },
+) : SimpleToolWindowPanel(true, true) {
 
     private val repository = PolicyConfigRepository()
-    private val rowLabels: Map<String, JBLabel> = JiraTaskStatus.ROW_NAMES.associateWith { JBLabel() }
+
+    /** 항목의 종류(일반 문구 / 링크 / 고정폭)는 고정이므로 컴포넌트도 한 번만 만든다. */
+    private val rowViews: Map<String, StatusRowView> = JiraTaskStatus.EMPTY.statusRows()
+        .associate { it.name to StatusRowView.of(it.kind, browse) }
+
     private val problemLabel = JBLabel().apply { isVisible = false }
 
     private var status: JiraTaskStatus = JiraTaskStatus.EMPTY
 
     private val statusPanel: JComponent = panel {
         group("현재 상태") {
-            JiraTaskStatus.ROW_NAMES.forEach { name ->
-                row("$name:") { cell(rowLabels.getValue(name)) }
+            JiraTaskStatus.EMPTY.statusRows().forEach { statusRow ->
+                row("${statusRow.name}:") { cell(rowViews.getValue(statusRow.name).component) }
             }
             row { cell(problemLabel) }
         }
@@ -74,7 +82,7 @@ class JiraTaskToolWindowPanel(private val project: Project) : SimpleToolWindowPa
 
     fun show(next: JiraTaskStatus) {
         status = next
-        next.rows().forEach { (name, value) -> rowLabels[name]?.text = value }
+        next.statusRows().forEach { statusRow -> rowViews[statusRow.name]?.show(statusRow) }
         problemLabel.text = next.problem.orEmpty()
         problemLabel.isVisible = next.problem != null
     }

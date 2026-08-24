@@ -64,10 +64,16 @@ MIGRATION-LOG.md에 정리한 코틀린 코드 스타일 규칙(companion 팩토
 - **산출물**: `ui/JiraTaskAvailability.kt`, 액션 4개의 `update()`(+`CreateIssueDraftAction`은 `update()` 자체가 없었으므로 신규), 각 액션에 `JiraTaskAvailability` 생성자 주입.
 - **테스트**: `ui/JiraTaskAvailabilityTest.kt` (9 tests — 프로젝트 없음, 설정 완료, 작업 시작만 예외, 프로젝트 키 요구, 브랜치 미충족 항목 나열, 이미 있는 설정은 언급 안 함, 토큰 없이도 활성, 손상된 설정, 저장 후 즉시 반영), `ui/JiraTaskActionUpdateTest.kt` (6 tests — 액션 4개의 실제 `update()` 결과와 툴팁 문구, 쓸 수 있을 때 원래 설명 유지, 비활성 상태에서 실행해도 예외 없이 안내). `CreateStoryBranchDialogTest`의 옛 활성화 테스트는 규칙이 바뀌어 새 규칙을 쓰는지 확인하는 형태로 교체했다. 총 280개 통과.
 
-### W4. 상태 표시를 제대로 만들기
+### W4. 상태 표시를 제대로 만들기 — (완료)
 - **내용**: 값 라벨을 `JBLabel().apply { setCopyable(true) }`로, 없는 값은 `NamedColorUtil.getInactiveTextColor()` 회색 자리 문구로, Jira 주소는 `ActionLink` + `BrowserUtil.browse`로, 이슈 키·브랜치는 모노스페이스 폰트로. 행 라벨과 값의 정렬·여백을 `panel { row(...) }` 기본 간격에 맞춘다.
 - **의존**: W2.
 - **완료 기준**: 설정된 상태에서 값이 복사 가능(`isCopyable`)하고, 미설정 값은 회색이며, Jira 주소 컴포넌트가 `ActionLink`이고 그 링크 대상이 저장된 baseUrl과 같은지 테스트. 이메일·토큰이 어떤 컴포넌트 텍스트에도 없는지 확인하는 기존 성격의 테스트 유지.
+- **설계**: 표시 규칙을 순수 모델까지 끌어올렸다. `StatusRow`가 이름·문구와 함께 `isPlaceholder`(실제 값인지)와 `kind`(TEXT / LINK / CODE)를 들고 있고, `StatusRowView`가 종류별 컴포넌트를 만든다 — TEXT·CODE는 복사 가능한 `JBLabel`, LINK는 `ActionLink`. 항목의 종류는 값이 있든 없든 고정이라 컴포넌트를 한 번만 만들고 값만 갈아 끼운다.
+- **미설정 값 처리**: 자리 문구는 `NamedColorUtil.getInactiveTextColor()` 회색으로, 링크는 열 곳이 없으면 `isEnabled = false`로 두어 클릭되지 않는다. 고정폭 폰트는 실제 값(프로젝트 키·작업 번호·브랜치)에만 쓰고 안내 문구는 기본 폰트로 둔다.
+- **브라우저 열기**: 패널이 `browse: (String) -> Unit`을 생성자로 받아 기본값은 `BrowserUtil.browse`, 테스트에서는 호출을 기록한다.
+- **산출물**: `ui/toolwindow/StatusRowView.kt`, `JiraTaskStatus`에 `StatusRow`·`statusRows()` 추가(`rows()`는 이름·문구 축약형으로 유지), 패널이 `rowViews`로 값을 갱신.
+- **테스트**: `JiraTaskStatusTest`에 3건(자리 문구 표시, 종류 지정, 값이 없어도 종류 유지), `JiraTaskToolWindowTest`에 5건(복사 가능·회색 자리 문구, 고정폭 폰트 적용 범위, 링크 클릭이 저장된 주소를 여는지, 주소가 없으면 클릭되지 않는지, 이메일 미노출). 총 288개 통과.
+- **플랫폼 동작 기록 2건**: (1) `JBLabel`에는 `isCopyable` 게터가 없어 `setCopyable(true)`가 붙이는 텍스트 컴포넌트 자식으로 확인한다. (2) `ActionLink`는 `JButton`을 상속하므로 "폼 버튼이 없어야 한다" 검사에서 제외해야 한다.
 
 ### W5. 미설정·손상 상태를 빈 상태로 보여주기
 - **내용**: 프로젝트 키가 없으면 상태 행 대신 `JBPanelWithEmptyText`의 `emptyText`에 안내 + `설정 마법사 실행`·`설정 열기` 링크(`SimpleTextAttributes.LINK_PLAIN_ATTRIBUTES` + 클릭 리스너)를 보여준다. 설정이 손상된 경우에는 경고 아이콘과 오류 문구, `설정 열기` 링크를 보여준다.

@@ -12,7 +12,15 @@ import io.github.gudwns1812.jiratask.application.SettingsLoad
 import io.github.gudwns1812.jiratask.application.SettingsSnapshot
 import io.github.gudwns1812.jiratask.application.empty
 import io.github.gudwns1812.jiratask.ui.task.CurrentTaskState
+import com.intellij.ui.components.ActionLink
+import com.intellij.ui.components.JBLabel
+import com.intellij.util.ui.JBFont
+import com.intellij.util.ui.NamedColorUtil
+import com.intellij.util.ui.UIUtil
 import java.awt.Container
+import java.awt.Font
+import javax.swing.text.JTextComponent
+import javax.swing.AbstractButton
 import javax.swing.JButton
 import javax.swing.JLabel
 
@@ -29,6 +37,9 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
     private fun textsOf(container: Container): List<String> {
         val texts = mutableListOf<String>()
         if (container is JLabel) {
+            texts += container.text.orEmpty()
+        }
+        if (container is AbstractButton) {
             texts += container.text.orEmpty()
         }
         container.components.filterIsInstance<Container>().forEach { texts += textsOf(it) }
@@ -52,6 +63,28 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
         container.components.filterIsInstance<Container>().forEach { toolbars += toolbarsOf(it) }
         return toolbars
     }
+
+    private fun linksOf(container: Container): List<ActionLink> {
+        val links = mutableListOf<ActionLink>()
+        if (container is ActionLink) {
+            links += container
+        }
+        container.components.filterIsInstance<Container>().forEach { links += linksOf(it) }
+        return links
+    }
+
+    private fun labelsOf(container: Container): List<JBLabel> {
+        val labels = mutableListOf<JBLabel>()
+        if (container is JBLabel) {
+            labels += container
+        }
+        container.components.filterIsInstance<Container>().forEach { labels += labelsOf(it) }
+        return labels
+    }
+
+    /** 같은 안내 문구가 여러 행에 나올 수 있으므로 첫 번째 것을 본다. */
+    private fun labelWith(text: String, container: Container): JBLabel =
+        labelsOf(container).first { it.text == text }
 
     private fun configuredStatus() = JiraTaskStatus.of(
         SettingsLoad.Loaded(
@@ -93,7 +126,10 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
     fun `test is operated by an action toolbar instead of plain buttons`() {
         val panel = JiraTaskToolWindowPanel(project)
 
-        assertEmpty("툴 윈도우는 폼 버튼이 아니라 툴바로 조작한다", buttonsOf(panel))
+        assertEmpty(
+            "툴 윈도우는 폼 버튼이 아니라 툴바로 조작한다(ActionLink는 JButton을 상속하므로 제외)",
+            buttonsOf(panel).filterNot { it is ActionLink },
+        )
         val toolbars = toolbarsOf(panel)
         assertSize(1, toolbars)
         assertEquals(JiraTaskToolWindowPanel.TOOLBAR_PLACE, toolbars.single().place)
@@ -145,6 +181,66 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
         val refresh = children.last()
         assertNull("새로 고침은 이 패널에만 있는 액션이다", manager.getId(refresh))
         assertEquals(AllIcons.Actions.Refresh, refresh.templatePresentation.icon)
+    }
+
+    fun `test shows a real value as copyable text and a missing one in grey`() {
+        val panel = JiraTaskToolWindowPanel(project)
+
+        panel.show(configuredStatus())
+        val projectKey = labelWith("S15P11A108", panel)
+        assertTrue(
+            "값은 선택·복사할 수 있어야 한다(JBLabel.setCopyable이 텍스트 컴포넌트를 붙인다)",
+            projectKey.components.any { it is JTextComponent },
+        )
+        assertEquals(UIUtil.getLabelForeground(), projectKey.foreground)
+
+        panel.show(JiraTaskStatus.of(SettingsLoad.Loaded(SettingsSnapshot.empty()), null, null))
+        val placeholder = labelWith(JiraTaskStatus.NOT_CONFIGURED, panel)
+        assertEquals(NamedColorUtil.getInactiveTextColor(), placeholder.foreground)
+    }
+
+    fun `test draws keys and branches in a fixed width font`() {
+        val panel = JiraTaskToolWindowPanel(project)
+
+        panel.show(configuredStatus())
+
+        assertEquals(Font.MONOSPACED, labelWith("S15P11A108", panel).font.family)
+        assertEquals(Font.MONOSPACED, labelWith("feat/100-signup", panel).font.family)
+        assertEquals("사람이 읽는 문구는 기본 폰트로", JBFont.label().family, labelWith("A108 프로젝트", panel).font.family)
+    }
+
+    fun `test opens the jira address in a browser`() {
+        val opened = mutableListOf<String>()
+        val panel = JiraTaskToolWindowPanel(project) { opened += it }
+
+        panel.show(configuredStatus())
+        val link = linksOf(panel).single()
+        assertEquals("https://team.atlassian.net", link.text)
+        assertTrue(link.isEnabled)
+        link.doClick()
+
+        assertEquals(listOf("https://team.atlassian.net"), opened)
+    }
+
+    fun `test does not offer a link when no address is configured`() {
+        val opened = mutableListOf<String>()
+        val panel = JiraTaskToolWindowPanel(project) { opened += it }
+
+        panel.show(JiraTaskStatus.of(SettingsLoad.Loaded(SettingsSnapshot.empty()), null, null))
+        val link = linksOf(panel).single()
+        link.doClick()
+
+        assertEquals(JiraTaskStatus.NOT_CONFIGURED, link.text)
+        assertFalse("열 곳이 없으면 링크가 아니어야 한다", link.isEnabled)
+        assertEmpty(opened)
+    }
+
+    fun `test never shows the email even after a refresh`() {
+        val panel = JiraTaskToolWindowPanel(project)
+
+        panel.show(configuredStatus())
+
+        assertTrue(textsOf(panel).none { it.contains("@") })
     }
 
     fun `test reads the current task number from the cache`() {
