@@ -18,9 +18,12 @@ import io.github.gudwns1812.jiratask.application.CreateCommitCommand
 import io.github.gudwns1812.jiratask.application.CreateCommitUseCase
 import io.github.gudwns1812.jiratask.infrastructure.GitRepository
 import io.github.gudwns1812.jiratask.ui.CommitSettings
+import io.github.gudwns1812.jiratask.ui.JiraTaskAvailability
+import io.github.gudwns1812.jiratask.ui.JiraTaskCommand
 import io.github.gudwns1812.jiratask.ui.JiraTaskNotifications
 import io.github.gudwns1812.jiratask.ui.JiraTaskSettings
 import io.github.gudwns1812.jiratask.ui.SettingsLookup
+import io.github.gudwns1812.jiratask.ui.applyAvailability
 import io.github.gudwns1812.jiratask.ui.setup.SetupWizardLauncher
 import java.io.File
 import javax.swing.JComponent
@@ -65,12 +68,13 @@ class CommitMessageDialog(project: Project?, private val issueKeyHint: String?) 
 class CommitWithJiraTaskAction @JvmOverloads constructor(
     private val settings: JiraTaskSettings = JiraTaskSettings(),
     private val checkinHandlerFactory: JiraTaskCheckinHandlerFactory = JiraTaskCheckinHandlerFactory(settings),
+    private val availability: JiraTaskAvailability = JiraTaskAvailability(),
 ) : AnAction() {
 
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
 
     override fun update(event: AnActionEvent) {
-        event.presentation.isEnabled = event.project?.basePath != null
+        event.applyAvailability(availability.of(JiraTaskCommand.COMMIT, event.project?.basePath != null))
     }
 
     override fun actionPerformed(event: AnActionEvent) {

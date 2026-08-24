@@ -20,9 +20,12 @@ import io.github.gudwns1812.jiratask.application.CreateBranchUseCase
 import io.github.gudwns1812.jiratask.infrastructure.GitRepository
 import io.github.gudwns1812.jiratask.infrastructure.JiraClient
 import io.github.gudwns1812.jiratask.ui.BranchSettings
+import io.github.gudwns1812.jiratask.ui.JiraTaskAvailability
+import io.github.gudwns1812.jiratask.ui.JiraTaskCommand
 import io.github.gudwns1812.jiratask.ui.JiraTaskNotifications
 import io.github.gudwns1812.jiratask.ui.JiraTaskSettings
 import io.github.gudwns1812.jiratask.ui.SettingsLookup
+import io.github.gudwns1812.jiratask.ui.applyAvailability
 import io.github.gudwns1812.jiratask.ui.setup.SetupWizardLauncher
 import java.io.File
 import javax.swing.JComponent
@@ -66,12 +69,13 @@ class CreateStoryBranchDialog(project: Project?) : DialogWrapper(project, false)
 /** CLI의 `branch create`에 대응하는 액션. */
 class CreateStoryBranchAction @JvmOverloads constructor(
     private val settings: JiraTaskSettings = JiraTaskSettings(),
+    private val availability: JiraTaskAvailability = JiraTaskAvailability(),
 ) : AnAction() {
 
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
 
     override fun update(event: AnActionEvent) {
-        event.presentation.isEnabled = event.project?.basePath != null
+        event.applyAvailability(availability.of(JiraTaskCommand.STORY_BRANCH, event.project?.basePath != null))
     }
 
     override fun actionPerformed(event: AnActionEvent) {
