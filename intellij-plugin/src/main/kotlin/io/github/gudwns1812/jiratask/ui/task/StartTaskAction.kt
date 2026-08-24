@@ -17,7 +17,10 @@ import com.intellij.ui.dsl.builder.panel
 import io.github.gudwns1812.jiratask.application.StartTaskResult
 import io.github.gudwns1812.jiratask.application.StartTaskUseCase
 import io.github.gudwns1812.jiratask.infrastructure.GitRepository
+import io.github.gudwns1812.jiratask.ui.JiraTaskAvailability
+import io.github.gudwns1812.jiratask.ui.JiraTaskCommand
 import io.github.gudwns1812.jiratask.ui.JiraTaskNotifications
+import io.github.gudwns1812.jiratask.ui.applyAvailability
 import java.io.File
 import javax.swing.JComponent
 import javax.swing.event.DocumentEvent
@@ -53,12 +56,14 @@ class StartTaskDialog(project: Project?, currentTaskNumber: String? = null) : Di
 }
 
 /** CLI의 `task start`에 대응하는 액션. */
-class StartTaskAction : AnAction() {
+class StartTaskAction @JvmOverloads constructor(
+    private val availability: JiraTaskAvailability = JiraTaskAvailability(),
+) : AnAction() {
 
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
 
     override fun update(event: AnActionEvent) {
-        event.presentation.isEnabled = event.project?.basePath != null
+        event.applyAvailability(availability.of(JiraTaskCommand.START_TASK, event.project?.basePath != null))
     }
 
     override fun actionPerformed(event: AnActionEvent) {

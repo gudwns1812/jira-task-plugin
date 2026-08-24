@@ -53,11 +53,16 @@ MIGRATION-LOG.md에 정리한 코틀린 코드 스타일 규칙(companion 팩토
 - **테스트**: `ui/toolwindow/JiraTaskToolWindowTest.kt` — 폼 버튼이 하나도 없는지, 툴바가 하나이고 `place`·`targetComponent`가 설정됐는지, 툴바 그룹의 자식 액션 ID가 기대 순서와 같은지, 모든 툴바 액션에 아이콘이 있는지(스텁이 아니라 `ActionManager.getAction`으로 실제 액션의 프레젠테이션 확인), 패널이 새로 고침을 덧붙이는지. 총 265개 테스트 통과, `build`·`buildPlugin`·`verifyPluginStructure` 통과.
 - **테스트 작성 중 알게 된 것**: `ActionToolbar.getActions()`는 툴바가 비동기로 갱신되기 전까지 비어 있고, 그룹의 `childActionsOrStubs`는 아직 인스턴스화되지 않은 `ActionStub`이라 아이콘이 null이다. 그래서 아이콘 검증은 ID로 실제 액션을 얻어서 한다.
 
-### W3. 액션에 활성/비활성 판단 넣기
+### W3. 액션에 활성/비활성 판단 넣기 — (완료)
 - **내용**: `CreateIssueDraftAction`·`CreateStoryBranchAction`·`StartTaskAction`·`CommitWithJiraTaskAction`의 `update()`가 `JiraTaskSettings` 결과까지 보고 `isEnabled`를 정하고, 비활성일 때 `presentation.description`에 이유를 넣는다(툴팁으로 보인다). 각 액션에 아이콘(`AllIcons.*`)을 지정한다. 툴바가 액션을 직접 실행하므로 `performAction`/`createFromDataContext` 경로는 삭제한다.
 - **의존**: W2.
 - **완료 기준**: 설정 없음 / 프로젝트 키만 있음 / 전부 있음 세 경우에 대해 액션 4개의 `isEnabled`와 툴팁 문구를 검증(`TestActionEvent`). 설정이 없을 때 액션을 실행해도 예외가 나지 않고 안내 알림만 뜨는 기존 동작은 유지(툴바 밖 메뉴에서 실행될 수 있으므로).
 - **주의**: `update()`는 BGT에서 돈다(`ActionUpdateThread.BGT`). 설정 조회는 인메모리라 괜찮지만 **git 호출은 넣지 않는다**.
+- **설계**: 판단 규칙을 액션마다 흩지 않고 `ui/JiraTaskAvailability.kt`(`JiraTaskCommand` + `ActionAvailability`)로 모았다. 액션은 `event.applyAvailability(availability.of(command, hasProject))` 한 줄만 부른다. 쓸 수 있을 때는 `presentation.description`을 덮지 않아 plugin.xml의 설명이 툴팁으로 남고, 못 쓸 때만 이유로 바뀐다.
+- **명령별 규칙**: `START_TASK`는 Jira 설정 없이도 되는 git 전용 동작이라 프로젝트만 있으면 활성. `ISSUE_DRAFT`·`COMMIT`은 프로젝트 키 필요. `STORY_BRANCH`는 프로젝트 키·Jira 주소·스토리 유형·스토리 시작 상태가 필요하고, 없는 항목만 골라 이유에 적는다.
+- **결정 — update()에서 자격 증명 저장소를 읽지 않는다**: `JiraTaskSettings.forBranch()`는 API 토큰을 PasswordSafe에서 읽는데, `update()`는 툴바가 보이는 동안 반복 호출되므로 OS 키체인 조회를 넣으면 IDE가 느려진다. 그래서 토큰과 Git 저장소 여부는 활성 판단에서 빼고 실행 시 확인해 알림으로 안내한다(비활성 이유에 토큰이 등장하지 않는 것을 테스트로 고정).
+- **산출물**: `ui/JiraTaskAvailability.kt`, 액션 4개의 `update()`(+`CreateIssueDraftAction`은 `update()` 자체가 없었으므로 신규), 각 액션에 `JiraTaskAvailability` 생성자 주입.
+- **테스트**: `ui/JiraTaskAvailabilityTest.kt` (9 tests — 프로젝트 없음, 설정 완료, 작업 시작만 예외, 프로젝트 키 요구, 브랜치 미충족 항목 나열, 이미 있는 설정은 언급 안 함, 토큰 없이도 활성, 손상된 설정, 저장 후 즉시 반영), `ui/JiraTaskActionUpdateTest.kt` (6 tests — 액션 4개의 실제 `update()` 결과와 툴팁 문구, 쓸 수 있을 때 원래 설명 유지, 비활성 상태에서 실행해도 예외 없이 안내). `CreateStoryBranchDialogTest`의 옛 활성화 테스트는 규칙이 바뀌어 새 규칙을 쓰는지 확인하는 형태로 교체했다. 총 280개 통과.
 
 ### W4. 상태 표시를 제대로 만들기
 - **내용**: 값 라벨을 `JBLabel().apply { setCopyable(true) }`로, 없는 값은 `NamedColorUtil.getInactiveTextColor()` 회색 자리 문구로, Jira 주소는 `ActionLink` + `BrowserUtil.browse`로, 이슈 키·브랜치는 모노스페이스 폰트로. 행 라벨과 값의 정렬·여백을 `panel { row(...) }` 기본 간격에 맞춘다.
