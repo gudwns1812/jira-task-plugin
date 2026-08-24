@@ -58,4 +58,4 @@ ui/              Settings 패널, 마법사·이슈·브랜치·작업·커밋 �
 
 ## 작업 기록
 
-이식 작업의 단위와 결정 사항은 [TASKS.md](TASKS.md)에 남겨 두었다.
+이식 작업(T1~T26)의 단위와 결정 사항은 [MIGRATION-LOG.md](MIGRATION-LOG.md)에, 진행 중인 작업 목록은 [TASKS.md](TASKS.md)에 있다.
