@@ -142,20 +142,31 @@ class JiraClient(
     override fun findFieldIds(): JiraFieldIds {
         val json = requestJson("/rest/api/3/field")
         val fields = (json as? JsonArray) ?: return JiraFieldIds()
-        val byName = fields.asSequence()
+        val decoded = fields.asSequence()
             .mapNotNull { it.takeIf { field -> field.isJsonObject }?.asJsonObject }
             .mapNotNull { field ->
                 val id = field.stringOrNull("id") ?: return@mapNotNull null
-                val name = field.stringOrNull("name")?.trim()?.lowercase() ?: return@mapNotNull null
-                name to id
+                DecodedField(
+                    id = id,
+                    name = field.stringOrNull("name")?.trim()?.lowercase().orEmpty(),
+                    customType = field.objectOrNull("schema")?.stringOrNull("custom"),
+                )
             }
-            .toMap()
+            .toList()
 
         return JiraFieldIds(
-            storyPoints = STORY_POINT_FIELD_NAMES.firstNotNullOfOrNull { byName[it] },
-            sprint = byName["sprint"],
+            storyPoints = decoded.firstByName(STORY_POINT_FIELD_NAMES),
+            // 스프린트 필드 이름은 사이트 로케일에 따라 "스프린트"로 올 수 있으므로, 이름보다
+            // Jira Software가 붙이는 필드 타입을 먼저 본다(로케일과 무관하게 고정된 값이다).
+            sprint = decoded.firstOrNull { it.customType == SPRINT_FIELD_TYPE }?.id
+                ?: decoded.firstByName(SPRINT_FIELD_NAMES),
         )
     }
+
+    private fun List<DecodedField>.firstByName(candidates: List<String>): String? =
+        candidates.firstNotNullOfOrNull { candidate -> firstOrNull { it.name == candidate }?.id }
+
+    private data class DecodedField(val id: String, val name: String, val customType: String?)
 
     override fun findSprintId(projectKey: String, sprintName: String): Int? {
         val matchingIds = linkedSetOf<Int>()
@@ -383,7 +394,13 @@ class JiraClient(
 private val JSON_CONTENT_TYPE = mapOf("Content-Type" to "application/json")
 
 /** 팀 관리형·회사 관리형 프로젝트에서 스토리 포인트 필드 이름이 다르다. */
-private val STORY_POINT_FIELD_NAMES = listOf("story points", "story point estimate")
+private val STORY_POINT_FIELD_NAMES =
+    listOf("story points", "story point estimate", "스토리 포인트", "스토리 포인트 추정치")
+
+/** Jira Software가 스프린트 필드에 붙이는 타입. 필드 이름이 번역돼도 이 값은 그대로다. */
+private const val SPRINT_FIELD_TYPE = "com.pyxis.greenhopper.jira:gh-sprint"
+
+private val SPRINT_FIELD_NAMES = listOf("sprint", "스프린트")
 
 private fun JsonObject.objectOrNull(key: String): JsonObject? = get(key)?.takeIf { it.isJsonObject }?.asJsonObject
 

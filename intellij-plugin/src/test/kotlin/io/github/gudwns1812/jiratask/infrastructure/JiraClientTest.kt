@@ -185,6 +185,58 @@ class JiraClientTest {
     }
 
     @Test
+    fun `finds the sprint field by its jira software type even when the name is translated`() {
+        val transport = ScriptedJiraHttpTransport(
+            mutableListOf(
+                JiraHttpResponse(
+                    200,
+                    """[{"id":"customfield_10016","name":"Story point estimate"},
+                        {"id":"customfield_10020","name":"스프린트","schema":{"custom":"com.pyxis.greenhopper.jira:gh-sprint"}}]""",
+                ),
+            ),
+        )
+        val client = JiraClient("https://team.atlassian.net", "user@example.com", "secret", transport)
+
+        val fieldIds = client.findFieldIds()
+
+        assertEquals("customfield_10020", fieldIds.sprint)
+        assertEquals("customfield_10016", fieldIds.storyPoints)
+    }
+
+    @Test
+    fun `falls back to the sprint field name when the schema says nothing`() {
+        val transport = ScriptedJiraHttpTransport(
+            mutableListOf(JiraHttpResponse(200, """[{"id":"customfield_10020","name":"Sprint"}]""")),
+        )
+        val client = JiraClient("https://team.atlassian.net", "user@example.com", "secret", transport)
+
+        assertEquals("customfield_10020", client.findFieldIds().sprint)
+    }
+
+    @Test
+    fun `finds story points under a translated name`() {
+        val transport = ScriptedJiraHttpTransport(
+            mutableListOf(JiraHttpResponse(200, """[{"id":"customfield_10016","name":"스토리 포인트"}]""")),
+        )
+        val client = JiraClient("https://team.atlassian.net", "user@example.com", "secret", transport)
+
+        assertEquals("customfield_10016", client.findFieldIds().storyPoints)
+    }
+
+    @Test
+    fun `has no field ids to offer when nothing matches`() {
+        val transport = ScriptedJiraHttpTransport(
+            mutableListOf(JiraHttpResponse(200, """[{"id":"customfield_1","name":"Something else"}]""")),
+        )
+        val client = JiraClient("https://team.atlassian.net", "user@example.com", "secret", transport)
+
+        val fieldIds = client.findFieldIds()
+
+        assertNull(fieldIds.sprint)
+        assertNull(fieldIds.storyPoints)
+    }
+
+    @Test
     fun `has no sprint to offer when the project has no board`() {
         val transport = ScriptedJiraHttpTransport(
             mutableListOf(JiraHttpResponse(200, """{"values":[],"isLast":true}""")),
