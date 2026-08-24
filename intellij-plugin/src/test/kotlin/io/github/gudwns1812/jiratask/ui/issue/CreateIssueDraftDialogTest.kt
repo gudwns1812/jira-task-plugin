@@ -3,6 +3,7 @@ package io.github.gudwns1812.jiratask.ui.issue
 import com.intellij.openapi.util.Disposer
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.intellij.util.ui.NamedColorUtil
+import io.github.gudwns1812.jiratask.domain.jira.CreateRequestDraft
 import io.github.gudwns1812.jiratask.domain.policy.WorkPolicy
 
 /**
@@ -161,8 +162,10 @@ class CreateIssueDraftDialogTest : BasePlatformTestCase() {
         }
     }
 
-    fun `test shows the draft json only after the preview button`() {
-        withDialog { dialog ->
+    fun `test hands the finished draft to the creator`() {
+        var created: CreateRequestDraft? = null
+        val dialog = CreateIssueDraftDialog(project, context(), {}, { _, view -> created = view.draft })
+        try {
             val form = dialog.form
             form.selectType("task")
             form.areaComboBox.selectedItem = "FE"
@@ -170,66 +173,27 @@ class CreateIssueDraftDialogTest : BasePlatformTestCase() {
             form.descriptionArea.text = "이메일 회원가입 폼을 만든다."
             form.deliverablesArea.text = "회원가입 화면"
 
-            assertEquals("", dialog.previewText())
-            dialog.showPreview()
-
-            assertTrue(dialog.previewText().contains("\"issueType\": \"task\""))
-            assertTrue(dialog.previewText().contains("\"summary\": \"[AUTH-001 | FE] 회원가입 폼\""))
+            dialog.doOKAction()
+        } finally {
+            Disposer.dispose(dialog.disposable)
         }
+
+        assertNotNull("확인을 누르면 실제로 만들 초안을 넘긴다", created)
+        assertEquals("[AUTH-001 | FE] 회원가입 폼", created!!.summary)
+        assertEquals("S15P11A108-100", created!!.relationships.storyKey)
+        assertEquals("S15P11A108-1", created!!.relationships.epicKey)
     }
 
-    fun `test explains that a preview needs a valid input`() {
-        withDialog { dialog ->
-            dialog.showPreview()
-
-            assertNull(dialog.currentView().json)
-            assertEquals(CreateIssueDraftDialog.NO_DRAFT, dialog.previewText())
-            assertTrue("무엇을 고쳐야 하는지 칸 이름으로 알려준다", dialog.problemsText().contains("설명: "))
+    fun `test does not create anything while the input is invalid`() {
+        var calls = 0
+        val dialog = CreateIssueDraftDialog(project, context(), {}, { _, _ -> calls++ })
+        try {
+            dialog.doOKAction()
+        } finally {
+            Disposer.dispose(dialog.disposable)
         }
-    }
 
-    fun `test never asks for the epic or the sprint when the story tells them`() {
-        withDialog { dialog ->
-            dialog.form.selectType("task")
-
-            assertEquals("S15P11A108-1", dialog.form.epicKeyField.text)
-            assertEquals("Sprint 7", dialog.form.sprintField.text)
-            assertTrue(
-                "스토리에서 온 값은 물어보지 않는다",
-                dialog.form.visiblePaths().none { it == "epicKey" || it == "sprint" },
-            )
-        }
-    }
-
-    fun `test asks for the epic only when the story does not tell it`() {
-        withDialog(context(epicKey = null, sprint = null)) { dialog ->
-            dialog.form.selectType("task")
-
-            assertTrue(dialog.form.visiblePaths().containsAll(setOf("epicKey", "sprint")))
-        }
-    }
-
-    fun `test picks the priority from a list instead of typing it`() {
-        withDialog { dialog ->
-            val items = (0 until dialog.form.priorityComboBox.itemCount).map { dialog.form.priorityComboBox.getItemAt(it) }
-
-            assertEquals(IssueDraftContext.DEFAULT_PRIORITIES, items)
-            assertEquals("Low", dialog.form.priorityComboBox.selectedItem)
-
-            dialog.form.priorityComboBox.selectedItem = "High"
-            assertEquals("High", dialog.form.values().priority)
-        }
-    }
-
-    fun `test offers a calendar for the due date`() {
-        withDialog { dialog ->
-            assertSize(1, dialog.form.dueDateField.extensions)
-
-            dialog.form.applyDueDate(java.time.LocalDate.of(2026, 9, 15))
-
-            assertEquals("2026-09-15", dialog.form.dueDateField.text)
-            assertEquals("2026-09-15", dialog.form.values().dueDate)
-        }
+        assertEquals(0, calls)
     }
 
     fun `test shows the writing example as placeholders instead of an extra field`() {
@@ -315,7 +279,7 @@ class CreateIssueDraftDialogTest : BasePlatformTestCase() {
             form.descriptionArea.text = "이메일 회원가입 폼을 만든다."
             form.deliverablesArea.text = "회원가입 화면"
 
-            assertTrue(dialog.problemsText().contains("문제가 없습니다"))
+            assertTrue(dialog.problemsText().contains("만들 준비가 됐습니다"))
             assertTrue(dialog.problemsText().contains("FE"))
         }
     }

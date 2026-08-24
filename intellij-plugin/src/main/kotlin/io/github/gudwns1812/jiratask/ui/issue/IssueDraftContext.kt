@@ -46,6 +46,8 @@ data class IssueDraftContext(
     val featureId: String? = null,
     /** 스토리가 들어 있는 스프린트. 작업도 같은 스프린트에서 진행한다. */
     val sprint: String? = null,
+    /** 그 스프린트의 ID. 스프린트 필드는 이름이 아니라 ID를 받는다. */
+    val sprintId: Int? = null,
     val branch: String? = null,
     /** 지금 Jira에 연결된 사용자 — 담당자 기본값. */
     val currentUser: String? = null,

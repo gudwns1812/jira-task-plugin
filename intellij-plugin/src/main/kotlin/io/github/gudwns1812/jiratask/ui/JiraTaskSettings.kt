@@ -1,6 +1,7 @@
 package io.github.gudwns1812.jiratask.ui
 
 import io.github.gudwns1812.jiratask.application.CredentialStore
+import io.github.gudwns1812.jiratask.application.IssueTypeIds
 import io.github.gudwns1812.jiratask.domain.policy.PolicyConfigurationError
 import io.github.gudwns1812.jiratask.domain.policy.WorkPolicy
 import io.github.gudwns1812.jiratask.infrastructure.CredentialStorageError
@@ -39,6 +40,20 @@ class JiraTaskSettings(
         val projectKey = config.projectKey
             ?: return@withConfig SettingsLookup.Missing(NO_PROJECT_KEY)
         SettingsLookup.Ready(IssueDraftSettings(projectKey, config.policy))
+    }
+
+    /** 이슈를 만들 때 필요한 이 사이트의 이슈 타입 ID들(설정 마법사가 저장해 둔 값). */
+    fun issueTypeIds(): IssueTypeIds {
+        val jira = try {
+            repository.loadConfig().jira
+        } catch (error: PolicyConfigurationError) {
+            null
+        }
+        return IssueTypeIds(
+            epic = jira?.issueTypes?.epic?.id,
+            story = jira?.issueTypes?.story?.id,
+            task = jira?.issueTypes?.task?.id,
+        )
     }
 
     fun forCommit(): SettingsLookup<CommitSettings> = withConfig { config ->

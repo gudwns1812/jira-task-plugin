@@ -1,7 +1,7 @@
 package io.github.gudwns1812.jiratask.ui.issue
 
-import com.google.gson.GsonBuilder
 import io.github.gudwns1812.jiratask.application.CreateDraftUseCase
+import io.github.gudwns1812.jiratask.domain.jira.CreateRequestDraft
 import io.github.gudwns1812.jiratask.domain.policy.WorkPolicy
 import io.github.gudwns1812.jiratask.domain.template.IssueTemplates
 import io.github.gudwns1812.jiratask.domain.validation.ValidationMessage
@@ -96,9 +96,10 @@ data class IssueDraftView(
     val errors: List<IssueProblem>,
     val warnings: List<IssueProblem>,
     val labels: List<String>,
-    val json: String?,
+    /** 만들 준비가 된 생성 요청. 오류가 있으면 null이다. */
+    val draft: CreateRequestDraft?,
 ) {
-    val isValid: Boolean get() = errors.isEmpty() && json != null
+    val isValid: Boolean get() = errors.isEmpty() && draft != null
 
     /** 문제가 있는 칸의 필드 경로 — 그 칸은 화면에 꼭 보여줘야 한다. */
     fun problemPaths(): Set<String> = (errors + warnings).map { it.path }.toSet()
@@ -109,8 +110,6 @@ object IssueDraftPresenter {
 
     val TYPES: List<String> = listOf("epic", "story", "task")
 
-    private val gson = GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create()
-
     fun present(input: IssueFormInput, projectKey: String, policy: WorkPolicy = WorkPolicy.DEFAULT): IssueDraftView {
         val result = CreateDraftUseCase.execute(input.toRawInput(), projectKey, policy)
 
@@ -118,7 +117,7 @@ object IssueDraftPresenter {
             errors = result.errors.map(::toProblem),
             warnings = result.warnings.map(::toProblem),
             labels = result.derived.labels,
-            json = result.draft?.let { gson.toJson(it) },
+            draft = result.draft,
         )
     }
 

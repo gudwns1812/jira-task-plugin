@@ -5,6 +5,8 @@ data class JiraStoryContext(
     val summary: String? = null,
     val epicKey: String? = null,
     val sprint: String? = null,
+    /** 스프린트 커스텀 필드는 이름이 아니라 ID를 받는다. */
+    val sprintId: Int? = null,
 )
 
 /**

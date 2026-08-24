@@ -153,6 +153,20 @@ MIGRATION-LOG.md에 정리한 코틀린 코드 스타일 규칙(companion 팩토
 - **산출물**: `domain/jira/JiraDraftReader.kt`, `JiraClient`의 세 조회, `IssueDraftContext`에 `sprint`·`currentUser`·`priorities`와 기본값 함수들, `IssueDraftContextReader` 재작성, `IssueDraftForm`(우선순위 콤보·달력 버튼·기본값), `ui/issue/DueDateDialog.kt`.
 - **테스트**: `IssueDraftContextTest`에 7건(에픽·스프린트 물려받기, 나 자신 기본 담당자와 기억값 우선, Low 기본 우선순위, 사이트 정의 목록 사용, 목록을 못 읽으면 표준값, 스토리에 에픽이 없으면 기억값 유지), `JiraClientTest`에 4건(Agile API 조회, 실패 시 v3 대체, 사용자·우선순위 조회, 거부되면 예외 대신 "모름"), `CreateIssueDraftDialogTest`에 4건(스토리가 알려준 값은 묻지 않음, 모르면 묻음, 우선순위 선택, 달력 확장 버튼과 날짜 적용). 총 343개 통과.
 
+### W13. 초안이 아니라 실제로 이슈를 만든다 — (완료)
+- **문제(사용자 지적)**: 확인 버튼이 "초안 복사"였고 요청 초안 JSON 미리보기가 있었다. 플러그인 사용자에게 클립보드 JSON은 아무 쓸모가 없다.
+- **원인(내 판단 실수)**: CLI의 `create`가 실제 생성을 구현하지 않아(`--dry-run` 없이는 거부) "이식 대상이 없다"고 보고 초안까지만 만들었다. 이식의 목적은 CLI 코드를 옮기는 것이 아니라 그 일을 IDE에서 하게 만드는 것이므로, 실제 생성이 없으면 기능이 없는 것과 같다.
+- **구현**: 확인 버튼이 `Jira 이슈 만들기`가 되고, JSON 미리보기·클립보드 복사는 제거했다. 새 포트 `JiraIssueCreator`(생성·사용자 조회·필드 ID 조회·이슈 연결)와 유스케이스 `CreateIssueUseCase`를 만들었다. CLI에 없던 기능이므로 이식이 아니라 신규 설계다.
+- **사이트마다 다른 것들을 유스케이스가 흡수한다**:
+  - 이슈 타입 → 설정 마법사가 저장한 타입 ID(`jira.issueTypes.*.id`)
+  - 설명 → **ADF**(Jira Cloud REST v3는 설명을 Atlassian Document Format으로 받는다). `AdfDocument`가 `## 제목`은 3단 제목, `[] 항목`은 체크 목록(taskList), 나머지는 문단으로 옮긴다 — RULE.md의 결과물이 Jira에서 실제 체크박스가 된다.
+  - 담당자 → 이름이 아니라 `accountId`. `/rest/api/3/user/search`로 찾는다.
+  - 스토리 포인트·스프린트 → 사이트별 커스텀 필드. `/rest/api/3/field`에서 이름(`Story Points` / `Story point estimate` / `Sprint`)으로 ID를 찾는다. 스프린트 필드는 이름이 아니라 **스프린트 ID**를 받으므로 스토리에서 ID까지 읽어 둔다.
+  - 스토리 ↔ 작업 → 부모 자식이 아니라 `연결된 업무 항목`이므로 생성 후 `/rest/api/3/issueLink`로 잇는다.
+- **값을 넣지 못하면 실패로 만들지 않는다**: 담당자·포인트·스프린트를 못 넣었으면 이슈는 만들고 "Jira에서 직접 채워야 하는 값"으로 알림에 적는다. 연결 실패도 같다. 나머지가 다 맞는데 생성을 막는 편이 더 나쁘다. 이슈 타입 ID를 모를 때만 만들기를 거부한다(설정 마법사 안내).
+- **산출물**: `domain/jira/AdfDocument.kt`, `domain/jira/JiraIssueCreator.kt`, `application/CreateIssue.kt`, `JiraClient`의 생성·사용자·필드·연결 구현, `IssueDraftView`가 JSON 대신 `CreateRequestDraft`를 들고 있음, 다이얼로그의 미리보기 제거와 `onCreate` 콜백, 액션이 백그라운드에서 생성하고 결과를 알림으로 보고(브라우저 링크 포함).
+- **테스트**: `application/CreateIssueTest.kt` (11 tests — 모든 필드 매핑, ADF 설명, 스토리 연결, 연결 실패는 경고로, 못 넣은 값 보고, 스프린트 ID 없으면 미설정, 필드 조회 실패에도 계속, 타입 ID 없으면 거부, Jira 메시지 전달, 예상 못한 오류는 일반 문구, 에픽은 부모·연결 없이), `domain/jira/AdfDocumentTest.kt` (8 tests), 다이얼로그 테스트를 "확인 시 초안을 넘기는지 / 유효하지 않으면 아무것도 만들지 않는지"로 교체. CLI 동등성 JSON 비교 테스트는 직렬화를 테스트 안으로 옮겨 유지했다. 총 358개 통과.
+
 ## 3. 하지 않을 것 (이번 범위 밖)
 
 - **실제 Jira 이슈 생성(POST)**: CLI에도 없는 기능이라 이식 대상이 아니다. 필요하면 별도 작업으로 설계부터 시작한다.

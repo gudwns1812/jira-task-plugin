@@ -6,7 +6,10 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import io.github.gudwns1812.jiratask.domain.jira.JiraAuthenticationError
+import io.github.gudwns1812.jiratask.domain.jira.JiraCreatedIssue
 import io.github.gudwns1812.jiratask.domain.jira.JiraDraftReader
+import io.github.gudwns1812.jiratask.domain.jira.JiraFieldIds
+import io.github.gudwns1812.jiratask.domain.jira.JiraIssueCreator
 import io.github.gudwns1812.jiratask.domain.jira.JiraIssue
 import io.github.gudwns1812.jiratask.domain.jira.JiraIssueTypeWithStatuses
 import io.github.gudwns1812.jiratask.domain.jira.JiraNamedValue
@@ -49,7 +52,7 @@ class JiraClient(
     email: String,
     apiToken: String,
     private val transport: JiraHttpTransport = HttpClientJiraTransport(),
-) : StoryIssueReader, JiraSetupReader, JiraDraftReader {
+) : StoryIssueReader, JiraSetupReader, JiraDraftReader, JiraIssueCreator {
 
     private val baseUrl = baseUrl.trimEnd('/')
     private val authorization = "Basic " + Base64.getEncoder().encodeToString("$email:$apiToken".toByteArray())
@@ -110,9 +113,59 @@ class JiraClient(
             epicKey = fields.objectOrNull("epic")?.stringOrNull("key")
                 ?: fields.objectOrNull("parent")?.stringOrNull("key"),
             sprint = fields.objectOrNull("sprint")?.stringOrNull("name"),
+            sprintId = fields.objectOrNull("sprint")?.get("id")?.takeIf { it.isJsonPrimitive }?.asInt,
         )
     } catch (error: JiraRequestError) {
         null
+    }
+
+    override fun createIssue(fields: Map<String, Any?>): JiraCreatedIssue {
+        val body = gson.toJson(mapOf("fields" to fields))
+        val response = parseObject(
+            request("/rest/api/3/issue", method = "POST", body = body, extraHeaders = JSON_CONTENT_TYPE),
+        )
+        val key = response.stringOrNull("key")
+            ?: throw JiraRequestError("Jira가 만든 이슈 키를 알려주지 않았습니다.")
+        return JiraCreatedIssue(key)
+    }
+
+    override fun findAccountId(query: String): String? {
+        val json = requestJson("/rest/api/3/user/search?query=${encode(query)}")
+        val users = (json as? JsonArray) ?: return null
+        return users.asSequence()
+            .mapNotNull { it.takeIf { user -> user.isJsonObject }?.asJsonObject }
+            .mapNotNull { it.stringOrNull("accountId") }
+            .firstOrNull()
+    }
+
+    /** 스토리 포인트·스프린트는 사이트마다 커스텀 필드 ID가 달라 이름으로 찾아야 한다. */
+    override fun findFieldIds(): JiraFieldIds {
+        val json = requestJson("/rest/api/3/field")
+        val fields = (json as? JsonArray) ?: return JiraFieldIds()
+        val byName = fields.asSequence()
+            .mapNotNull { it.takeIf { field -> field.isJsonObject }?.asJsonObject }
+            .mapNotNull { field ->
+                val id = field.stringOrNull("id") ?: return@mapNotNull null
+                val name = field.stringOrNull("name")?.trim()?.lowercase() ?: return@mapNotNull null
+                name to id
+            }
+            .toMap()
+
+        return JiraFieldIds(
+            storyPoints = STORY_POINT_FIELD_NAMES.firstNotNullOfOrNull { byName[it] },
+            sprint = byName["sprint"],
+        )
+    }
+
+    override fun linkIssues(inwardKey: String, outwardKey: String, linkTypeName: String) {
+        val body = gson.toJson(
+            mapOf(
+                "type" to mapOf("name" to linkTypeName),
+                "inwardIssue" to mapOf("key" to inwardKey),
+                "outwardIssue" to mapOf("key" to outwardKey),
+            ),
+        )
+        request("/rest/api/3/issueLink", method = "POST", body = body, extraHeaders = JSON_CONTENT_TYPE)
     }
 
     override fun verifyIdentity() {
@@ -215,6 +268,8 @@ class JiraClient(
         }
     }
 
+    private val gson = Gson()
+
     private fun encode(value: String): String = URLEncoder.encode(value, Charsets.UTF_8).replace("+", "%20")
 
     private fun parseJson(text: String): JsonElement = try {
@@ -251,6 +306,11 @@ class JiraClient(
         return JiraIssueTypeWithStatuses(id, name, decodedStatuses)
     }
 }
+
+private val JSON_CONTENT_TYPE = mapOf("Content-Type" to "application/json")
+
+/** 팀 관리형·회사 관리형 프로젝트에서 스토리 포인트 필드 이름이 다르다. */
+private val STORY_POINT_FIELD_NAMES = listOf("story points", "story point estimate")
 
 private fun JsonObject.objectOrNull(key: String): JsonObject? = get(key)?.takeIf { it.isJsonObject }?.asJsonObject
 

@@ -146,7 +146,7 @@ class JiraTaskScenarioTest {
             draftSettings.policy,
         )
         assertEquals(emptyList<String>(), view.errors)
-        assertTrue(view.json!!.contains("\"projectKey\": \"S15P11A108\""))
+        assertEquals("S15P11A108", view.draft!!.projectKey)
 
         // 3. 브랜치 생성
         val input = BranchFormInput(" 100 ", " signup ").trimmed()

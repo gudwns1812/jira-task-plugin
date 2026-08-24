@@ -59,6 +59,7 @@ class IssueDraftContextReader(
             featureId = featureId,
             epicKey = story.epicKey ?: epicKey,
             sprint = story.sprint,
+            sprintId = story.sprintId,
             lookupNote = if (featureId == null) noFeatureId(storyKey) else null,
         )
     }
