@@ -2,11 +2,12 @@ package io.github.gudwns1812.jiratask.ui.issue
 
 import com.intellij.openapi.util.Disposer
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import com.intellij.util.ui.NamedColorUtil
 import io.github.gudwns1812.jiratask.domain.policy.WorkPolicy
 
 /**
- * 다이얼로그와 폼의 실제 위젯 동작. 작업 입력은 간단 모드(구분·영역·요약)로 줄었고,
- * 나머지 값은 컨텍스트가 채워 "고급"에 들어간다.
+ * 다이얼로그와 폼의 실제 위젯 동작. 작업 입력은 구분·영역·요약으로 줄었고, 컨텍스트가 채운 값은
+ * 접혀 있다가 비어 있거나 문제가 있을 때만 보인다.
  */
 class CreateIssueDraftDialogTest : BasePlatformTestCase() {
 
@@ -87,7 +88,7 @@ class CreateIssueDraftDialogTest : BasePlatformTestCase() {
             form.descriptionArea.text = "이메일 회원가입 폼을 만든다."
             form.deliverablesArea.text = "회원가입 화면"
 
-            assertEquals(emptyList<String>(), dialog.currentView().errors)
+            assertEquals(emptyList<IssueProblem>(), dialog.currentView().errors)
             assertTrue(dialog.isOKActionEnabled)
         }
     }
@@ -103,7 +104,7 @@ class CreateIssueDraftDialogTest : BasePlatformTestCase() {
             form.deliverablesArea.text = "계획 문서"
 
             assertEquals("[PLAN] 스프린트 계획", form.composedTitle())
-            assertEquals(emptyList<String>(), dialog.currentView().errors)
+            assertEquals(emptyList<IssueProblem>(), dialog.currentView().errors)
         }
     }
 
@@ -122,7 +123,7 @@ class CreateIssueDraftDialogTest : BasePlatformTestCase() {
 
             assertTrue(dialog.currentView().errors.isNotEmpty())
             // 안내는 폼 안 주석으로만 보여주고 검증 오류로 다루지 않는다.
-            assertTrue(dialog.currentView().errors.none { it.contains("브랜치") })
+            assertTrue(dialog.currentView().errors.none { it.message.contains("브랜치") })
         }
     }
 
@@ -185,17 +186,85 @@ class CreateIssueDraftDialogTest : BasePlatformTestCase() {
 
             assertNull(dialog.currentView().json)
             assertEquals(CreateIssueDraftDialog.NO_DRAFT, dialog.previewText())
-            assertTrue(dialog.problemsText().contains("오류 - "))
+            assertTrue("무엇을 고쳐야 하는지 칸 이름으로 알려준다", dialog.problemsText().contains("설명: "))
         }
     }
 
-    fun `test shows the writing example of the selected type`() {
+    fun `test shows the writing example as placeholders instead of an extra field`() {
         withDialog { dialog ->
-            dialog.form.selectType("story")
-            assertTrue(dialog.form.templateArea.text.contains("feat/100-signup"))
+            val form = dialog.form
+            form.selectType("task")
 
+            assertEquals("회원가입 폼", form.summaryField.emptyText.text)
+            assertEquals("작업 설명을 작성합니다.", form.descriptionArea.emptyText.text)
+            assertEquals("완료 기준 결과물 1", form.deliverablesArea.emptyText.text)
+            assertEquals("2026-08-31", form.dueDateField.emptyText.text)
+
+            form.selectType("story")
+            assertEquals("[AUTH-001] 이메일 회원가입", form.titleField.emptyText.text)
+            form.selectType("epic")
+            assertEquals("[AUTH] 인증", form.titleField.emptyText.text)
+        }
+    }
+
+    fun `test hides the values it already filled but never a required empty one`() {
+        withDialog { dialog ->
             dialog.form.selectType("task")
-            assertTrue(dialog.form.templateArea.text.contains("## 결과물"))
+
+            assertEquals(
+                "기억된 값(담당자·우선순위·스프린트·기한)과 유도된 키는 접어둔다",
+                emptySet<String>(),
+                dialog.form.visiblePaths(),
+            )
+        }
+    }
+
+    fun `test keeps the empty required fields on screen`() {
+        withDialog(context(remembered = RememberedInput(storyPoints = 3), epicKey = null)) { dialog ->
+            dialog.form.selectType("task")
+
+            val visible = dialog.form.visiblePaths()
+            assertTrue("비어 있는 필수 칸은 숨기지 않는다", visible.containsAll(setOf("epicKey", "assignee", "priority", "sprint", "dueDate")))
+        }
+    }
+
+    fun `test can show every field on demand`() {
+        withDialog { dialog ->
+            dialog.form.selectType("task")
+            dialog.form.showAllCheckBox.isSelected = true
+            dialog.form.showAllCheckBox.actionListeners.forEach { it.actionPerformed(null) }
+
+            assertTrue(
+                dialog.form.visiblePaths().containsAll(
+                    setOf("epicKey", "storyKey", "assignee", "priority", "storyPoints", "sprint", "dueDate"),
+                ),
+            )
+        }
+    }
+
+    fun `test paints the errors red with the field name`() {
+        withDialog(context(remembered = RememberedInput())) { dialog ->
+            dialog.form.selectType("task")
+
+            val labels = dialog.problemLabels()
+            assertTrue(labels.any { it.text.startsWith("기한: ") })
+            assertTrue(labels.any { it.text.startsWith("담당자: ") })
+            assertTrue("오류 줄은 빨간색이다", labels.all { it.foreground == NamedColorUtil.getErrorForeground() })
+            assertTrue("필드 경로는 보여주지 않는다", labels.none { it.text.contains("dueDate") })
+        }
+    }
+
+    fun `test says it is fine when there is nothing to fix`() {
+        withDialog { dialog ->
+            val form = dialog.form
+            form.selectType("task")
+            form.areaComboBox.selectedItem = "FE"
+            form.summaryField.text = "회원가입 폼"
+            form.descriptionArea.text = "이메일 회원가입 폼을 만든다."
+            form.deliverablesArea.text = "회원가입 화면"
+
+            assertTrue(dialog.problemsText().contains("문제가 없습니다"))
+            assertTrue(dialog.problemsText().contains("FE"))
         }
     }
 }

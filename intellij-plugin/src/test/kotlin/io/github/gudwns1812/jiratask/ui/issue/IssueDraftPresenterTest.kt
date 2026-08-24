@@ -34,7 +34,7 @@ class IssueDraftPresenterTest {
     fun `builds a draft for a valid task with derived labels`() {
         val view = present(validTask())
 
-        assertEquals(emptyList<String>(), view.errors)
+        assertEquals(emptyList<IssueProblem>(), view.errors)
         assertTrue(view.isValid)
         assertEquals(listOf("FE"), view.labels)
         val json = view.json!!
@@ -87,22 +87,22 @@ class IssueDraftPresenterTest {
 
         assertNull(view.json)
         assertFalse(view.isValid)
-        assertTrue(view.errors.any { it.startsWith("epicKey:") })
-        assertTrue(view.errors.any { it.startsWith("title:") })
-        assertTrue(view.errors.any { it.startsWith("assignee:") })
-        assertTrue(view.errors.any { it.startsWith("priority:") })
-        assertTrue(view.errors.any { it.startsWith("sprint:") })
-        assertTrue(view.errors.any { it.startsWith("dueDate:") })
-        assertTrue(view.errors.any { it.startsWith("storyPoints:") })
-        assertTrue(view.errors.any { it.startsWith("description.summary:") })
-        assertTrue(view.errors.any { it.startsWith("description.deliverables:") })
+        assertTrue(view.errors.any { it.path == "epicKey" })
+        assertTrue(view.errors.any { it.path == "title" })
+        assertTrue(view.errors.any { it.path == "assignee" })
+        assertTrue(view.errors.any { it.path == "priority" })
+        assertTrue(view.errors.any { it.path == "sprint" })
+        assertTrue(view.errors.any { it.path == "dueDate" })
+        assertTrue(view.errors.any { it.path == "storyPoints" })
+        assertTrue(view.errors.any { it.path == "description.summary" })
+        assertTrue(view.errors.any { it.path == "description.deliverables" })
     }
 
     @Test
     fun `rejects a story point that is not in the policy`() {
         val view = present(validTask().copy(storyPoints = "4"))
 
-        assertTrue(view.errors.any { it.contains("스토리 포인트는 1, 2, 3, 5, 8 중 하나여야 합니다.") })
+        assertTrue(view.errors.any { it.message.contains("스토리 포인트는 1, 2, 3, 5, 8 중 하나여야 합니다.") })
         assertNull(view.json)
     }
 
@@ -110,7 +110,7 @@ class IssueDraftPresenterTest {
     fun `rejects a story point that is not a number`() {
         val view = present(validTask().copy(storyPoints = "삼"))
 
-        assertTrue(view.errors.any { it.startsWith("storyPoints:") })
+        assertTrue(view.errors.any { it.path == "storyPoints" })
         assertNull(view.json)
     }
 
@@ -118,7 +118,7 @@ class IssueDraftPresenterTest {
     fun `rejects an impossible due date`() {
         val view = present(validTask().copy(dueDate = "2026-02-30"))
 
-        assertTrue(view.errors.any { it.contains("YYYY-MM-DD") })
+        assertTrue(view.errors.any { it.message.contains("YYYY-MM-DD") })
         assertNull(view.json)
     }
 
@@ -126,7 +126,7 @@ class IssueDraftPresenterTest {
     fun `rejects a title that does not follow the rule`() {
         val view = present(validTask().copy(title = "회원가입 폼"))
 
-        assertTrue(view.errors.any { it.startsWith("title:") })
+        assertTrue(view.errors.any { it.path == "title" })
         assertNull(view.json)
     }
 
@@ -134,15 +134,15 @@ class IssueDraftPresenterTest {
     fun `rejects an unknown area in the title`() {
         val view = present(validTask().copy(title = "[AUTH-001 | XX] 회원가입 폼"))
 
-        assertTrue(view.errors.any { it.contains("담당 영역은") })
+        assertTrue(view.errors.any { it.message.contains("담당 영역은") })
     }
 
     @Test
     fun `keeps building the draft when only warnings are reported`() {
         val view = present(validTask().copy(deliverables = "폼"))
 
-        assertEquals(emptyList<String>(), view.errors)
-        assertTrue(view.warnings.any { it.startsWith("description.deliverables:") })
+        assertEquals(emptyList<IssueProblem>(), view.errors)
+        assertTrue(view.warnings.any { it.path == "description.deliverables" })
         assertTrue("경고만 있으면 초안은 만들어진다", view.isValid)
     }
 
@@ -153,7 +153,7 @@ class IssueDraftPresenterTest {
         val rejected = present(validTask().copy(storyPoints = "3"), policy)
         val accepted = present(validTask().copy(storyPoints = "2"), policy)
 
-        assertTrue(rejected.errors.any { it.contains("1, 2 중 하나") })
+        assertTrue(rejected.errors.any { it.message.contains("1, 2 중 하나") })
         assertTrue(accepted.isValid)
     }
 
@@ -201,6 +201,34 @@ class IssueDraftPresenterTest {
         val view = present(validTask().copy(storyKey = ""))
 
         assertEquals(JsonParser.parseString(cliOutput), JsonParser.parseString(view.json!!))
+    }
+
+    @Test
+    fun `names the field on screen instead of the json path`() {
+        val view = present(IssueFormInput(type = "task"))
+
+        val displays = view.errors.map { it.display() }
+        assertTrue(displays.any { it.startsWith("기한: ") })
+        assertTrue(displays.any { it.startsWith("설명: ") })
+        assertTrue(displays.any { it.startsWith("결과물: ") })
+        assertTrue(displays.any { it.startsWith("담당자: ") })
+        assertTrue("필드 경로를 그대로 보여주지 않는다", displays.none { it.startsWith("dueDate") })
+    }
+
+    @Test
+    fun `numbers a deliverable that is blank`() {
+        val view = present(validTask().copy(deliverables = "회원가입 화면"))
+            .let { present(validTask().copy(deliverables = "회원가입 화면")) }
+
+        assertTrue(view.isValid)
+        assertEquals("결과물 2번째", IssueFieldLabels.of("description.deliverables.1"))
+    }
+
+    @Test
+    fun `tells which fields need attention`() {
+        val view = present(validTask().copy(dueDate = "", assignee = ""))
+
+        assertEquals(setOf("dueDate", "assignee"), view.problemPaths())
     }
 
     @Test
