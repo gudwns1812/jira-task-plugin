@@ -4,6 +4,19 @@ import io.github.gudwns1812.jiratask.application.SettingsLoad
 import io.github.gudwns1812.jiratask.application.SettingsSnapshot
 
 /**
+ * 상태 한 줄. [isPlaceholder]가 true면 [value]는 실제 값이 아니라 "설정되지 않음" 같은 안내 문구이므로
+ * 회색으로 그리고, [kind]는 그 값을 어떻게 보여줄지(일반 문구 / 링크 / 고정폭)를 말한다.
+ */
+data class StatusRow(
+    val name: String,
+    val value: String,
+    val isPlaceholder: Boolean,
+    val kind: Kind,
+) {
+    enum class Kind { TEXT, LINK, CODE }
+}
+
+/**
  * 툴 윈도우가 보여줄 현재 상태. 저장된 설정(프로젝트·이슈 유형·상태), 현재 작업 번호,
  * 현재 Git 브랜치를 한자리에 모은다. 이메일과 API 토큰은 담지 않는다.
  */
@@ -20,19 +33,30 @@ data class JiraTaskStatus(
     /** 이슈 초안·브랜치·커밋을 실행할 수 있는 상태인지 — 프로젝트 키가 있어야 한다. */
     val isConfigured: Boolean get() = problem == null && !projectKey.isNullOrEmpty()
 
-    /** 화면에 그릴 항목들. 값이 없으면 무엇이 없는지 알 수 있는 문구를 넣는다. */
-    fun rows(): List<Pair<String, String>> = listOf(
-        "프로젝트 키" to projectKey.orPlaceholder(NOT_CONFIGURED),
-        "Jira 주소" to baseUrl.orPlaceholder(NOT_CONFIGURED),
-        "프로젝트" to projectName.orPlaceholder(NOT_CONFIGURED),
-        "스토리 유형" to storyIssueType.orPlaceholder(NOT_CONFIGURED),
-        "스토리 시작 상태" to storyStartStatus.orPlaceholder(NOT_CONFIGURED),
-        "현재 작업 번호" to taskNumber.orPlaceholder(NO_TASK),
-        "현재 브랜치" to branch.orPlaceholder(NO_BRANCH),
+    /**
+     * 화면에 그릴 항목들. 값이 없으면 무엇이 없는지 알 수 있는 문구를 넣고, 그것이 실제 값이 아니라는
+     * 사실([StatusRow.isPlaceholder])과 어떻게 그려야 하는지([StatusRow.kind])를 함께 알려준다.
+     */
+    fun statusRows(): List<StatusRow> = listOf(
+        row("프로젝트 키", projectKey, NOT_CONFIGURED, StatusRow.Kind.CODE),
+        row("Jira 주소", baseUrl, NOT_CONFIGURED, StatusRow.Kind.LINK),
+        row("프로젝트", projectName, NOT_CONFIGURED, StatusRow.Kind.TEXT),
+        row("스토리 유형", storyIssueType, NOT_CONFIGURED, StatusRow.Kind.TEXT),
+        row("스토리 시작 상태", storyStartStatus, NOT_CONFIGURED, StatusRow.Kind.TEXT),
+        row("현재 작업 번호", taskNumber, NO_TASK, StatusRow.Kind.CODE),
+        row("현재 브랜치", branch, NO_BRANCH, StatusRow.Kind.CODE),
     )
 
-    private fun String?.orPlaceholder(placeholder: String): String =
-        if (isNullOrBlank()) placeholder else this
+    /** 이름과 표시 문구만 필요한 곳(로그·간단한 검증)에서 쓰는 축약형. */
+    fun rows(): List<Pair<String, String>> = statusRows().map { it.name to it.value }
+
+    // 종류는 항목의 성격이므로 값이 있든 없든 그대로 둔다 — 값이 없다는 사실은 isPlaceholder가 알려준다.
+    private fun row(name: String, value: String?, placeholder: String, kind: StatusRow.Kind): StatusRow =
+        if (value.isNullOrBlank()) {
+            StatusRow(name, placeholder, isPlaceholder = true, kind = kind)
+        } else {
+            StatusRow(name, value, isPlaceholder = false, kind = kind)
+        }
 
     companion object {
         const val NOT_CONFIGURED: String = "설정되지 않음"
