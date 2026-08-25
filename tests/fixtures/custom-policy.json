@@ -1,9 +1,0 @@
-{
-  "areas": ["FE", "MOBILE"],
-  "workCategories": ["PLAN", "DOCS"],
-  "storyPoints": [1, 2, 3, 5, 8],
-  "labels": {
-    "areas": { "MOBILE": "Mobile" },
-    "categories": { "PLAN": "기획" }
-  }
-}

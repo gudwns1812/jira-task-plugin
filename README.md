@@ -1,216 +1,58 @@
-# task-jira-cli
+# jira-task-plugin
 
-Jira 업무 입력을 검증하고, 요청 초안을 확인하며, Story 작업 브랜치를 만드는 명령행 도구입니다.
+`RULE.md`의 Jira 업무 규칙을 IntelliJ IDEA 안에서 강제하는 플러그인이다. 이슈 입력 검증, 요청 초안
+미리보기, Story 브랜치 생성, 현재 작업 번호 추적, 커밋 메시지 이슈 키 부착을 IDE 안에서 처리한다.
 
-## 빠른 시작
+## 기능
 
-```bash
-npm install -g task-jira-cli
-
-jira-task --help
-```
-
-Node.js 22.13 이상과 Git이 필요합니다.
-
-## 처음 한 번 설정하기
-
-### 1. 초기 설정 마법사 실행
-
-```bash
-jira-task
-```
-
-Jira 주소·이메일·API 토큰을 입력하면 연결을 확인한 뒤, 접근 가능한 프로젝트를 선택합니다. 스토리·작업·에픽 이슈 유형은 프로젝트의 이슈 유형 중 이름이 "스토리"/"Story", "작업"/"Task", "에픽"/"Epic"인 것을 각각 자동으로 찾아 저장하며 따로 묻지 않습니다. 진행 상태만 직접 선택합니다. API 토큰은 설정 파일이 아닌 운영체제 자격 증명 저장소에 보관됩니다.
-
-프로젝트에 해당 이름의 이슈 유형이 없거나(예: 스토리 유형이 아예 없음) 이름이 겹쳐 여러 개면 설정이 실패합니다. 이슈 유형 이름을 정리한 뒤 다시 시도하세요.
-
-중간에 취소하면 어떤 설정도 저장하지 않습니다. 설정을 다시 하려면 다음 명령을 사용하세요.
-
-```bash
-jira-task config setup
-```
-
-기본 설정 파일은 `~/.jira-task/policy.json`입니다. 팀 설정 파일을 따로 쓰려면 명령에 `--config ./team-policy.json`을 추가하면 됩니다.
-
-자동화 환경에서는 마법사 대신 환경 변수를 사용할 수 있습니다. 환경 변수는 저장된 자격 증명보다 우선합니다.
-
-```bash
-export JIRA_EMAIL="user@example.com"
-export JIRA_API_TOKEN="your-api-token"
-```
-
-## 기본 사용 흐름
-
-```text
-템플릿 확인 → JSON 작성 → 검증 → Jira 요청 초안 확인 → Story 브랜치 생성
-```
-
-### 1. 템플릿 확인
-
-```bash
-jira-task template story
-jira-task template task
-```
-
-### 2. JSON 작성
-
-`task.json`
-
-```json
-{
-  "type": "task",
-  "epicKey": "S15P11A108-10",
-  "storyKey": "S15P11A108-100",
-  "title": "[AUTH-001 | FE] 이메일 회원가입 화면 구현",
-  "assignee": "user@example.com",
-  "priority": "High",
-  "storyPoints": 3,
-  "sprint": "Sprint 1",
-  "dueDate": "2026-08-28",
-  "description": {
-    "summary": "회원가입 화면과 입력 상태를 구현한다.",
-    "deliverables": [
-      "입력 상태와 오류 메시지가 표시된다."
-    ]
-  }
-}
-```
-
-`story.json`
-
-```json
-{
-  "type": "story",
-  "epicKey": "S15P11A108-10",
-  "title": "[AUTH-001] 이메일 회원가입",
-  "branch": "feat/100-signup",
-  "sprint": "Sprint 1"
-}
-```
-
-`epic.json`
-
-```json
-{
-  "type": "epic",
-  "title": "[AUTH] 인증"
-}
-```
-
-### 3. 규칙 검증
-
-```bash
-jira-task validate --file task.json
-```
-
-팀 정책 파일을 적용하려면 다음처럼 실행합니다.
-
-```bash
-jira-task validate --file task.json --config ./team-policy.json
-```
-
-제목 형식, 이슈 타입별 필수값, 설명·결과물, 스토리 포인트, 영역과 업무 분류를 확인합니다.
-
-### 4. Jira 요청 초안 확인
-
-```bash
-jira-task create --file task.json --dry-run
-```
-
-프로젝트 키를 일회성으로 지정할 수도 있습니다.
-
-```bash
-jira-task create --file task.json --project S15P11A108 --dry-run
-```
-
-출력 JSON에서 제목, 설명, 레이블, 우선순위, 기한, 포인트, 스프린트, 관계 키를 확인하세요.
-
-### 5. Story 브랜치 만들기
-
-```bash
-jira-task branch create --story 100 --name signup
-```
-
-프로젝트 키가 `S15P11A108`이면 이 명령은 `S15P11A108-100` Story를 확인하고 `feat/100-signup` 브랜치를 만듭니다. 브랜치를 만든 뒤 Story를 설정한 진행 상태로 전환합니다.
-
-다음 상태에서는 브랜치를 만들지 않습니다.
-
-- Story 번호 또는 브랜치 이름 형식이 잘못된 경우
-- Jira 이슈를 찾지 못했거나 Story 타입이 아닌 경우
-- 현재 디렉터리가 Git 저장소가 아닌 경우
-- 커밋하지 않은 변경 사항이 있는 경우
-- 같은 이름의 로컬 또는 원격 브랜치가 이미 있는 경우
-- Jira 설정 또는 환경 변수가 빠진 경우
-
-브랜치 생성 후 Jira 상태 전환에 실패하면 브랜치는 남아 있습니다. 출력된 브랜치명과 Story 키를 확인한 뒤 Jira에서 상태를 전환하면 됩니다.
-
-### 6. 작업 시작과 커밋하기
-
-```bash
-jira-task task start --number 257
-```
-
-지금부터 커밋에 사용할 작업 번호를 현재 저장소에 저장합니다(저장소별 로컬 Git 설정에 보관되며 커밋되지 않습니다).
-
-```bash
-git add .
-jira-task commit -m "이메일 회원가입 화면 구현"
-```
-
-저장된 작업 번호와 설정된 프로젝트 키를 조합해 `S15P11A108-257 이메일 회원가입 화면 구현` 형태로 커밋 메시지를 만든 뒤 `git commit`을 실행합니다. 별도로 이슈 키를 입력할 필요가 없습니다.
-
-다음 상태에서는 커밋하지 않습니다.
-
-- 현재 디렉터리가 Git 저장소가 아닌 경우
-- `task start`로 작업 번호를 저장하지 않은 경우
-- 스테이지된 변경 사항이 없는 경우
-- Jira 프로젝트 키가 설정되지 않은 경우
-
-## 설정 명령
-
-```bash
-# 설정 마법사 다시 실행
-jira-task config setup
-
-# 현재 설정 보기 (이메일·토큰은 출력하지 않음)
-jira-task config show
-
-# 자동화 스크립트에서 비밀이 아닌 설정 변경
-jira-task config set --project S15P11A108
-```
-
-정책 파일에서 허용 영역, 업무 분류, 포인트, 레이블도 조정할 수 있습니다.
-
-```json
-{
-  "areas": ["FE", "BE", "AI", "QA", "INFRA"],
-  "workCategories": ["PLAN", "UX", "DESIGN", "TECH", "INFRA", "DOCS", "QA", "PT"],
-  "storyPoints": [1, 2, 3, 5, 8],
-  "labels": {
-    "areas": { "INFRA": "Infra" }
-  }
-}
-```
-
-## 종료 코드
-
-| 코드 | 의미 |
+| 기능 | 위치 |
 | --- | --- |
-| `0` | 명령 성공 |
-| `1` | 입력값 또는 업무 규칙 오류 |
-| `2` | Jira 설정 또는 환경 변수 누락 |
-| `3` | Jira 인증·권한 오류 |
-| `4` | Jira 통신 오류 또는 브랜치 생성 후 상태 전환 실패 |
-| `5` | Git 저장소·작업 트리·브랜치 상태 오류 |
+| 초기 설정 마법사 | `Tools > Jira Task > Run Setup Wizard`, 설정이 없으면 시작 시 알림 |
+| 설정 확인·수정 | `Settings \| Tools \| Jira Task` |
+| 이슈 초안 검증·미리보기·생성 | `Tools > Jira Task > Create Issue Draft` |
+| 스토리 브랜치 생성 | `Tools > Jira Task > Create Story Branch` |
+| 현재 작업 번호 저장 | `Tools > Jira Task > Start Jira Task`, 상태 표시줄 위젯(클릭하면 변경) |
+| 현재 상태 한눈에 보기 | 오른쪽 사이드바 `Jira Task` 툴 윈도우(설정·작업 번호·브랜치 + 실행 버튼) |
+| 커밋 | `Tools > Jira Task > Commit with Jira Task`, Git 커밋 창의 이슈 키 자동 접두 |
 
-## 도움말
+## 설정과 자격 증명
+
+- 설정은 IntelliJ 표준 방식(애플리케이션 레벨 `PersistentStateComponent`, `jira-task.xml`)으로 보관한다.
+- Jira API 토큰은 설정 파일에 저장하지 않고 IDE 비밀번호 저장소(PasswordSafe)에만 보관하며,
+  이메일과 토큰은 설정 화면에 표시하지 않는다.
+- `JIRA_EMAIL`·`JIRA_API_TOKEN` 환경 변수가 있으면 저장된 값보다 먼저 사용한다.
+- 초기 설정은 IDE 시작 직후 모달 창을 띄우지 않고 "설정 시작" 액션이 붙은 알림으로 안내한다.
+- 오류는 종료 코드가 아니라 알림 심각도(정보/경고/오류)로 전달한다.
+
+## 구조
+
+의존 방향은 `UI -> Application -> Domain`이고, `Infrastructure`는 Domain이 정의한 포트를 구현한다.
+
+```
+domain/          RULE.md 규칙, 검증, 브랜치·커밋·작업 번호, 정책 설정 (IntelliJ API 미의존)
+application/     유스케이스: 검증, 초안, 이슈 생성, 브랜치 생성, 작업 시작, 커밋, 초기 설정, 설정 편집
+infrastructure/  JiraClient(HttpClient), PasswordSafe 자격 증명, 설정 저장소, git 실행
+ui/              Settings 패널, 마법사·이슈·브랜치·작업·커밋 다이얼로그와 액션, 툴 윈도우, 알림
+```
+
+자세한 설계는 [ARCHITECTURE.md](ARCHITECTURE.md)에 있다.
+
+## 빌드 및 실행
 
 ```bash
-jira-task --help
-jira-task config --help
-jira-task validate --help
-jira-task create --help
-jira-task branch create --help
-jira-task task start --help
-jira-task commit --help
+./gradlew test
+./gradlew build
+./gradlew buildPlugin
+./gradlew runIde
 ```
+
+`buildPlugin`은 설치 가능한 `build/distributions/jira-task-plugin-<version>.zip`을 만든다.
+`runIde`로 뜬 샌드박스에서 `Tools > Jira Task` 메뉴와 `Settings | Tools | Jira Task`를 확인할 수 있다.
+
+> 이 환경의 `JAVA_HOME`이 JDK 25인 경우 Gradle 8.10.2와 호환되지 않는다. JDK 21을 명시해 실행한다.
+> 예: `JAVA_HOME="<JDK 21 경로>" ./gradlew.bat test`
+
+## 작업 기록
+
+Node.js CLI에서 플러그인으로 옮긴 이식 작업(T1~T26)의 단위와 결정 사항은
+[MIGRATION-LOG.md](MIGRATION-LOG.md)에, 진행 중인 작업 목록은 [TASKS.md](TASKS.md)에 있다.
