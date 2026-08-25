@@ -15,6 +15,10 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <notificationGroup id="Jira Task" displayType="BALLOON"/>
+        <!-- 커밋 창이 열릴 때의 기본 메시지. 모달 다이얼로그와 커밋 툴 윈도우가 함께 쓰는 경로다. -->
+        <vcs.commitMessageProvider
+            implementation="io.github.gudwns1812.jiratask.ui.commit.JiraTaskCommitMessageProvider"/>
+        <!-- 커밋 직전에 이슈 키를 한 번 더 보정하는 안전망. -->
         <checkinHandlerFactory implementation="io.github.gudwns1812.jiratask.ui.commit.JiraTaskCheckinHandlerFactory"/>
         <statusBarWidgetFactory id="JiraTask.CurrentTask"
                                 implementation="io.github.gudwns1812.jiratask.ui.task.CurrentTaskWidgetFactory"

@@ -50,6 +50,10 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
     },
     /** 상태를 읽는 방법. 기본은 설정 저장소와 git을 읽는 [readStatus]이고, 테스트에서 갈아 끼운다. */
     private val statusReader: (() -> JiraTaskStatus)? = null,
+    /** git에서 현재 작업 번호를 읽는 방법. 기본은 로컬 git 설정이고, 테스트에서 갈아 끼운다. */
+    private val taskNumberFromGit: () -> String? = {
+        project.basePath?.let { runCatching { GitRepository(File(it)).getCurrentTaskNumber() }.getOrNull() }
+    },
 ) : SimpleToolWindowPanel(true, true) {
 
     /** 본문에 보이는 화면. */
@@ -154,8 +158,9 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
     fun readStatus(): JiraTaskStatus {
         val load = EditSettingsUseCase(repository::loadConfig, repository::saveConfig).load()
         val git = project.basePath?.let { GitRepository(File(it)) }
-        val taskNumber = CurrentTaskState.getInstance(project).taskNumber
-            ?: runCatching { git?.getCurrentTaskNumber() }.getOrNull()
+        val state = CurrentTaskState.getInstance(project)
+        // git에서 읽은 값은 캐시에도 남긴다. 커밋 훅처럼 캐시만 보는 쪽이 빈손으로 돌아가지 않게 한다.
+        val taskNumber = state.taskNumber ?: taskNumberFromGit()?.also(state::apply)
 
         return JiraTaskStatus.of(load, taskNumber, git?.currentBranch())
     }

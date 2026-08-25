@@ -7,12 +7,14 @@ import com.intellij.openapi.actionSystem.Separator
 import com.intellij.openapi.extensions.ExtensionPointName
 import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.options.ConfigurableEP
+import com.intellij.openapi.vcs.changes.ui.CommitMessageProvider
 import com.intellij.openapi.vcs.checkin.CheckinHandlerFactory
 import com.intellij.openapi.wm.StatusBarWidgetFactory
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import io.github.gudwns1812.jiratask.ui.branch.CreateStoryBranchAction
 import io.github.gudwns1812.jiratask.ui.commit.CommitWithJiraTaskAction
 import io.github.gudwns1812.jiratask.ui.commit.JiraTaskCheckinHandlerFactory
+import io.github.gudwns1812.jiratask.ui.commit.JiraTaskCommitMessageProvider
 import io.github.gudwns1812.jiratask.ui.issue.CreateIssueDraftAction
 import io.github.gudwns1812.jiratask.ui.task.CurrentTaskWidgetFactory
 import io.github.gudwns1812.jiratask.ui.task.StartTaskAction
@@ -74,6 +76,14 @@ class JiraTaskPluginRegistrationTest : BasePlatformTestCase() {
 
         assertSize(1, registered)
         assertEquals(CurrentTaskWidgetFactory.ID, registered.single().id)
+    }
+
+    fun `test the commit message provider is registered`() {
+        val registered = ExtensionPointName<CommitMessageProvider>("com.intellij.vcs.commitMessageProvider")
+            .extensionList
+            .filterIsInstance<JiraTaskCommitMessageProvider>()
+
+        assertSize(1, registered)
     }
 
     fun `test the commit message handler is registered`() {
