@@ -50,13 +50,11 @@ class JiraTaskAvailabilityTest {
     }
 
     @Test
-    fun `asks for a project key before an issue draft or a commit`() {
-        listOf(JiraTaskCommand.ISSUE_DRAFT, JiraTaskCommand.COMMIT).forEach { command ->
-            val result = availability.of(command, SettingsSnapshot.empty())
+    fun `asks for a project key before a commit`() {
+        val result = availability.of(JiraTaskCommand.COMMIT, SettingsSnapshot.empty())
 
-            assertFalse(result.isEnabled)
-            assertEquals(JiraTaskAvailability.NO_PROJECT_KEY, result.reason)
-        }
+        assertFalse(result.isEnabled)
+        assertEquals(JiraTaskAvailability.NO_PROJECT_KEY, result.reason)
     }
 
     @Test
@@ -94,7 +92,7 @@ class JiraTaskAvailabilityTest {
         val storage = JiraTaskConfigStorage().apply { configJson = "{\"projectKey\": \"lowercase\"}" }
         val broken = JiraTaskAvailability(PolicyConfigRepository(storage))
 
-        val result = broken.of(JiraTaskCommand.ISSUE_DRAFT, hasProject = true)
+        val result = broken.of(JiraTaskCommand.COMMIT, hasProject = true)
 
         assertFalse(result.isEnabled)
         assertTrue(result.reason!!.contains("projectKey"))

@@ -15,7 +15,6 @@ import io.github.gudwns1812.jiratask.ui.branch.CreateStoryBranchAction
 import io.github.gudwns1812.jiratask.ui.commit.CommitWithJiraTaskAction
 import io.github.gudwns1812.jiratask.ui.commit.JiraTaskCheckinHandlerFactory
 import io.github.gudwns1812.jiratask.ui.commit.JiraTaskCommitMessageProvider
-import io.github.gudwns1812.jiratask.ui.issue.CreateIssueDraftAction
 import io.github.gudwns1812.jiratask.ui.task.CurrentTaskWidgetFactory
 import io.github.gudwns1812.jiratask.ui.task.StartTaskAction
 
@@ -25,7 +24,6 @@ class JiraTaskPluginRegistrationTest : BasePlatformTestCase() {
     fun `test every menu action is registered with its implementation`() {
         val manager = ActionManager.getInstance()
         val expected = mapOf(
-            "JiraTask.CreateIssueDraft" to CreateIssueDraftAction::class.java,
             "JiraTask.CreateStoryBranch" to CreateStoryBranchAction::class.java,
             "JiraTask.StartTask" to StartTaskAction::class.java,
             "JiraTask.Commit" to CommitWithJiraTaskAction::class.java,
@@ -44,14 +42,19 @@ class JiraTaskPluginRegistrationTest : BasePlatformTestCase() {
 
         assertTrue(group is DefaultActionGroup)
         val children = (group as DefaultActionGroup).childActionsOrStubs
-        assertEquals("액션 5개와 구분선 1개", 5, children.count { it !is Separator })
+        assertEquals("액션 4개와 구분선 1개", 4, children.count { it !is Separator })
         assertEquals(1, children.count { it is Separator })
         assertTrue(group.isPopup)
     }
 
-    fun `test no placeholder action is left behind`() {
+    fun `test the issue draft action is gone`() {
+        // 사람이 스프린트 전에 Jira에서 이슈를 전부 만든다(RULE.md 전제 A). 도구는 만들지 않는다.
         assertNull(
-            "자리표시자 액션은 제거돼야 한다",
+            "이슈 초안 액션은 제거돼야 한다",
+            ActionManager.getInstance().getAction("JiraTask.CreateIssueDraft"),
+        )
+        assertNull(
+            "자리표시자 액션도 남아 있으면 안 된다",
             ActionManager.getInstance().getAction("JiraTask.CreateIssue"),
         )
     }

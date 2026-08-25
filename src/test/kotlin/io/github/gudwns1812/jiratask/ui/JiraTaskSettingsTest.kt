@@ -63,18 +63,9 @@ class JiraTaskSettingsTest {
 
     @Test
     fun `asks for setup when no project key is configured`() {
-        val lookup = settings(repository()).forIssueDraft()
+        val lookup = settings(repository()).forCommit()
 
         assertEquals(SettingsLookup.Missing(JiraTaskSettings.NO_PROJECT_KEY), lookup)
-    }
-
-    @Test
-    fun `returns the project key and the policy for an issue draft`() {
-        val lookup = settings(configuredRepository()).forIssueDraft()
-
-        val ready = lookup as SettingsLookup.Ready
-        assertEquals("S15P11A108", ready.value.projectKey)
-        assertEquals(listOf(1, 2, 3, 5, 8), ready.value.policy.storyPoints)
     }
 
     @Test
@@ -159,7 +150,6 @@ class JiraTaskSettingsTest {
         val broken = PolicyConfigRepository(storage)
 
         listOf(
-            settings(broken).forIssueDraft(),
             settings(broken).forCommit(),
             settings(broken).forBranch(),
         ).forEach { lookup ->

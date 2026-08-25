@@ -17,7 +17,6 @@ data class ActionAvailability(val isEnabled: Boolean, val reason: String?) {
 
 /** 활성 여부를 따로 판단해야 하는 명령들. */
 enum class JiraTaskCommand {
-    ISSUE_DRAFT,
     STORY_BRANCH,
     START_TASK,
     COMMIT,
@@ -48,7 +47,7 @@ class JiraTaskAvailability(private val repository: PolicyConfigRepository = Poli
 
     fun of(command: JiraTaskCommand, snapshot: SettingsSnapshot): ActionAvailability = when (command) {
         JiraTaskCommand.START_TASK -> ActionAvailability.ENABLED
-        JiraTaskCommand.ISSUE_DRAFT, JiraTaskCommand.COMMIT ->
+        JiraTaskCommand.COMMIT ->
             if (snapshot.projectKey.isEmpty()) ActionAvailability.disabled(NO_PROJECT_KEY) else ActionAvailability.ENABLED
         JiraTaskCommand.STORY_BRANCH -> storyBranchAvailability(snapshot)
     }
