@@ -12,7 +12,7 @@ import io.github.gudwns1812.jiratask.infrastructure.PolicyConfigRepository
 import io.github.gudwns1812.jiratask.ui.JiraTaskSettings
 import io.github.gudwns1812.jiratask.ui.TaskTransitionSettings
 
-/** 작업 시작·커밋 뒤에 Jira 상태를 옮기는 자리. 목표 상태와 작업 키를 어디서 가져오는지가 핵심이다. */
+/** 작업을 시작할 때 Jira 상태를 옮기는 자리. 작업 키를 어디서 가져오는지와 멱등성이 핵심이다. */
 class AdvanceCurrentTaskTest : BasePlatformTestCase() {
 
     private object AnyToken : CredentialStore {
@@ -20,13 +20,16 @@ class AdvanceCurrentTaskTest : BasePlatformTestCase() {
         override fun get(baseUrl: String, email: String): String = "token"
     }
 
-    private class FakeTransitioner : TaskIssueTransitioner {
+    private class FakeTransitioner(
+        private val currentStatusId: String = "11",
+        private val currentStatusName: String = "해야 할 일",
+    ) : TaskIssueTransitioner {
         val requested = mutableListOf<String>()
         val executed = mutableListOf<Pair<String, String>>()
 
         override fun getIssue(issueKey: String): JiraIssue {
             requested += issueKey
-            return JiraIssue(issueKey, "10002", "작업", "11", "해야 할 일")
+            return JiraIssue(issueKey, "10002", "작업", currentStatusId, currentStatusName)
         }
 
         override fun listTransitions(issueKey: String): List<JiraTransition> = listOf(
@@ -60,44 +63,56 @@ class AdvanceCurrentTaskTest : BasePlatformTestCase() {
         return JiraTaskSettings(repository, AnyToken) { null }
     }
 
-    private fun run(target: TaskTarget, taskNumber: String = "257", configured: Boolean = true): FakeTransitioner {
-        val transitioner = FakeTransitioner()
-        AdvanceCurrentTask.run(project, taskNumber, target, settings(configured)) { transitioner }
+    private fun advance(
+        taskNumber: String = "257",
+        configured: Boolean = true,
+        transitioner: FakeTransitioner = FakeTransitioner(),
+    ): FakeTransitioner {
+        AdvanceCurrentTask.run(project, taskNumber, settings(configured)) { transitioner }
         return transitioner
     }
 
     fun `test moves the task to the in progress status`() {
-        val transitioner = run(TaskTarget.IN_PROGRESS)
+        val transitioner = advance()
 
         assertEquals(listOf("S15P11A108-257"), transitioner.requested)
         assertEquals(listOf("S15P11A108-257" to "3"), transitioner.executed)
     }
 
-    fun `test moves the task to the done status`() {
-        val transitioner = run(TaskTarget.DONE)
+    fun `test never moves the task to the done status`() {
+        // 완료는 MR 병합을 계기로 Jira automation이 판단한다(RULE.md 4.2).
+        val transitioner = advance()
 
-        assertEquals(listOf("S15P11A108-257" to "5"), transitioner.executed)
+        assertEquals(listOf("S15P11A108-257" to "3"), transitioner.executed)
+        assertFalse("완료 전환 id는 쓰이지 않는다", transitioner.executed.any { it.second == "5" })
+    }
+
+    fun `test does nothing when the task is already in progress`() {
+        // 플러그인과 automation이 같은 전환을 겹쳐 실행한다. 두 번째는 아무 일도 하지 않아야 한다.
+        val transitioner = advance(transitioner = FakeTransitioner(currentStatusId = "21", currentStatusName = "진행 중"))
+
+        assertEquals(listOf("S15P11A108-257"), transitioner.requested)
+        assertEmpty("이미 진행 중이면 전환하지 않는다", transitioner.executed)
     }
 
     fun `test does not touch jira without the settings`() {
-        val transitioner = run(TaskTarget.DONE, configured = false)
+        val transitioner = advance(configured = false)
 
         assertEmpty("설정이 없으면 안내만 하고 Jira를 부르지 않는다", transitioner.requested)
         assertEmpty(transitioner.executed)
     }
 
     fun `test does not touch jira with an invalid task number`() {
-        val transitioner = run(TaskTarget.DONE, taskNumber = "abc")
+        val transitioner = advance(taskNumber = "abc")
 
         assertEmpty(transitioner.requested)
     }
 
-    fun `test picks the status of the target`() {
+    fun `test takes the target status from the saved start status`() {
         val ready = settings().forTaskTransition() as io.github.gudwns1812.jiratask.ui.SettingsLookup.Ready
         val value: TaskTransitionSettings = ready.value
 
-        assertEquals("21", TaskTarget.IN_PROGRESS.statusOf(value).id)
-        assertEquals("31", TaskTarget.DONE.statusOf(value).id)
+        assertEquals("21", value.inProgressStatus.id)
     }
 
     fun `test reports each result as one notification line`() {

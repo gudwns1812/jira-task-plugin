@@ -31,7 +31,6 @@ data class SetupSummary(
     val taskIssueType: JiraNamedValue,
     val epicIssueType: JiraNamedValue,
     val storyStartStatus: JiraNamedValue,
-    val taskDoneStatus: JiraNamedValue,
 )
 
 /** API 토큰을 설정 파일과 분리해 보관하는 저장소의 경계다. 실제 구현은 인프라 계층이 제공한다. */
@@ -74,8 +73,9 @@ class RunInitialSetupUseCase(
             throw SetupSelectionError("서로 다른 스토리, 작업, 에픽 이슈 유형을 찾을 수 없습니다.")
         }
 
-        val storyStartStatus = selectStatus("스토리 브랜치 생성 시 이동할 상태를 선택하세요.", storyIssueType, "start")
-        val taskDoneStatus = selectStatus("작업 완료 시 이동할 상태를 선택하세요.", taskIssueType, "done")
+        // 작업을 시작할 때 옮겨 갈 상태다. 완료 상태는 묻지 않는다 — MR 병합을 계기로
+        // Jira automation이 판단한다(RULE.md 4.2).
+        val storyStartStatus = selectStatus("작업을 시작할 때 이동할 상태를 선택하세요.", storyIssueType, "start")
 
         val summary = SetupSummary(
             baseUrl = connection.baseUrl,
@@ -84,7 +84,6 @@ class RunInitialSetupUseCase(
             taskIssueType = toNamedValue(taskIssueType),
             epicIssueType = toNamedValue(epicIssueType),
             storyStartStatus = storyStartStatus,
-            taskDoneStatus = taskDoneStatus,
         )
         if (!prompter.confirm(summary)) {
             throw SetupCancelledError()
@@ -101,7 +100,6 @@ class RunInitialSetupUseCase(
             ),
             statuses = JiraSettings.Statuses(
                 story = JiraSettings.Statuses.StoryStatuses(start = storyStartStatus),
-                task = JiraSettings.Statuses.TaskStatuses(done = taskDoneStatus),
             ),
         )
 
@@ -188,8 +186,7 @@ fun SetupSummary.toDisplayLines(): List<Pair<String, String>> = listOf(
     "스토리 유형" to storyIssueType.name,
     "작업 유형" to taskIssueType.name,
     "에픽 유형" to epicIssueType.name,
-    "스토리 시작 상태" to storyStartStatus.name,
-    "작업 완료 상태" to taskDoneStatus.name,
+    "작업 시작 상태" to storyStartStatus.name,
 )
 
 private fun isHttpUrl(value: String): Boolean = try {

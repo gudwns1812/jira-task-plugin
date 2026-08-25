@@ -37,6 +37,8 @@ class JiraTaskConfigurableTest : BasePlatformTestCase() {
                         "task" to mapOf("id" to "10002", "name" to "작업"),
                         "epic" to mapOf("id" to "10003", "name" to "에픽"),
                     ),
+                    // task.done은 예전 버전이 저장하던 값이다. 그대로 두어 옛 설정 파일이
+                    // 오류 없이 읽히고 화면에도 나타나지 않는 것을 함께 확인한다.
                     "statuses" to mapOf(
                         "story" to mapOf("start" to mapOf("id" to "21", "name" to "진행 중")),
                         "task" to mapOf("done" to mapOf("id" to "31", "name" to "완료")),
@@ -84,7 +86,8 @@ class JiraTaskConfigurableTest : BasePlatformTestCase() {
         assertTrue(texts.contains("작업"))
         assertTrue(texts.contains("에픽"))
         assertTrue(texts.contains("진행 중"))
-        assertTrue(texts.contains("완료"))
+        // 완료 상태는 더 이상 설정에 없다 — MR 병합을 계기로 automation이 판단한다(RULE.md 4.2).
+        assertFalse(texts.contains("완료"))
     }
 
     fun `test never shows the configured email or a password field`() {
@@ -111,8 +114,9 @@ class JiraTaskConfigurableTest : BasePlatformTestCase() {
 
         val texts = textsOf(configurable.createComponent())
 
-        assertTrue(texts.count { it == JiraTaskConfigurable.NOT_CONFIGURED } >= 6)
-        assertTrue("기본 정책은 항상 보여준다", texts.any { it.contains("FE, BE, AI, QA, INFRA") })
+        assertTrue(texts.count { it == JiraTaskConfigurable.NOT_CONFIGURED } >= 5)
+        // 업무 정책은 이슈를 만들 때만 쓰던 값이라 더는 설정에 없다(RULE.md 전제 A).
+        assertFalse(texts.any { it.contains("FE, BE, AI, QA, INFRA") })
     }
 
     fun `test reports no modification until an editable field changes`() {

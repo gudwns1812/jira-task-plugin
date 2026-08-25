@@ -17,8 +17,6 @@ data class ActionAvailability(val isEnabled: Boolean, val reason: String?) {
 
 /** 활성 여부를 따로 판단해야 하는 명령들. */
 enum class JiraTaskCommand {
-    ISSUE_DRAFT,
-    STORY_BRANCH,
     START_TASK,
     COMMIT,
 }
@@ -48,24 +46,8 @@ class JiraTaskAvailability(private val repository: PolicyConfigRepository = Poli
 
     fun of(command: JiraTaskCommand, snapshot: SettingsSnapshot): ActionAvailability = when (command) {
         JiraTaskCommand.START_TASK -> ActionAvailability.ENABLED
-        JiraTaskCommand.ISSUE_DRAFT, JiraTaskCommand.COMMIT ->
+        JiraTaskCommand.COMMIT ->
             if (snapshot.projectKey.isEmpty()) ActionAvailability.disabled(NO_PROJECT_KEY) else ActionAvailability.ENABLED
-        JiraTaskCommand.STORY_BRANCH -> storyBranchAvailability(snapshot)
-    }
-
-    private fun storyBranchAvailability(snapshot: SettingsSnapshot): ActionAvailability {
-        val missing = listOfNotNull(
-            "프로젝트 키".takeIf { snapshot.projectKey.isEmpty() },
-            "Jira 주소".takeIf { snapshot.baseUrl.isEmpty() },
-            "스토리 유형".takeIf { snapshot.storyIssueType.isEmpty() },
-            "스토리 시작 상태".takeIf { snapshot.storyStartStatus.isEmpty() },
-        )
-
-        return if (missing.isEmpty()) {
-            ActionAvailability.ENABLED
-        } else {
-            ActionAvailability.disabled("설정 마법사를 실행하세요. 없는 설정: ${missing.joinToString(", ")}")
-        }
     }
 
     companion object {

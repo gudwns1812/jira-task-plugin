@@ -29,7 +29,6 @@ import io.github.gudwns1812.jiratask.ui.notifyAndRefresh
 import io.github.gudwns1812.jiratask.ui.setup.SetupWizardLauncher
 import io.github.gudwns1812.jiratask.ui.task.AdvanceCurrentTask
 import io.github.gudwns1812.jiratask.ui.task.CurrentTaskState
-import io.github.gudwns1812.jiratask.ui.task.TaskTarget
 import java.io.File
 import javax.swing.JComponent
 import javax.swing.event.DocumentEvent
@@ -110,12 +109,6 @@ class CommitWithJiraTaskAction @JvmOverloads constructor(
 
                 val report = CommitReports.of(result)
                 notifyAndRefresh(project, report.type, report.message)
-
-                if (result is CreateCommitResult.Success) {
-                    CurrentTaskState.getInstance(project).taskNumber?.let { taskNumber ->
-                        AdvanceCurrentTask.run(project, taskNumber, TaskTarget.DONE)
-                    }
-                }
             }
         })
     }

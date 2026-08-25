@@ -130,21 +130,10 @@ class SetupWizardTest {
         assertEquals(JiraNamedValue("10002", "작업"), saved.jira?.issueTypes?.task)
         assertEquals(JiraNamedValue("10003", "에픽"), saved.jira?.issueTypes?.epic)
         assertEquals(JiraNamedValue("21", "진행 중"), saved.jira?.statuses?.story?.start)
-        assertEquals(JiraNamedValue("31", "할 일"), saved.jira?.statuses?.task?.done)
         assertEquals(
             listOf(Triple("https://team.atlassian.net", "gudwns1423@gmail.com", "token")),
             credentials.saved,
         )
-    }
-
-    @Test
-    fun `keeps the default work policy after the wizard saves`() {
-        val repository = repository()
-
-        wizard(ScriptedPrompter(), repository, RecordingCredentialStore()).run()
-
-        assertEquals(listOf(1, 2, 3, 5, 8), repository.loadConfig().policy.storyPoints)
-        assertEquals(listOf("FE", "BE", "AI", "QA", "INFRA"), repository.loadConfig().policy.areas)
     }
 
     @Test

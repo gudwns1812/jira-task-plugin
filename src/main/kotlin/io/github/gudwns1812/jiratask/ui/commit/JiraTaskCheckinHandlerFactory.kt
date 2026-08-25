@@ -6,9 +6,6 @@ import com.intellij.openapi.vcs.changes.CommitContext
 import com.intellij.openapi.vcs.checkin.CheckinHandler
 import com.intellij.openapi.vcs.checkin.CheckinHandlerFactory
 import io.github.gudwns1812.jiratask.ui.JiraTaskSettings
-import io.github.gudwns1812.jiratask.ui.task.AdvanceCurrentTask
-import io.github.gudwns1812.jiratask.ui.task.CurrentTaskState
-import io.github.gudwns1812.jiratask.ui.task.TaskTarget
 
 /**
  * 커밋 워크플로가 시작될 때 커밋 메시지의 이슈 키를 한 번 더 보정한다.
@@ -19,8 +16,8 @@ import io.github.gudwns1812.jiratask.ui.task.TaskTarget
  */
 class JiraTaskCheckinHandlerFactory(
     private val issueKey: CommitIssueKey = CommitIssueKey(),
-    /** 커밋이 끝난 뒤 할 일. 기본은 작업 이슈를 완료로 옮기는 것이다. */
-    private val onCheckedIn: (Project) -> Unit = ::advanceCurrentTaskToDone,
+    /** 커밋이 끝난 뒤 할 일. 지금은 아무것도 하지 않는다 — 아래 주석 참고. */
+    private val onCheckedIn: (Project) -> Unit = {},
 ) : CheckinHandlerFactory() {
 
     constructor(settings: JiraTaskSettings) : this(CommitIssueKey(settings))
@@ -30,23 +27,19 @@ class JiraTaskCheckinHandlerFactory(
         return handlerFor(panel.project)
     }
 
-    /** 커밋 성공만 지켜보는 훅. 검사도 하지 않고 커밋을 막지도 않는다. */
+    /**
+     * 커밋 성공만 지켜보는 훅. 검사도 하지 않고 커밋을 막지도 않는다.
+     *
+     * 예전에는 여기서 작업을 `완료`로 옮겼지만 커밋은 작업이 끝났다는 뜻이 아니다. 완료는 MR 병합을
+     * 계기로 Jira automation이 판단한다(RULE.md 4.2). 훅 자리는 남겨 둔다 — 테스트가 여기에 붙고,
+     * 커밋 뒤에 할 일이 생기면 다시 쓸 자리다.
+     */
     fun handlerFor(project: Project): CheckinHandler = object : CheckinHandler() {
         override fun checkinSuccessful() = onCheckedIn(project)
     }
 
     /** 현재 프로젝트 설정과 작업 번호로 만든 이슈 키. 둘 중 하나라도 없으면 null. */
     fun issueKeyFor(project: Project): String? = issueKey.issueKeyFor(project)
-}
-
-/**
- * 커밋이 성공했으니 작업 이슈를 완료로 옮긴다. 작업 번호는 [CurrentTaskState] 캐시에서 읽는다 —
- * `checkinSuccessful()`은 EDT에서 불리므로 여기서 git이나 Jira를 직접 부를 수 없다.
- */
-private fun advanceCurrentTaskToDone(project: Project) {
-    CurrentTaskState.getInstance(project).taskNumber?.let { taskNumber ->
-        AdvanceCurrentTask.inBackground(project, taskNumber, TaskTarget.DONE)
-    }
 }
 
 /** [CheckinProjectPanel]을 [CommitMessageTarget]으로 감싼다. */

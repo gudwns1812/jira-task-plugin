@@ -1,8 +1,5 @@
 package io.github.gudwns1812.jiratask.ui
 
-import io.github.gudwns1812.jiratask.application.CreateBranchCommand
-import io.github.gudwns1812.jiratask.application.CreateBranchResult
-import io.github.gudwns1812.jiratask.application.CreateBranchUseCase
 import io.github.gudwns1812.jiratask.application.CreateCommitCommand
 import io.github.gudwns1812.jiratask.application.CreateCommitResult
 import io.github.gudwns1812.jiratask.application.CreateCommitUseCase
@@ -13,21 +10,15 @@ import io.github.gudwns1812.jiratask.application.SetupPrompter
 import io.github.gudwns1812.jiratask.application.SetupSummary
 import io.github.gudwns1812.jiratask.application.StartTaskResult
 import io.github.gudwns1812.jiratask.application.StartTaskUseCase
-import io.github.gudwns1812.jiratask.domain.jira.JiraIssue
 import io.github.gudwns1812.jiratask.domain.jira.JiraIssueTypeWithStatuses
 import io.github.gudwns1812.jiratask.domain.jira.JiraNamedValue
 import io.github.gudwns1812.jiratask.domain.jira.JiraProject
 import io.github.gudwns1812.jiratask.domain.jira.JiraSetupReader
-import io.github.gudwns1812.jiratask.domain.jira.StoryIssueReader
 import io.github.gudwns1812.jiratask.infrastructure.GitRepository
 import io.github.gudwns1812.jiratask.infrastructure.JiraTaskConfigStorage
 import io.github.gudwns1812.jiratask.infrastructure.PolicyConfigRepository
-import io.github.gudwns1812.jiratask.ui.branch.BranchFormInput
-import io.github.gudwns1812.jiratask.ui.branch.BranchReports
 import io.github.gudwns1812.jiratask.ui.commit.CommitReports
 import io.github.gudwns1812.jiratask.ui.commit.JiraCommitMessages
-import io.github.gudwns1812.jiratask.ui.issue.IssueDraftPresenter
-import io.github.gudwns1812.jiratask.ui.issue.IssueFormInput
 import io.github.gudwns1812.jiratask.ui.setup.SetupWizard
 import io.github.gudwns1812.jiratask.ui.setup.SetupWizardResult
 import io.github.gudwns1812.jiratask.ui.task.CurrentTaskText
@@ -72,23 +63,12 @@ class JiraTaskScenarioTest {
         override fun showError(message: String) = Unit
     }
 
-    private inner class FakeJira : JiraSetupReader, StoryIssueReader {
-        var transitionedTo: String? = null
-
+    private inner class FakeJira : JiraSetupReader {
         override fun verifyIdentity() = Unit
 
         override fun listProjects(): List<JiraProject> = listOf(project)
 
         override fun listIssueTypesWithStatuses(projectKey: String): List<JiraIssueTypeWithStatuses> = issueTypes
-
-        override fun getIssue(issueKey: String): JiraIssue =
-            JiraIssue(issueKey, "10001", "스토리", "11", "할 일")
-
-        override fun findTransitionId(issueKey: String, targetStatusId: String): String? = "5"
-
-        override fun transition(issueKey: String, transitionId: String) {
-            transitionedTo = transitionId
-        }
     }
 
     private class InMemoryCredentials : CredentialStore {
@@ -122,60 +102,15 @@ class JiraTaskScenarioTest {
         assertEquals(SetupWizardResult.Completed("S15P11A108", "스토리", "진행 중"), setup)
 
         val settings = JiraTaskSettings(repository, credentials) { null }
-        val branchSettings = (settings.forBranch() as SettingsLookup.Ready).value
-        assertEquals("token", branchSettings.apiToken)
-        assertEquals("10001", branchSettings.storyIssueTypeId)
-        assertEquals("21", branchSettings.inProgressStatusId)
-
-        // 2. 이슈 초안 검증/미리보기
-        val draftSettings = (settings.forIssueDraft() as SettingsLookup.Ready).value
-        val view = IssueDraftPresenter.present(
-            IssueFormInput(
-                type = "task",
-                epicKey = "S15P11A108-1",
-                title = "[AUTH-001 | FE] 회원가입 폼",
-                assignee = "박형준",
-                priority = "High",
-                storyPoints = "3",
-                sprint = "Sprint 1",
-                dueDate = "2026-08-31",
-                summary = "이메일 회원가입 폼을 만든다.",
-                deliverables = "회원가입 화면\n유효성 검사 로직",
-            ),
-            draftSettings.projectKey,
-            draftSettings.policy,
-        )
-        assertEquals(emptyList<String>(), view.errors)
-        assertEquals("S15P11A108", view.draft!!.projectKey)
-
-        // 3. 브랜치 생성
-        val input = BranchFormInput(" 100 ", " signup ").trimmed()
-        assertNull(input.problem())
         val git = GitRepository(directory)
-        val branchResult = CreateBranchUseCase(jira, git).execute(
-            CreateBranchCommand(
-                projectKey = branchSettings.projectKey,
-                storyNumber = input.storyNumber,
-                name = input.name,
-                storyIssueTypeId = branchSettings.storyIssueTypeId,
-                inProgressStatusId = branchSettings.inProgressStatusId,
-            ),
-        )
-        assertEquals(
-            CreateBranchResult.Success("feat/100-signup", "S15P11A108-100", transitioned = true),
-            branchResult,
-        )
-        assertEquals("5", jira.transitionedTo)
-        assertEquals("feat/100-signup\n", runGit(directory, "branch", "--show-current"))
-        assertTrue(BranchReports.of(branchResult).message.contains("feat/100-signup"))
 
-        // 4. 작업 시작
+        // 2. 작업 시작
         val startResult = StartTaskUseCase(git).execute("257")
         assertEquals(StartTaskResult.Success("257"), startResult)
         assertEquals("Jira: 257", CurrentTaskText.of(git.getCurrentTaskNumber()))
         assertTrue(StartTaskReports.of(startResult).message.contains("257"))
 
-        // 5. 커밋 (메시지 접두는 커밋 다이얼로그가 하는 것과 같은 규칙으로 확인)
+        // 3. 커밋 (메시지 접두는 커밋 다이얼로그가 하는 것과 같은 규칙으로 확인)
         val commitSettings = (settings.forCommit() as SettingsLookup.Ready).value
         assertEquals(
             "S15P11A108-257 회원가입 폼 구현",
@@ -199,13 +134,13 @@ class JiraTaskScenarioTest {
     }
 
     @Test
-    fun `stops before the branch when the setup was cancelled`() {
+    fun `stops before touching jira when the setup was cancelled`() {
         val settings = JiraTaskSettings(repository, InMemoryCredentials()) { null }
 
-        val lookup = settings.forBranch()
+        val lookup = settings.forTaskTransition()
 
         assertTrue(lookup is SettingsLookup.Missing)
-        assertTrue((lookup as SettingsLookup.Missing).message.startsWith("브랜치 생성 설정이 없습니다"))
+        assertTrue((lookup as SettingsLookup.Missing).message.startsWith("작업 상태 전환 설정이 없습니다"))
     }
 
     @Test

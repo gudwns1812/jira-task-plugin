@@ -50,41 +50,17 @@ class JiraTaskAvailabilityTest {
     }
 
     @Test
-    fun `asks for a project key before an issue draft or a commit`() {
-        listOf(JiraTaskCommand.ISSUE_DRAFT, JiraTaskCommand.COMMIT).forEach { command ->
-            val result = availability.of(command, SettingsSnapshot.empty())
-
-            assertFalse(result.isEnabled)
-            assertEquals(JiraTaskAvailability.NO_PROJECT_KEY, result.reason)
-        }
-    }
-
-    @Test
-    fun `lists what a story branch still needs`() {
-        val result = availability.of(JiraTaskCommand.STORY_BRANCH, SettingsSnapshot.empty())
+    fun `asks for a project key before a commit`() {
+        val result = availability.of(JiraTaskCommand.COMMIT, SettingsSnapshot.empty())
 
         assertFalse(result.isEnabled)
-        listOf("프로젝트 키", "Jira 주소", "스토리 유형", "스토리 시작 상태").forEach {
-            assertTrue("$it 안내가 있어야 한다", result.reason!!.contains(it))
-        }
+        assertEquals(JiraTaskAvailability.NO_PROJECT_KEY, result.reason)
     }
 
     @Test
-    fun `names only the missing pieces for a story branch`() {
-        val result = availability.of(
-            JiraTaskCommand.STORY_BRANCH,
-            fullyConfigured().copy(storyStartStatus = ""),
-        )
-
-        assertFalse(result.isEnabled)
-        assertTrue(result.reason!!.contains("스토리 시작 상태"))
-        assertFalse("이미 있는 설정은 언급하지 않는다", result.reason!!.contains("Jira 주소"))
-    }
-
-    @Test
-    fun `does not need an api token to enable the story branch action`() {
+    fun `does not need an api token to enable the commit action`() {
         // 토큰은 OS 키체인에 있어 update()에서 읽지 않는다 — 스냅샷에 토큰이 없어도 활성이어야 한다.
-        val result = availability.of(JiraTaskCommand.STORY_BRANCH, fullyConfigured())
+        val result = availability.of(JiraTaskCommand.COMMIT, fullyConfigured())
 
         assertTrue(result.isEnabled)
     }
@@ -94,7 +70,7 @@ class JiraTaskAvailabilityTest {
         val storage = JiraTaskConfigStorage().apply { configJson = "{\"projectKey\": \"lowercase\"}" }
         val broken = JiraTaskAvailability(PolicyConfigRepository(storage))
 
-        val result = broken.of(JiraTaskCommand.ISSUE_DRAFT, hasProject = true)
+        val result = broken.of(JiraTaskCommand.COMMIT, hasProject = true)
 
         assertFalse(result.isEnabled)
         assertTrue(result.reason!!.contains("projectKey"))

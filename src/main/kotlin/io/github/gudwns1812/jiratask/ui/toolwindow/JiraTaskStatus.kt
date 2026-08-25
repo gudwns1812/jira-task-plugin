@@ -50,7 +50,7 @@ data class JiraTaskStatus(
         row("Jira 주소", baseUrl, NOT_CONFIGURED, StatusRow.Kind.LINK),
         row("프로젝트", projectName, NOT_CONFIGURED, StatusRow.Kind.TEXT),
         row("스토리 유형", storyIssueType, NOT_CONFIGURED, StatusRow.Kind.TEXT),
-        row("스토리 시작 상태", storyStartStatus, NOT_CONFIGURED, StatusRow.Kind.TEXT),
+        row("작업 시작 상태", storyStartStatus, NOT_CONFIGURED, StatusRow.Kind.TEXT),
         row("현재 작업 번호", taskNumber, NO_TASK, StatusRow.Kind.CODE),
         row("현재 브랜치", branch, NO_BRANCH, StatusRow.Kind.CODE),
     )

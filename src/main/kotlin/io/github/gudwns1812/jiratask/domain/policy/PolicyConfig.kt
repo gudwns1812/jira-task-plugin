@@ -21,97 +21,48 @@ data class JiraSettings(
         val epic: JiraNamedValue? = null,
     )
 
-    data class Statuses(
-        val story: StoryStatuses? = null,
-        val task: TaskStatuses? = null,
-    ) {
+    data class Statuses(val story: StoryStatuses? = null) {
         data class StoryStatuses(val start: JiraNamedValue? = null)
-        data class TaskStatuses(val done: JiraNamedValue? = null)
     }
 }
 
 data class JiraTaskConfig(
     val projectKey: String? = null,
     val jira: JiraSettings? = null,
-    val policy: WorkPolicy,
 ) {
     companion object
 }
 
 private val PROJECT_KEY_PATTERN = Regex("""^[A-Z][A-Z0-9_]*$""")
-private val VALID_STORY_POINTS = listOf(1, 2, 3, 5, 8)
-private val POLICY_OVERRIDE_KEYS = setOf("areas", "workCategories", "storyPoints", "labels")
 
-fun JiraTaskConfig.Companion.default(): JiraTaskConfig = JiraTaskConfig(policy = WorkPolicy.DEFAULT)
+/**
+ * 업무 정책(영역·업무 분류·스토리 포인트·레이블)을 저장하던 키들이다. 이슈를 만들 때만 쓰였으므로
+ * 더는 읽지 않지만, 예전 버전이 저장해 둔 설정 파일이 이 키를 갖고 있다. 허용 목록에는 남겨
+ * 그런 파일이 "허용되지 않는 필드" 오류로 막히지 않게 하고, 값은 읽지도 다시 쓰지도 않는다.
+ */
+private val LEGACY_POLICY_KEYS = setOf("areas", "workCategories", "storyPoints", "labels")
 
-fun WorkPolicy.Companion.resolve(rawOverrides: Any?): WorkPolicy {
-    val obj = asConfigObject(rawOverrides, "정책 설정")
-    val errors = mutableListOf<String>()
-
-    rejectUnknownKeys(obj, POLICY_OVERRIDE_KEYS, "", errors)
-    val overrides = readPolicyOverrides(obj, errors)
-
-    if (errors.isNotEmpty()) {
-        throw PolicyConfigurationError("정책 설정 형식이 올바르지 않습니다. ${errors.joinToString("; ")}")
-    }
-
-    return buildWorkPolicy(overrides)
-}
+fun JiraTaskConfig.Companion.default(): JiraTaskConfig = JiraTaskConfig()
 
 fun JiraTaskConfig.Companion.resolve(rawConfig: Any?): JiraTaskConfig {
     val obj = asConfigObject(rawConfig, "설정")
     val errors = mutableListOf<String>()
 
-    rejectUnknownKeys(obj, POLICY_OVERRIDE_KEYS + setOf("projectKey", "jira"), "", errors)
+    rejectUnknownKeys(obj, LEGACY_POLICY_KEYS + setOf("projectKey", "jira"), "", errors)
     val projectKey = readProjectKey(obj, errors)
     val jira = readJiraSettings(obj, errors)
-    val overrides = readPolicyOverrides(obj, errors)
 
-    // projectKey/jira 오류와 정책 오류를 한 번에 모아 던진다(CLI의 단일 zod 스키마 파싱과 동일하게).
+    // projectKey 오류와 jira 오류를 한 번에 모아 던진다.
     if (errors.isNotEmpty()) {
         throw PolicyConfigurationError("설정 형식이 올바르지 않습니다. ${errors.joinToString("; ")}")
     }
 
-    return JiraTaskConfig(projectKey = projectKey, jira = jira, policy = buildWorkPolicy(overrides))
+    return JiraTaskConfig(projectKey = projectKey, jira = jira)
 }
-
-private data class PolicyOverrides(
-    val areas: List<String>,
-    val workCategories: List<String>,
-    val storyPoints: List<Int>,
-    val labelsObj: Map<*, *>?,
-)
-
-private fun readPolicyOverrides(obj: Map<*, *>, errors: MutableList<String>): PolicyOverrides = PolicyOverrides(
-    areas = readUniqueStrings(obj, "areas", errors) ?: WorkPolicy.DEFAULT.areas.toList(),
-    workCategories = readUniqueStrings(obj, "workCategories", errors) ?: WorkPolicy.DEFAULT.workCategories.toList(),
-    storyPoints = readUniqueStoryPoints(obj, errors) ?: WorkPolicy.DEFAULT.storyPoints.toList(),
-    labelsObj = readLabelsObject(obj, errors),
-)
-
-private fun buildWorkPolicy(overrides: PolicyOverrides): WorkPolicy = WorkPolicy(
-    areas = overrides.areas,
-    workCategories = overrides.workCategories,
-    storyPoints = overrides.storyPoints,
-    labels = WorkPolicy.Labels(
-        areas = mergeLabels(WorkPolicy.DEFAULT.labels.areas, overrides.areas, readStringMap(overrides.labelsObj, "areas"), "영역"),
-        categories = mergeLabels(
-            WorkPolicy.DEFAULT.labels.categories,
-            overrides.workCategories,
-            readStringMap(overrides.labelsObj, "categories"),
-            "업무 분류",
-        ),
-    ),
-)
 
 /** [JiraTaskConfig.resolve]가 다시 읽을 수 있는 원시 구조로 되돌린다(설정 파일 저장용). */
 fun JiraTaskConfig.toRawMap(): Map<String, Any?> {
-    val result = mutableMapOf<String, Any?>(
-        "areas" to policy.areas,
-        "workCategories" to policy.workCategories,
-        "storyPoints" to policy.storyPoints,
-        "labels" to mapOf("areas" to policy.labels.areas, "categories" to policy.labels.categories),
-    )
+    val result = mutableMapOf<String, Any?>()
     projectKey?.let { result["projectKey"] = it }
     jira?.let { result["jira"] = it.toRawMap() }
     return result
@@ -139,7 +90,6 @@ private fun JiraSettings.IssueTypes.toRawMap(): Map<String, Any?> {
 private fun JiraSettings.Statuses.toRawMap(): Map<String, Any?> {
     val result = mutableMapOf<String, Any?>()
     story?.start?.let { result["story"] = mapOf("start" to mapOf("id" to it.id, "name" to it.name)) }
-    task?.done?.let { result["task"] = mapOf("done" to mapOf("id" to it.id, "name" to it.name)) }
     return result
 }
 
@@ -215,34 +165,6 @@ private fun readUniqueStrings(obj: Map<*, *>, key: String, errors: MutableList<S
 
     if (values.toSet().size != values.size) {
         errors += "$key: 중복된 값은 사용할 수 없습니다."
-        return null
-    }
-
-    return values
-}
-
-private fun readUniqueStoryPoints(obj: Map<*, *>, errors: MutableList<String>): List<Int>? {
-    if (!obj.containsKey("storyPoints") || obj["storyPoints"] == null) {
-        return null
-    }
-    val raw = obj["storyPoints"]
-    if (raw !is List<*> || raw.isEmpty()) {
-        errors += "storyPoints: 값을 하나 이상 입력해야 합니다."
-        return null
-    }
-
-    val values = mutableListOf<Int>()
-    for (item in raw) {
-        val number = (item as? Number)?.toInt()
-        if (number == null || number !in VALID_STORY_POINTS) {
-            errors += "storyPoints: ${VALID_STORY_POINTS.joinToString(", ")} 중 하나여야 합니다."
-            return null
-        }
-        values.add(number)
-    }
-
-    if (values.toSet().size != values.size) {
-        errors += "storyPoints: 중복된 포인트는 사용할 수 없습니다."
         return null
     }
 
@@ -402,10 +324,11 @@ private fun readStatuses(obj: Map<*, *>, errors: MutableList<String>): JiraSetti
         rejectUnknownKeys(storyRaw, setOf("start"), "jira.statuses.story", errors)
         JiraSettings.Statuses.StoryStatuses(readOptionalNamedValue(storyRaw, "start", "jira.statuses.story.start", errors))
     }
-    val task = (raw["task"] as? Map<*, *>)?.let { taskRaw ->
+    // `task.done`은 커밋이 작업을 완료로 옮기던 시절의 값이다. 예전 설정 파일에 남아 있어도
+    // 오류로 막지 않고 무시한다(RULE.md 4.2).
+    (raw["task"] as? Map<*, *>)?.let { taskRaw ->
         rejectUnknownKeys(taskRaw, setOf("done"), "jira.statuses.task", errors)
-        JiraSettings.Statuses.TaskStatuses(readOptionalNamedValue(taskRaw, "done", "jira.statuses.task.done", errors))
     }
 
-    return JiraSettings.Statuses(story, task)
+    return JiraSettings.Statuses(story)
 }
