@@ -7,13 +7,7 @@ import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.ui.DialogWrapper
-import com.intellij.openapi.ui.ValidationInfo
-import com.intellij.ui.DocumentAdapter
-import com.intellij.ui.components.JBTextField
-import com.intellij.ui.dsl.builder.COLUMNS_MEDIUM
-import com.intellij.ui.dsl.builder.columns
-import com.intellij.ui.dsl.builder.panel
+import com.intellij.openapi.application.ApplicationManager
 import io.github.gudwns1812.jiratask.application.StartTaskResult
 import io.github.gudwns1812.jiratask.application.StartTaskUseCase
 import io.github.gudwns1812.jiratask.infrastructure.GitRepository
@@ -23,40 +17,8 @@ import io.github.gudwns1812.jiratask.ui.JiraTaskNotifications
 import io.github.gudwns1812.jiratask.ui.applyAvailability
 import io.github.gudwns1812.jiratask.ui.notifyAndRefresh
 import java.io.File
-import javax.swing.JComponent
-import javax.swing.event.DocumentEvent
 
-/** 작업 번호를 입력받는 다이얼로그. 현재 저장된 번호를 기본값으로 보여준다. */
-class StartTaskDialog(project: Project?, currentTaskNumber: String? = null) : DialogWrapper(project, false) {
-
-    val taskNumberField: JBTextField = JBTextField(currentTaskNumber.orEmpty())
-
-    init {
-        title = "Start Jira Task"
-        setOKButtonText("작업 번호 저장")
-        init()
-        taskNumberField.document.addDocumentListener(object : DocumentAdapter() {
-            override fun textChanged(event: DocumentEvent) {
-                isOKActionEnabled = values().problem() == null
-            }
-        })
-        isOKActionEnabled = values().problem() == null
-    }
-
-    override fun createCenterPanel(): JComponent = panel {
-        row("작업 번호:") { cell(taskNumberField).columns(COLUMNS_MEDIUM) }
-            .rowComment("커밋 메시지에 붙일 Jira 작업 번호(0보다 큰 정수)입니다.")
-    }
-
-    override fun getPreferredFocusedComponent(): JComponent = taskNumberField
-
-    // 다이얼로그를 띄우지 않고도 안내 문구를 확인할 수 있게 공개 범위를 넓힌다.
-    public override fun doValidate(): ValidationInfo? = values().problem()?.let { ValidationInfo(it) }
-
-    fun values(): TaskFormInput = TaskFormInput(taskNumberField.text)
-}
-
-/** CLI의 `task start`에 대응하는 액션. */
+/** 현재 스프린트의 내 작업을 골라 커밋에 쓸 번호로 저장하는 액션. */
 class StartTaskAction @JvmOverloads constructor(
     private val availability: JiraTaskAvailability = JiraTaskAvailability(),
 ) : AnAction() {
@@ -74,30 +36,52 @@ class StartTaskAction @JvmOverloads constructor(
 
     companion object {
         fun open(project: Project) {
-            val state = CurrentTaskState.getInstance(project)
-            val dialog = StartTaskDialog(project, state.taskNumber)
-            if (!dialog.showAndGet()) {
-                return
+            val dialog = StartTaskDialog(project, CurrentTaskState.getInstance(project).taskNumber)
+            fill(project, dialog)
+
+            if (dialog.showAndGet()) {
+                start(project, dialog.choice())
             }
-            start(project, dialog.values().trimmed())
         }
 
-        private fun start(project: Project, input: TaskFormInput) {
+        /**
+         * 목록을 백그라운드에서 읽어 다이얼로그에 채운다. 다이얼로그는 먼저 열려 있으므로
+         * 사용자는 기다리는 동안에도 번호를 직접 칠 수 있다.
+         */
+        private fun fill(project: Project, dialog: StartTaskDialog) {
+            ApplicationManager.getApplication().executeOnPooledThread {
+                val load = SprintTasks.getInstance(project).current()
+                ApplicationManager.getApplication().invokeLater({
+                    if (!project.isDisposed) {
+                        when (load) {
+                            is SprintTaskLoad.Loaded -> dialog.show(load.tasks)
+                            is SprintTaskLoad.NotConfigured -> dialog.showProblem(load.message)
+                            is SprintTaskLoad.Failed -> dialog.showProblem(load.message)
+                        }
+                    }
+                }, project.disposed)
+            }
+        }
+
+        private fun start(project: Project, choice: StartTaskChoice) {
             val workingDirectory = project.basePath?.let(::File) ?: return
 
             ProgressManager.getInstance().run(object : Task.Backgroundable(project, "Jira 작업 번호 저장", false) {
                 override fun run(indicator: ProgressIndicator) {
-                    val result = StartTaskUseCase(GitRepository(workingDirectory)).execute(input.taskNumber)
+                    val result = StartTaskUseCase(GitRepository(workingDirectory)).execute(choice.taskNumber)
 
                     if (result is StartTaskResult.Success) {
                         CurrentTaskState.getInstance(project).apply(result.taskNumber)
+                        // 곧 상태가 바뀐다. 다음에 목록을 물으면 새로 읽게 한다.
+                        SprintTasks.getInstance(project).invalidate()
                     }
 
                     val report = StartTaskReports.of(result)
                     notifyAndRefresh(project, report.type, report.message)
 
                     // 번호를 저장한 다음에야 Jira를 건드린다. 전환이 실패해도 저장은 유효하다.
-                    if (result is StartTaskResult.Success) {
+                    // 이미 끝난 작업은 되돌리지 않는다(RULE.md 4.3).
+                    if (result is StartTaskResult.Success && choice.movesToInProgress()) {
                         AdvanceCurrentTask.run(project, result.taskNumber)
                     }
                 }
