@@ -1,206 +1,422 @@
-# 툴 윈도우·설정 UI 개선 작업 목록
+# Version 2 개편 작업 목록
 
-CLI → 플러그인 이식(T1~T26)은 끝났고 기능은 동작한다. 남은 문제는 **UI 품질**이다. 특히 T26에서 넣은
-오른쪽 사이드바 툴 윈도우가 IntelliJ 툴 윈도우 관례를 따르지 않아, 툴 윈도우가 아니라 설정 폼처럼 보인다.
-이 문서는 그것을 다시 만드는 작업 분해서다. 이식 작업의 기록과 결정 사항은 [MIGRATION-LOG.md](MIGRATION-LOG.md)에 있다.
+지금 플러그인은 **Jira를 대신 조작하는 도구**로 만들어져 있다. 이슈를 검증하고, 초안을 미리 보고,
+실제로 생성하고, 커밋만으로 작업을 `완료`로 옮긴다. [Version2.md](Version2.md)와 새 [RULE.md](RULE.md)는
+그 전제를 뒤집는다.
 
-모든 작업은 `AGENTS.md`의 테스트 우선 완료 기준(정상 동작 테스트 + 엣지 케이스 테스트 + 전체 테스트 통과)을 따르고,
-MIGRATION-LOG.md에 정리한 코틀린 코드 스타일 규칙(companion 팩토리 / 멤버 함수 / 이름 있는 object / 생성자 주입 클래스)도 그대로 지킨다.
+> **Jira를 AI로 대신 조작하는 플러그인이 아니라, IntelliJ의 Git workflow에 Jira를 자연스럽게 끼워 넣는 플러그인.**
+
+이 문서는 그 전환의 작업 분해서다. 이전 작업(CLI → 플러그인 이식 T1~T26, 툴 윈도우 개선 W1~W16)의
+기록과 코드 스타일 규칙은 [MIGRATION-LOG.md](MIGRATION-LOG.md)에 있다.
+
+모든 작업은 `AGENTS.md`의 테스트 우선 완료 기준(정상 동작 테스트 + 엣지 케이스 테스트 + 전체 테스트 통과)을
+따르고, MIGRATION-LOG.md의 코틀린 코드 스타일 규칙(companion 팩토리 / 멤버 함수 / 이름 있는 object /
+생성자 주입 클래스)도 그대로 지킨다.
 
 ---
 
-## 0. 지금 무엇이 문제인가
+## 0. 전제가 무엇이 바뀌었나
 
-`ui/toolwindow/JiraTaskToolWindow.kt`, `ui/JiraTaskConfigurable.kt` 기준.
-
-| # | 문제 | 왜 문제인가 |
+| 이전 전제 | 새 전제 (RULE.md 0장) | 무너지는 기능 |
 | --- | --- | --- |
-| P1 | Kotlin UI DSL `panel { }`에 `button()` 6개를 나열했다 | 툴 윈도우는 아이콘 툴바로 조작하는 것이 관례다. 지금은 설정 대화상자처럼 보이고, 폭을 좁히면 버튼이 잘린다 |
-| P2 | 제목 표시줄 액션이 없다 | 새로 고침·설정 열기는 툴 윈도우 제목 표시줄(gear/refresh)에 있어야 한다 |
-| P3 | 액션을 `AnActionEvent.createFromDataContext`로 직접 호출한다 | 각 액션의 `update()`(활성/비활성 판단)가 실행되지 않는다. 설정이 없어도 버튼이 눌리고, 실패 알림으로만 알려준다 |
-| P4 | 미설정 상태를 라벨 문구 한 줄로 안내한다 | 처음 쓰는 사용자가 무엇을 해야 하는지 알기 어렵다. 빈 상태에는 실행 가능한 링크가 있어야 한다 |
-| P5 | 값이 그냥 `JBLabel` 텍스트다 | 복사할 수 없고, "설정되지 않음" 같은 자리 문구와 실제 값이 시각적으로 구분되지 않으며, Jira 주소가 링크가 아니다 |
-| P6 | 갱신이 "새로 고침" 버튼 수동 호출뿐이다 | 브랜치를 바꾸거나 작업 번호를 저장해도 패널이 낡은 값을 보여준다 |
-| P7 | 문구가 코드에 하드코딩되어 있다 | 플랫폼 관례(메시지 번들, `@Nls`)에서 벗어나고, 문구를 한곳에서 다듬을 수 없다 |
-| P8 | 툴 윈도우 아이콘으로 `AllIcons.Vcs.Branch`를 빌려 쓴다 | 플러그인 고유 아이콘이 없어 사이드바에서 식별되지 않는다 |
-| P9 | Settings 패널도 라벨 나열이다 | 그룹 구분·복사·링크·인라인 검증이 없어 정보가 읽기 어렵다 |
+| 사용자가 IDE에서 이슈를 만든다 | 사람이 스프린트 전에 Jira에서 전부 만든다 | 이슈 초안·검증·생성 전체 |
+| 규칙 위반을 도구가 막아야 한다 | 이슈는 이미 존재한다. 검증할 시점이 없다 | `IssueValidator`, `TitleParser`, `WorkPolicy` |
+| 스프린트는 유동적이다 | 확정 후 추가·삭제 금지, 수정만 허용 | 생성·삭제 경로 전부 |
+| 브랜치 이름에 스토리 번호를 넣는다 | 내용 요약이면 된다. 규칙 없음 | 스토리 브랜치 생성 전체 |
+| 커밋하면 작업이 끝난 것이다 | 완료는 MR 병합에서 automation이 판단한다 | 커밋 후 `완료` 전환 |
 
-## 1. 지향점
+핵심은 **"검증"이라는 개념이 통째로 사라진다**는 것이다. 검증은 이슈를 만드는 순간에만 의미가 있는데,
+이제 도구는 이슈를 만들지 않는다. 도메인 코드의 절반이 여기에 묶여 있다.
 
-- **툴바로 조작한다**: `SimpleToolWindowPanel` + `ActionToolbar`. 버튼이 곧 액션이므로 액션의 `update()`가 활성/비활성과 툴팁을 결정한다(P1·P3 동시 해결).
-- **상태는 읽기 화면이다**: 값은 복사 가능하고, 없는 값은 회색 자리 문구로, Jira 주소는 클릭하면 브라우저로 연다.
-- **처음 쓰는 사람에게 다음 행동을 준다**: 설정이 없으면 상태 행을 늘어놓지 않고 빈 상태 + "설정 마법사 실행" / "설정 열기" 링크만 보여준다.
-- **스스로 갱신한다**: 툴 윈도우가 보일 때, 액션이 성공했을 때 자동으로 다시 읽는다.
-- **EDT를 막지 않는다**: git 조회는 백그라운드에서, 화면 반영만 EDT에서. (T26에서 지킨 규칙을 계속 유지한다)
+**살아남는 것**: 커밋 메시지에 작업 키를 붙이는 경로(`CommitIssueKey`)와 `진행 중` 전환
+(`AdvanceTask`). 이 둘은 새 규칙에서도 그대로 옳고, 앞으로 만들 기능 대부분이 이 위에 얹힌다.
 
 ---
 
-## 2. 작업
+## 1. 결정 사항
 
-### W1. 문구를 메시지 번들로 옮기기
-- **내용**: `messages/JiraTaskBundle.properties` + `JiraTaskBundle` 오브젝트(`DynamicBundle` 상속)를 만들고, 툴 윈도우·설정 패널·알림·다이얼로그 문구를 옮긴다. 반환 문구에 `@Nls`를 붙인다.
-- **완료 기준**: 기존 테스트가 문구를 문자열 리터럴로 비교하던 부분을 번들 조회로 바꿔도 전부 통과. 번들에 없는 키를 조회하면 실패하는 테스트 1건 추가.
-- **주의**: 도메인·애플리케이션 계층의 검증 메시지는 CLI와 문구가 같아야 하므로 **옮기지 않는다**(플랫폼 번들은 UI 계층 문구만).
+두 가지 모두 확정되었다. 남은 미결정 사항은 없다.
 
-### W2. 툴 윈도우 골격을 `SimpleToolWindowPanel` + 툴바로 교체 — (완료)
-- **내용**: `JiraTaskToolWindowPanel`을 `SimpleToolWindowPanel(vertical = true, borderless = true)` 기반으로 다시 만든다. 상단에 `ActionManager.createActionToolbar("JiraTaskToolWindow", group, true)`, 본문은 `JBScrollPane`. `plugin.xml`에 툴바용 액션 그룹 `JiraTask.ToolWindowToolbar`를 선언하고 기존 액션 4개(이슈 초안·브랜치·작업 시작·커밋)를 넣는다. `button()` 6개는 제거한다.
-- **의존**: 없음(W1과 독립).
-- **완료 기준**: 툴바 액션 그룹의 자식 액션 ID가 기대 순서와 같은지, 패널에 `JButton`이 더 이상 없는지, 툴바 `targetComponent`가 설정되어 있는지(미설정 시 플랫폼 경고 발생) 테스트.
-- **산출물**: `ui/toolwindow/JiraTaskToolWindow.kt`(패널이 `SimpleToolWindowPanel(true, true)`를 상속해 자체가 컴포넌트가 됨 — 툴바는 `toolbar`, 본문은 `setContent(JBScrollPane(...))`), `plugin.xml`에 `JiraTask.ToolWindowToolbar` 그룹.
-- **결정 1 — 액션 아이콘을 W3에서 앞당겼다**: 아이콘 없는 액션은 툴바에서 빈 칸으로 보여 툴바 자체가 못 쓰는 상태가 된다. 그래서 액션 5개에 `AllIcons`(Add / Vcs.Branch / Actions.Execute / Actions.Commit / General.Settings)를 이번에 지정했다. 활성/비활성 판단과 비활성 이유 툴팁은 W3에 그대로 남는다.
-- **결정 2 — 툴바가 메뉴와 같은 액션을 참조한다**: `Tools > Jira Task` 메뉴에서 선언한 액션을 `<reference>`로 재사용해 두 경로의 동작이 갈라지지 않게 했다.
-- **결정 3 — 새로 고침은 잠시 툴바에 둔다**: 버튼 6개를 없애면 새로 고침 수단이 사라지므로, 패널이 자체 `RefreshStatusAction`(등록된 ID 없는 로컬 액션)을 툴바 끝에 덧붙였다. W6에서 제목 표시줄로 옮긴다.
-- **테스트**: `ui/toolwindow/JiraTaskToolWindowTest.kt` — 폼 버튼이 하나도 없는지, 툴바가 하나이고 `place`·`targetComponent`가 설정됐는지, 툴바 그룹의 자식 액션 ID가 기대 순서와 같은지, 모든 툴바 액션에 아이콘이 있는지(스텁이 아니라 `ActionManager.getAction`으로 실제 액션의 프레젠테이션 확인), 패널이 새로 고침을 덧붙이는지. 총 265개 테스트 통과, `build`·`buildPlugin`·`verifyPluginStructure` 통과.
-- **테스트 작성 중 알게 된 것**: `ActionToolbar.getActions()`는 툴바가 비동기로 갱신되기 전까지 비어 있고, 그룹의 `childActionsOrStubs`는 아직 인스턴스화되지 않은 `ActionStub`이라 아이콘이 null이다. 그래서 아이콘 검증은 ID로 실제 액션을 얻어서 한다.
+### D1. 스토리 브랜치 생성(`Create Story Branch`)은 삭제한다 — 확정
 
-### W3. 액션에 활성/비활성 판단 넣기 — (완료)
-- **내용**: `CreateIssueDraftAction`·`CreateStoryBranchAction`·`StartTaskAction`·`CommitWithJiraTaskAction`의 `update()`가 `JiraTaskSettings` 결과까지 보고 `isEnabled`를 정하고, 비활성일 때 `presentation.description`에 이유를 넣는다(툴팁으로 보인다). 각 액션에 아이콘(`AllIcons.*`)을 지정한다. 툴바가 액션을 직접 실행하므로 `performAction`/`createFromDataContext` 경로는 삭제한다.
-- **의존**: W2.
-- **완료 기준**: 설정 없음 / 프로젝트 키만 있음 / 전부 있음 세 경우에 대해 액션 4개의 `isEnabled`와 툴팁 문구를 검증(`TestActionEvent`). 설정이 없을 때 액션을 실행해도 예외가 나지 않고 안내 알림만 뜨는 기존 동작은 유지(툴바 밖 메뉴에서 실행될 수 있으므로).
-- **주의**: `update()`는 BGT에서 돈다(`ActionUpdateThread.BGT`). 설정 조회는 인메모리라 괜찮지만 **git 호출은 넣지 않는다**.
-- **설계**: 판단 규칙을 액션마다 흩지 않고 `ui/JiraTaskAvailability.kt`(`JiraTaskCommand` + `ActionAvailability`)로 모았다. 액션은 `event.applyAvailability(availability.of(command, hasProject))` 한 줄만 부른다. 쓸 수 있을 때는 `presentation.description`을 덮지 않아 plugin.xml의 설명이 툴팁으로 남고, 못 쓸 때만 이유로 바뀐다.
-- **명령별 규칙**: `START_TASK`는 Jira 설정 없이도 되는 git 전용 동작이라 프로젝트만 있으면 활성. `ISSUE_DRAFT`·`COMMIT`은 프로젝트 키 필요. `STORY_BRANCH`는 프로젝트 키·Jira 주소·스토리 유형·스토리 시작 상태가 필요하고, 없는 항목만 골라 이유에 적는다.
-- **결정 — update()에서 자격 증명 저장소를 읽지 않는다**: `JiraTaskSettings.forBranch()`는 API 토큰을 PasswordSafe에서 읽는데, `update()`는 툴바가 보이는 동안 반복 호출되므로 OS 키체인 조회를 넣으면 IDE가 느려진다. 그래서 토큰과 Git 저장소 여부는 활성 판단에서 빼고 실행 시 확인해 알림으로 안내한다(비활성 이유에 토큰이 등장하지 않는 것을 테스트로 고정).
-- **산출물**: `ui/JiraTaskAvailability.kt`, 액션 4개의 `update()`(+`CreateIssueDraftAction`은 `update()` 자체가 없었으므로 신규), 각 액션에 `JiraTaskAvailability` 생성자 주입.
-- **테스트**: `ui/JiraTaskAvailabilityTest.kt` (9 tests — 프로젝트 없음, 설정 완료, 작업 시작만 예외, 프로젝트 키 요구, 브랜치 미충족 항목 나열, 이미 있는 설정은 언급 안 함, 토큰 없이도 활성, 손상된 설정, 저장 후 즉시 반영), `ui/JiraTaskActionUpdateTest.kt` (6 tests — 액션 4개의 실제 `update()` 결과와 툴팁 문구, 쓸 수 있을 때 원래 설명 유지, 비활성 상태에서 실행해도 예외 없이 안내). `CreateStoryBranchDialogTest`의 옛 활성화 테스트는 규칙이 바뀌어 새 규칙을 쓰는지 확인하는 형태로 교체했다. 총 280개 통과.
+RULE.md 5.1에서 **브랜치 이름에 이슈 번호를 넣지 않는다**로 규칙이 바뀌었다. 이제 브랜치 이름은
+`feat/signup`처럼 내용 요약이면 되고, Jira와의 연결은 커밋 메시지의 이슈 키가 전부 담당한다.
 
-### W4. 상태 표시를 제대로 만들기 — (완료)
-- **내용**: 값 라벨을 `JBLabel().apply { setCopyable(true) }`로, 없는 값은 `NamedColorUtil.getInactiveTextColor()` 회색 자리 문구로, Jira 주소는 `ActionLink` + `BrowserUtil.browse`로, 이슈 키·브랜치는 모노스페이스 폰트로. 행 라벨과 값의 정렬·여백을 `panel { row(...) }` 기본 간격에 맞춘다.
-- **의존**: W2.
-- **완료 기준**: 설정된 상태에서 값이 복사 가능(`isCopyable`)하고, 미설정 값은 회색이며, Jira 주소 컴포넌트가 `ActionLink`이고 그 링크 대상이 저장된 baseUrl과 같은지 테스트. 이메일·토큰이 어떤 컴포넌트 텍스트에도 없는지 확인하는 기존 성격의 테스트 유지.
-- **설계**: 표시 규칙을 순수 모델까지 끌어올렸다. `StatusRow`가 이름·문구와 함께 `isPlaceholder`(실제 값인지)와 `kind`(TEXT / LINK / CODE)를 들고 있고, `StatusRowView`가 종류별 컴포넌트를 만든다 — TEXT·CODE는 복사 가능한 `JBLabel`, LINK는 `ActionLink`. 항목의 종류는 값이 있든 없든 고정이라 컴포넌트를 한 번만 만들고 값만 갈아 끼운다.
-- **미설정 값 처리**: 자리 문구는 `NamedColorUtil.getInactiveTextColor()` 회색으로, 링크는 열 곳이 없으면 `isEnabled = false`로 두어 클릭되지 않는다. 고정폭 폰트는 실제 값(프로젝트 키·작업 번호·브랜치)에만 쓰고 안내 문구는 기본 폰트로 둔다.
-- **브라우저 열기**: 패널이 `browse: (String) -> Unit`을 생성자로 받아 기본값은 `BrowserUtil.browse`, 테스트에서는 호출을 기록한다.
-- **산출물**: `ui/toolwindow/StatusRowView.kt`, `JiraTaskStatus`에 `StatusRow`·`statusRows()` 추가(`rows()`는 이름·문구 축약형으로 유지), 패널이 `rowViews`로 값을 갱신.
-- **테스트**: `JiraTaskStatusTest`에 3건(자리 문구 표시, 종류 지정, 값이 없어도 종류 유지), `JiraTaskToolWindowTest`에 5건(복사 가능·회색 자리 문구, 고정폭 폰트 적용 범위, 링크 클릭이 저장된 주소를 여는지, 주소가 없으면 클릭되지 않는지, 이메일 미노출). 총 288개 통과.
-- **플랫폼 동작 기록 2건**: (1) `JBLabel`에는 `isCopyable` 게터가 없어 `setCopyable(true)`가 붙이는 텍스트 컴포넌트 자식으로 확인한다. (2) `ActionLink`는 `JButton`을 상속하므로 "폼 버튼이 없어야 한다" 검사에서 제외해야 한다.
+이 기능은 단순히 Version2.md 목록에 없는 정도가 아니라, **새 규칙을 위반한다.**
+`domain/branch/BranchNames`가 `feat/<스토리번호>-<slug>` 형식을 정규식으로 강제하고 있고,
+`storyNumberOf()`로 브랜치 이름에서 스토리 번호를 되짚기까지 한다. 규칙이 사라진 형식을
+코드가 강제하는 상태이므로 남길 이유가 없다.
 
-### W5. 미설정·손상 상태를 빈 상태로 보여주기 — (완료)
-- **내용**: 프로젝트 키가 없으면 상태 행 대신 `JBPanelWithEmptyText`의 `emptyText`에 안내 + `설정 마법사 실행`·`설정 열기` 링크(`SimpleTextAttributes.LINK_PLAIN_ATTRIBUTES` + 클릭 리스너)를 보여준다. 설정이 손상된 경우에는 경고 아이콘과 오류 문구, `설정 열기` 링크를 보여준다.
-- **의존**: W2, W4. `JiraTaskStatus.isConfigured`/`problem`은 이미 있으므로 그대로 쓴다.
-- **완료 기준**: 미설정 / 손상 / 정상 세 상태에서 보이는 컴포넌트가 각각 빈 상태·오류·상태 행인지, 링크 클릭이 마법사·설정 화면 호출로 이어지는지(호출을 람다로 주입해 검증) 테스트.
-- **설계**: 본문을 세 화면(상태 행 / 설정 안내 / 오류)으로 나누고 한 번에 하나만 보이게 한다. 어느 화면인지는 순수 모델이 정한다 — `StatusProblem(kind, message)`를 도입해 `NEEDS_SETUP`과 `BROKEN`을 구분하고(이전에는 문구 하나뿐이라 화면을 문구 비교로 골라야 했다), 패널은 `problem?.kind`만 보고 가시성을 정한다. 어떤 화면인지 테스트에서 볼 수 있게 `shown()`을 공개했다.
-- **결정 — `JBPanelWithEmptyText`의 `emptyText` 대신 실제 컴포넌트로 빈 상태를 만들었다**: 계획은 `emptyText`에 링크를 넣는 것이었지만, (1) `StatusText`의 링크는 클릭을 테스트로 확인할 마땅한 공개 API가 없고, (2) 경고 아이콘을 함께 보여주기 어렵다. 아이콘 + 안내 문구 + `ActionLink` 두 개를 Kotlin UI DSL로 구성해 관례를 지키면서 클릭까지 검증한다.
-- **결정 — 미설정 상태에서는 git 정보도 감춘다**: "설정되지 않음" 일곱 줄 대신 할 일을 보여주는 것이 이 화면의 목적이고, 브랜치·작업 번호는 상태 표시줄 위젯에서 계속 볼 수 있다. 손상된 설정일 때는 오류 문구와 설정 열기 링크를 보여준다.
-- **링크 동작**: `launchWizard`·`openSettings`를 생성자로 주입(기본값은 `SetupWizardLauncher.launch`와 `ShowSettingsUtil.showSettingsDialog(project, JiraTaskConfigurable::class.java)`)해 테스트가 실제 마법사·설정 창을 열지 않고 호출만 센다.
-- **테스트**: 미설정에서 안내 화면과 두 링크가 보이고 "설정되지 않음" 행은 보이지 않는지, 링크 클릭이 마법사·설정 호출로 이어지는지, 손상된 설정에서 오류 문구와 설정 열기 링크가 나오는지, 설정을 마치면 상태 행으로 돌아오는지. `JiraTaskStatusTest`의 문구 검증은 `problem?.message`·`problem?.kind`로 갱신. 총 291개 통과.
-- **주의(테스트 작성 중 발견)**: 생성자에 람다 파라미터를 더하면 기존 테스트의 후행 람다(`Panel(project) { ... }`)가 마지막 파라미터에 붙어 조용히 다른 인자로 해석된다. W4의 `browse` 인자를 이름 있는 인자로 바꿔 고쳤다.
+→ V4가 이 삭제 작업이다.
 
-### W6. 제목 표시줄 액션과 자동 갱신 — (완료)
-- **내용**: `toolWindow.setTitleActions(listOf(새로 고침, 설정 열기))` — 새로 고침은 `AllIcons.Actions.Refresh`, 설정 열기는 `AllIcons.General.Settings` + `ShowSettingsUtil.showSettingsDialog(project, JiraTaskConfigurable::class.java)`. 자동 갱신은 (1) `ToolWindowManagerListener`로 툴 윈도우가 보일 때, (2) 작업 번호 저장·브랜치 생성·커밋 성공 시 자체 메시지 버스 토픽(`JiraTaskStateListener`)을 발행해 구독.
-- **의존**: W2.
-- **완료 기준**: 토픽을 발행하면 패널이 다시 읽는지, 툴 윈도우 표시 이벤트에 반응하는지 테스트. 새로 고침이 EDT에서 git을 호출하지 않는 것을 확인(백그라운드 호출 여부를 스레드 이름으로 검증하거나, 읽기 함수를 주입해 호출 스레드를 기록).
-- **검토 항목**: Git 브랜치 변경 자동 감지는 `git4idea`의 `GitRepositoryChangeListener`가 필요하다. MIGRATION-LOG.md의 T13 결정(Git4Idea 의존 추가 보류)과 충돌하므로, 이 작업에서는 **툴 윈도우 표시 시 갱신으로 대신하고** git4idea 의존은 별도 작업으로 판단한다.
-- **구현**: 제목 표시줄에 새로 고침(`AllIcons.Actions.Refresh`)과 설정 열기(`AllIcons.General.Settings` → `ShowSettingsUtil.showSettingsDialog(project, JiraTaskConfigurable::class.java)`)를 `toolWindow.setTitleActions`로 달고, 툴바에서 새로 고침을 뺐다(툴바는 실행 액션만).
-- **자동 갱신 경로 두 가지**: (1) `JiraTaskStateListener`(프로젝트 레벨 토픽) — 작업 번호 저장·브랜치 생성·커밋·설정 마법사 완료·Settings 저장이 알린다. (2) `ToolWindowManagerListener.toolWindowShown` — 다른 창에서 브랜치를 바꾸고 툴 윈도우로 돌아온 경우를 잡는다(git4idea 없이 브랜치 변경을 따라가는 현실적인 대안).
-- **알림과 갱신을 묶었다**: `notifyAndRefresh(project, type, message)` 하나로 결과 알림과 상태 변경 통지를 함께 처리해, 알림만 띄우고 화면 갱신을 잊는 실수를 막는다. Settings 패널은 프로젝트가 없으므로 `publishToAllProjects()`로 열린 프로젝트 전부에 알린다.
-- **테스트 가능성**: 상태를 읽는 함수(`statusReader`)를 생성자로 주입할 수 있게 해, 갱신 횟수와 **호출 스레드**를 기록한다. 그래서 "git을 EDT에서 읽지 않는다"를 테스트로 고정할 수 있다.
-- **산출물**: `ui/JiraTaskStateListener.kt`(토픽 + `notifyAndRefresh`), 패널의 `titleActions()`·`onToolWindowShown()`·구독, 액션 3개와 마법사·Settings의 통지 호출, 팩토리에서 `setTitleActions` 연결.
-- **테스트**: `ui/JiraTaskStateTest.kt` (4 tests — 통지 전달, 알림과 통지 동시 처리, 프로젝트가 없을 때, 애플리케이션 레벨 통지), `JiraTaskToolWindowTest`에 5건(툴바에는 실행 액션만, 제목 표시줄 액션 2개와 각 동작, EDT에서 git을 읽지 않음, 상태 변경 통지 시 갱신, 이 툴 윈도우가 보일 때만 갱신). 총 299개 통과.
+### D2. `진행 중` 전환은 플러그인이 맡는다 — 확정
 
-### W7. 플러그인·툴 윈도우 아이콘
-- **내용**: 13x13 / 16x16 SVG 아이콘을 만들어 `icons/`에 넣고 `IconLoader.getIcon`으로 상수화, `plugin.xml`의 `toolWindow icon`을 그것으로 바꾼다. 다크 테마용 `_dark.svg`도 함께 둔다.
-- **완료 기준**: 아이콘 리소스가 실제로 로드되는지(`IconLoader`가 빈 아이콘을 돌려주지 않는지) 테스트, `buildPlugin` 통과.
+Jira automation에도 커밋을 계기로 `진행 중`으로 옮기는 규칙이 있다. 하지만 **커밋 시점은 이미 늦다.**
+작업은 첫 커밋보다 먼저 시작되고, 그 사이 보드에는 아무도 그 일을 하지 않는 것처럼 보인다.
 
-### W8. Settings 패널 다듬기
-- **내용**: `JiraTaskConfigurable`을 그룹(연결 / 이슈 유형·상태 / 업무 정책)으로 나누고, 값은 복사 가능하게, Jira 주소는 링크로, "설정 마법사 다시 실행"은 상단 링크 형태로 옮긴다. 프로젝트 키·주소 입력 오류는 Apply 후 대화상자 대신 필드 옆 인라인 검증(`Cell.validationOnInput`/`validationOnApply`)으로 보여준다.
-- **의존**: W1, W4(같은 표시 규칙 재사용).
-- **완료 기준**: 잘못된 프로젝트 키를 넣으면 인라인 검증 메시지가 나오고 저장되지 않는지, 정상 값은 저장되는지 테스트. 이메일·토큰 미노출 테스트 유지.
+→ 플러그인이 작업 선택 시점에 먼저 옮기고, 커밋 계기의 automation 규칙은 안전망으로 남긴다.
+`AdvanceTask` 계열은 **유지한다.** 겹쳐 실행되므로 멱등성이 중요하다 —
+`AdvanceTaskUseCase`는 이미 목표 상태이면 `AlreadyThere`를 돌려주므로 이 요구를 만족한다 (RULE.md 4.3).
 
-### W9. 수동 확인과 기록
-- **내용**: `./gradlew runIde`로 다음을 눈으로 확인하고 결과를 이 문서에 남긴다.
-  - 사이드바 폭을 최소로 줄였을 때 라벨·값이 잘리지 않는지(잘리면 두 줄 배치 또는 툴팁으로 보완)
-  - 라이트/다크 테마에서 회색 자리 문구와 링크 색이 모두 읽히는지
-  - 한글 문구가 툴바 툴팁·빈 상태에서 깨지지 않는지
-  - 툴바 아이콘만으로 각 액션이 무엇인지 알 수 있는지(모르겠으면 아이콘 교체)
-- **완료 기준**: 확인 결과와 고친 내용을 이 문서 아래 "수동 확인 기록"에 추가.
+**`완료` 전환만 걷어낸다.** 그쪽은 MR 병합을 계기로 automation이 처리하는 것이 맞고,
+커밋이 곧 완료라는 현재 동작은 사실과 다르다.
 
 ---
 
-### W10. 작업 이슈 입력을 간단 모드로 줄이기 — (완료)
-- **문제**: 작업(task) 하나를 만들려면 필드 10개(에픽 키·스토리 키·제목·담당자·우선순위·포인트·스프린트·기한·설명·결과물)를 손으로 채워야 했다. CLI가 JSON으로 받던 것을 폼으로 그대로 옮겨놨을 뿐이라, JSON을 쓰지 않기 위해 만든 플러그인인데도 타이핑량이 줄지 않았다.
-- **결정(사용자 확인)**: (1) 간단 모드를 기본으로 하고 자동으로 채운 값은 접힌 "고급"에 둔다. (2) 제목 접두는 Jira를 조회해 자동 생성한다.
-- **자동으로 채우는 값**:
-  - 스토리 키 ← 현재 브랜치. `feat/100-signup`이면 규칙상 스토리 번호는 100 → `<프로젝트 키>-100` (`BranchNames.storyNumberOf`, `createBranchName`의 역함수로 도메인에 추가)
-  - 기능 ID ← 그 스토리의 Jira 제목. `[AUTH-001] 이메일 회원가입` → `AUTH-001` (기존 `TitleParser.parseStoryTitle` 재사용, `JiraIssue`에 `summary` 추가)
-  - 담당자·우선순위·스프린트·기한·에픽 키·영역·포인트 ← 프로젝트별로 기억한 지난번 입력(`IssueDraftMemory`, 프로젝트 레벨 `PersistentStateComponent`)
-  - 포인트·영역 ← 자유 입력 대신 정책 값 콤보박스
-- **타이핑량**: 작업 기준 10칸 → **요약 한 줄 + 설명 + 결과물** (구분·영역은 콤보 선택). 제목은 `TaskTitles.compose(구분, 영역, 요약)`가 `[AUTH-001 | FE] 회원가입 폼` 형태로 조립하고 "만들어질 제목"으로 미리 보여준다. 공통 업무는 구분에서 업무 분류(PLAN 등)를 고르고 영역을 `(없음)`으로 두면 `[PLAN] …`이 된다.
-- **조회 실패는 막지 않는다**: 브랜치가 규칙에 맞지 않거나 Jira를 못 읽으면 아는 값까지만 채우고 이유를 폼 아래 주석으로만 알린다(검증 오류로 다루지 않는다). 조회는 액션이 `Task.Backgroundable`에서 하고 다이얼로그는 그 뒤에 열린다.
-- **산출물**: `domain/branch/BranchName.kt`에 `storyNumberOf`, `domain/jira/StoryIssueReader.kt`의 `JiraIssue.summary`(+`JiraClient`가 `fields=…,summary` 조회), `ui/issue/IssueDraftContext.kt`(`TaskTitles`, `IssueDraftContext`, `RememberedInput`), `ui/issue/IssueDraftContextReader.kt`, `ui/issue/IssueDraftMemory.kt`, `IssueDraftForm` 전면 개편(간단 모드 + `collapsibleGroup("고급")`), `CreateIssueDraftDialog`가 컨텍스트를 받고 확인 시 값을 기억, `CreateIssueDraftAction`이 컨텍스트를 먼저 읽는다.
-- **테스트**: `ui/issue/IssueDraftContextTest.kt` (10 tests — 브랜치에서 스토리·기능 ID 유도, 기능 ID를 구분 후보 맨 앞에, 평범한 브랜치면 Jira를 부르지 않음, 조회 실패·연결 없음·기능 ID 없는 제목의 안내, 기억값/정책 기본값, 제목 조립, 스토리 제목만 기능 ID로 인정), `ui/issue/IssueDraftMemoryTest.kt` (6 tests — 빈 값으로 기억을 지우지 않음, 트림, 저장·복원, 프로젝트 서비스), `domain/branch/BranchNameTest.kt`에 2건, `CreateIssueDraftDialogTest` 재작성(11 tests — 자동 채움 확인, 제목 조립·미리보기, 요약과 결과물만으로 유효, 공통 업무 제목, 브랜치가 알려주지 않을 때 업무 분류 후보, 조회 실패 안내가 검증 오류가 아님, 확인 시 기억, 스토리·에픽은 제목 그대로). 총 320개 통과.
-- **버그 수정 기록**: 폼이 생성 중에 `onChange`를 부르면 아직 만들어지지 않은 다이얼로그 필드를 건드려 NPE가 났다(`applyType` → `changed()` → 다이얼로그 `refresh()`). 생성 중에는 미리보기만 갱신하고 `onChange`는 사용자 조작에서만 부르도록 분리했다.
+## 2. 삭제 목록
 
-### W11. 무엇을 고쳐야 하는지 알려주기 — (완료)
-- **문제(사용자 지적 3건)**: (1) 작성 예시가 별도 칸을 차지해 화면만 길었다. (2) 검증 결과가 `오류 - dueDate: 값을 입력해야 합니다.`처럼 JSON 필드 경로였고 색 구분도 없어, 어느 칸이 문제인지 알 수 없었다. (3) 필수인데 비어 있는 값(기한 등)이 접힌 "고급"에 있어 오류는 보이지만 고칠 칸을 찾을 수 없었다.
-- **작성 예시 → 자리 문구**: `작성 예시` 칸을 없애고 각 입력의 `emptyText`(placeholder)로 옮겼다 — 제목 요약 `회원가입 폼`, 설명 `작업 설명을 작성합니다.`, 결과물 `완료 기준 결과물 1`, 기한 `2026-08-31`, 에픽 키 `<프로젝트 키>-1` 등. T20 계획의 "설명 필드에 템플릿을 placeholder로" 항목을 이제야 제대로 지켰다.
-- **오류 표시**: 검증 결과를 문자열 대신 `IssueProblem(path, message)`로 다루고, `IssueFieldLabels`가 경로를 화면 이름으로 바꾼다(`dueDate` → `기한`, `description.summary` → `설명`, `description.deliverables.1` → `결과물 2번째`). 오류는 `NamedColorUtil.getErrorForeground()` 빨간색 + 오류 아이콘, 경고는 경고 아이콘, 문제가 없으면 도출된 레이블을 함께 보여준다. 도메인·애플리케이션의 메시지는 CLI와 같은 경로 문자열을 그대로 쓰고, 사람이 읽는 이름은 화면에서만 붙인다.
-- **접는 기준을 바꿨다**: "고급 설정이냐"가 아니라 **"이미 값이 있느냐"**로 접는다. 비어 있는 필수 칸(에픽 키·담당자·우선순위·스프린트·기한)은 항상 보이고, 기억된 값이 있으면 접힌다. `채워진 값도 모두 보기` 체크박스로 전부 펼칠 수 있고, 검증에서 문제가 난 칸은 접혀 있어도 자동으로 펼친다(`revealProblems`). 접힘 계산은 유형 전환·체크박스에서만 다시 하고 **타이핑 중에는 하지 않는다** — 값을 입력하는 순간 그 줄이 사라지면 안 되니까.
-- **기본 유형을 task로**: 대부분 작업을 만들므로 다이얼로그를 열면 바로 작업 폼이 보인다(이전에는 콤보 첫 항목인 epic이 선택돼 있었다).
-- **산출물**: `ui/issue/IssueFieldLabels.kt`, `IssueDraftPresenter`의 `IssueProblem`·`problemPaths()`, `IssueDraftForm` 재구성(자리 문구, 값 유무 기반 접힘, `showAllCheckBox`, `visiblePaths()`), `CreateIssueDraftDialog`의 색이 있는 검증 결과 패널.
-- **테스트**: `IssueDraftPresenterTest`에 3건(칸 이름으로 보여주기, 결과물 번호, 문제 있는 경로 목록), `CreateIssueDraftDialogTest`에 5건(자리 문구, 채워진 값은 접기, 비어 있는 필수 칸은 유지, 모두 보기, 오류가 빨간색이고 칸 이름을 쓰는지, 문제 없을 때 안내). 총 328개 통과.
-- **플랫폼 동작 기록**: Kotlin UI DSL의 `Row.visible()`은 setter만 있어 현재 가시성을 되읽을 수 없다 — 지금 보이는 칸을 폼이 따로 기억한다.
+프로덕션 코드 약 1,900줄, 테스트 약 1,700줄이 사라진다.
 
-### W12. 물어보지 말고 Jira에서 알아내기 — (완료)
-- **문제(사용자 지적 4건)**: (1) 작업을 만드는데 에픽 키를 왜 입력하나. (2) 담당자를 자기 자신으로 기본 지정 못 하나. (3) 우선순위는 자유 입력이 아니라 선택이어야 하고 기본값은 낮은 쪽. (4) 스프린트는 스토리에 딸린 값인데 왜 입력하나. 기한은 달력으로.
-- **답**: 모두 사람이 입력할 값이 아니다. 작업은 스토리에 속하므로 **에픽과 스프린트를 스토리에서 물려받고**, 담당자는 **지금 연결된 Jira 사용자**, 우선순위는 **Jira에 정의된 목록에서 선택**, 기한은 **달력**에서 고른다.
-- **새 Jira 조회(`domain/jira/JiraDraftReader.kt` 포트, `JiraClient` 구현)**:
-  - `storyContext(storyKey)` — 스토리의 제목·에픽·스프린트. 스프린트는 사이트마다 커스텀 필드 ID가 달라 REST v3로는 안정적으로 읽을 수 없으므로 이름이 고정된 **Agile API(`/rest/agile/1.0/issue/...`)를 먼저** 쓰고, 실패하면 v3의 `parent`만 읽는다(스프린트는 알 수 없음으로 둔다).
-  - `currentUserName()` — `/rest/api/3/myself`의 `displayName`.
-  - `listPriorities()` — `/rest/api/3/priority`. 읽지 못하면 표준 목록(Highest~Lowest)으로 대체한다.
-- **기본값 규칙**: 담당자 = 지난번 값 → 없으면 나 자신. 스프린트 = 스토리의 스프린트 → 없으면 지난번 값. 우선순위 = 지난번 값 → `Low` → 목록의 가장 낮은 항목. 에픽 키 = 스토리의 에픽 → 없으면 지난번 값.
-- **UI 변경**: 우선순위는 콤보박스, 기한은 `ExtendableTextField`의 `...` 버튼으로 플랫폼 `CalendarView` 대화상자(`DueDateDialog`)를 열어 고른다(직접 타이핑도 그대로 된다). 스토리에서 온 에픽 키·스프린트는 값이 있으니 접힌 상태가 되어 화면에서 사라진다 — 못 읽었을 때만 물어본다.
-- **산출물**: `domain/jira/JiraDraftReader.kt`, `JiraClient`의 세 조회, `IssueDraftContext`에 `sprint`·`currentUser`·`priorities`와 기본값 함수들, `IssueDraftContextReader` 재작성, `IssueDraftForm`(우선순위 콤보·달력 버튼·기본값), `ui/issue/DueDateDialog.kt`.
-- **테스트**: `IssueDraftContextTest`에 7건(에픽·스프린트 물려받기, 나 자신 기본 담당자와 기억값 우선, Low 기본 우선순위, 사이트 정의 목록 사용, 목록을 못 읽으면 표준값, 스토리에 에픽이 없으면 기억값 유지), `JiraClientTest`에 4건(Agile API 조회, 실패 시 v3 대체, 사용자·우선순위 조회, 거부되면 예외 대신 "모름"), `CreateIssueDraftDialogTest`에 4건(스토리가 알려준 값은 묻지 않음, 모르면 묻음, 우선순위 선택, 달력 확장 버튼과 날짜 적용). 총 343개 통과.
+### 2.1 이슈 생성·검증 (전부 삭제)
 
-### W13. 초안이 아니라 실제로 이슈를 만든다 — (완료)
-- **문제(사용자 지적)**: 확인 버튼이 "초안 복사"였고 요청 초안 JSON 미리보기가 있었다. 플러그인 사용자에게 클립보드 JSON은 아무 쓸모가 없다.
-- **원인(내 판단 실수)**: CLI의 `create`가 실제 생성을 구현하지 않아(`--dry-run` 없이는 거부) "이식 대상이 없다"고 보고 초안까지만 만들었다. 이식의 목적은 CLI 코드를 옮기는 것이 아니라 그 일을 IDE에서 하게 만드는 것이므로, 실제 생성이 없으면 기능이 없는 것과 같다.
-- **구현**: 확인 버튼이 `Jira 이슈 만들기`가 되고, JSON 미리보기·클립보드 복사는 제거했다. 새 포트 `JiraIssueCreator`(생성·사용자 조회·필드 ID 조회·이슈 연결)와 유스케이스 `CreateIssueUseCase`를 만들었다. CLI에 없던 기능이므로 이식이 아니라 신규 설계다.
-- **사이트마다 다른 것들을 유스케이스가 흡수한다**:
-  - 이슈 타입 → 설정 마법사가 저장한 타입 ID(`jira.issueTypes.*.id`)
-  - 설명 → **ADF**(Jira Cloud REST v3는 설명을 Atlassian Document Format으로 받는다). `AdfDocument`가 `## 제목`은 3단 제목, `[] 항목`은 체크 목록(taskList), 나머지는 문단으로 옮긴다 — RULE.md의 결과물이 Jira에서 실제 체크박스가 된다.
-  - 담당자 → 이름이 아니라 `accountId`. `/rest/api/3/user/search`로 찾는다.
-  - 스토리 포인트·스프린트 → 사이트별 커스텀 필드. `/rest/api/3/field`에서 이름(`Story Points` / `Story point estimate` / `Sprint`)으로 ID를 찾는다. 스프린트 필드는 이름이 아니라 **스프린트 ID**를 받으므로 스토리에서 ID까지 읽어 둔다.
-  - 스토리 ↔ 작업 → 부모 자식이 아니라 `연결된 업무 항목`이므로 생성 후 `/rest/api/3/issueLink`로 잇는다.
-- **값을 넣지 못하면 실패로 만들지 않는다**: 담당자·포인트·스프린트를 못 넣었으면 이슈는 만들고 "Jira에서 직접 채워야 하는 값"으로 알림에 적는다. 연결 실패도 같다. 나머지가 다 맞는데 생성을 막는 편이 더 나쁘다. 이슈 타입 ID를 모를 때만 만들기를 거부한다(설정 마법사 안내).
-- **산출물**: `domain/jira/AdfDocument.kt`, `domain/jira/JiraIssueCreator.kt`, `application/CreateIssue.kt`, `JiraClient`의 생성·사용자·필드·연결 구현, `IssueDraftView`가 JSON 대신 `CreateRequestDraft`를 들고 있음, 다이얼로그의 미리보기 제거와 `onCreate` 콜백, 액션이 백그라운드에서 생성하고 결과를 알림으로 보고(브라우저 링크 포함).
-- **테스트**: `application/CreateIssueTest.kt` (11 tests — 모든 필드 매핑, ADF 설명, 스토리 연결, 연결 실패는 경고로, 못 넣은 값 보고, 스프린트 ID 없으면 미설정, 필드 조회 실패에도 계속, 타입 ID 없으면 거부, Jira 메시지 전달, 예상 못한 오류는 일반 문구, 에픽은 부모·연결 없이), `domain/jira/AdfDocumentTest.kt` (8 tests), 다이얼로그 테스트를 "확인 시 초안을 넘기는지 / 유효하지 않으면 아무것도 만들지 않는지"로 교체. CLI 동등성 JSON 비교 테스트는 직렬화를 테스트 안으로 옮겨 유지했다. 총 358개 통과.
+```
+main/application/CreateDraft.kt              main/domain/validation/IssueValidator.kt
+main/application/CreateIssue.kt              main/domain/validation/TitleParser.kt
+main/application/ValidateIssue.kt            main/domain/validation/ValidationResult.kt
+main/domain/input/IssueInput.kt              main/domain/template/IssueTemplate.kt
+main/domain/input/IssueInputParser.kt        main/domain/policy/WorkPolicy.kt
+main/domain/jira/CreateRequestDraft.kt       main/ui/issue/          (9개 파일 전부)
+main/domain/jira/JiraDraftReader.kt
+main/domain/jira/JiraIssueCreator.kt
+```
 
-### W14. 스프린트를 이름으로 찾아 넣기 — (완료)
-- **증상**: 실제로 만들어 본 첫 이슈(S15P11A601-260)에서 "Jira에서 직접 채워야 하는 값: 스프린트(단일 JVM에서 REDIS로 변경)"가 나왔다. 스토리 포인트는 들어갔으므로 커스텀 필드 조회 자체는 성공했고, 빠진 것은 **스프린트 ID**였다.
-- **원인**: Jira의 스프린트 필드는 이름이 아니라 숫자 ID를 받는다. W12까지는 그 ID를 스토리 조회 결과(`/rest/agile/1.0/issue`의 `fields.sprint.id`)에서만 가져왔기 때문에, 스토리가 활성 스프린트에 없거나 사용자가 스프린트 이름을 직접 입력한 경우에는 ID가 없어 넣을 수 없었다.
-- **보완**: `JiraIssueCreator.findSprintId(projectKey, sprintName)`을 추가해, ID를 모를 때 프로젝트 보드(`/rest/agile/1.0/board?projectKeyOrId=`)의 진행 중·예정 스프린트(`state=active,future`)를 페이지 단위로 훑어 **이름이 정확히 일치하는** 스프린트를 찾는다. 같은 이름이 둘 이상이면 잘못 넣지 않도록 포기한다(`null`).
-- **실패 이유를 구분한다**: 못 넣었을 때 "스프린트 필드를 찾지 못했습니다"(필드 자체가 없음)와 "진행 중·예정 스프린트에서 같은 이름을 찾지 못했습니다"(필드는 있지만 스프린트를 못 찾음)를 나눠 알린다 — 해야 할 일이 다르기 때문이다.
-- **테스트**: `JiraClientTest`에 3건(보드에서 이름으로 찾기, 다음 페이지까지 탐색, 같은 이름이 둘이면 지정하지 않음), `CreateIssueTest`에 2건(스토리가 ID를 주지 않아도 이름으로 보완, 이름 조회가 실패하면 미설정) + 미설정 문구 구분 검증. 총 363개 통과.
-- **작성자 기록**: `findSprintId`의 포트·클라이언트 구현·유스케이스 배선과 그 테스트 5건은 사용자가 직접 작성한 코드다(커밋 39f6050에 함께 들어갔다). 미설정 이유 구분 문구와 아래 리뷰 후속 수정은 그 위에 얹은 것이다.
+대응 테스트도 함께 삭제한다.
 
-### W14-1. 스프린트 조회 리뷰 후속 수정 — (완료)
-- **보드 하나가 막히면 전체 탐색이 죽던 문제**: 권한 없는 보드에서 403이 나면 `JiraAuthenticationError`가 루프 밖으로 던져져 뒤 보드에 있는 스프린트를 못 찾았다. 보드 단위 조회를 `sprintIdsNamed(boardId, name)`으로 분리하고 보드별로 예외를 삼켜 다음 보드로 넘어간다. 모호성 판단(같은 이름 둘 이상 → 지정 안 함)은 그대로 유지한다.
-- **페이지네이션 방식 통일**: `listProjects`가 `startAt += 50`(요청 크기)으로 넘기던 것을 새 코드와 같이 `startAt += values.size()`(실제 응답 크기)로 맞췄다. 서버가 요청보다 적게 주는 경우에 건너뛰는 항목이 없어진다.
-- **문구 보완**: 보드가 없는 프로젝트도 "못 찾음" 경로로 들어오므로 "**프로젝트 보드의** 진행 중·예정 스프린트에서 같은 이름을 찾지 못했습니다"로 바꿨다.
-- **테스트 3건 추가**: 보드가 없는 프로젝트 → 지정하지 않음, 같은 스프린트가 두 보드에 걸쳐 있어도 모호하지 않음(`linkedSetOf` 중복 제거가 실제로 동작), 보드 하나가 403이어도 나머지에서 찾음. 총 366개 통과.
+```
+test/application/{CreateDraftTest, CreateIssueTest, ValidateIssueTest}.kt
+test/domain/input/{IssueInputTest, IssueInputParserTest}.kt
+test/domain/jira/CreateRequestDraftTest.kt
+test/domain/policy/WorkPolicyTest.kt
+test/domain/template/IssueTemplateTest.kt
+test/domain/validation/{IssueValidatorTest, TitleParserTest}.kt
+test/ui/issue/                               (4개 파일 전부)
+```
 
-### W15. 스프린트 필드를 이름 대신 타입으로 찾기 — (완료)
-- **증상**: 두 번째로 만든 이슈(S15P11A601-261)에서 "스프린트(단일 JVM에서 REDIS로 변경: 이 Jira에서 스프린트 필드를 찾지 못했습니다)"가 나왔다. W14에서 이유를 구분해 두었기 때문에 이번에는 어느 단계인지 바로 드러났다 — 스프린트 ID가 아니라 **스프린트 커스텀 필드 자체**를 못 찾고 있었다.
-- **W14의 잘못된 추정 정정**: 첫 실패 때 "스토리 포인트가 들어갔으니 스프린트 필드는 찾은 것"이라고 봤는데 틀렸다. 필드 목록 조회는 성공했지만 그 목록 안에서 스프린트만 이름이 일치하지 않았던 것이다.
-- **원인**: `/rest/api/3/field`가 돌려주는 필드 이름은 사이트 로케일에 따라 번역돼 올 수 있다(`Sprint` → `스프린트`). 이름만 비교하면 못 찾는다.
-- **수정**: 스프린트는 이름보다 **필드 타입**(`schema.custom == com.pyxis.greenhopper.jira:gh-sprint`)을 먼저 본다 — Jira Software가 붙이는 값이라 번역·이름 변경과 무관하다. 못 찾으면 이름(`sprint`, `스프린트`)으로 되짚는다. 스토리 포인트도 한국어 이름(`스토리 포인트`, `스토리 포인트 추정치`)을 후보에 넣었다.
-- **테스트 4건**: 이름이 번역돼 있어도 타입으로 찾음, `schema`가 없으면 이름으로 되짚음, 스토리 포인트를 한국어 이름으로 찾음, 아무것도 일치하지 않으면 둘 다 지정하지 않음. 총 370개 통과.
+**남기는 것**: `domain/jira/AdfDocument.kt`. 이슈 생성에 쓰였지만 Quick Search의 "간단 수정"(V8)이
+설명을 ADF로 써야 하므로 필요하다.
 
-## 3. 하지 않을 것 (이번 범위 밖)
+### 2.2 스토리 브랜치 생성 (전부 삭제 — D1)
 
-- **git4idea 의존 추가**: 브랜치 변경 실시간 감지에만 필요하다. W6의 검토 항목으로 남긴다.
-- **CLI 설정 가져오기**: 하지 않는다. CLI(`task-jira-cli`)는 저장소에서 제거했고, 설정은 플러그인이 직접 관리한다(MIGRATION-LOG.md T12에서 미뤄 둔 항목을 여기서 닫는다).
-- **툴 윈도우에 이슈 목록·검색**: Jira 조회 API를 더 쓰는 새 기능이다. 지금은 "현재 상태 + 실행"에 집중한다.
+```
+main/application/CreateBranch.kt             main/domain/branch/BranchName.kt
+main/ui/branch/CreateStoryBranch.kt          main/domain/branch/GitRepositoryPort.kt
+main/ui/branch/CreateStoryBranchAction.kt    main/domain/jira/StoryIssueReader.kt
+```
 
-## 4. 권장 순서
+```
+test/application/CreateBranchTest.kt         test/domain/branch/BranchNameTest.kt
+test/ui/branch/CreateStoryBranchTest.kt      test/infrastructure/GitRepositoryBranchTest.kt
+test/ui/branch/CreateStoryBranchDialogTest.kt
+```
 
-W2 → W3 → W4 → W5 → W6 → W1 → W7 → W8 → W9.
+`infrastructure/GitRepository.kt`는 **남긴다.** 커밋과 현재 작업 번호 저장이 여기 있다.
+브랜치 전용 함수 세 개(`ensureCleanWorkingTree`, `ensureBranchAbsent`, `createAndSwitch`)만 걷어내고,
+`GitRepositoryPort`가 사라지므로 남은 함수를 담을 포트를 `domain/`에 새로 둔다
+(`CommitPort` 정도의 이름으로, `setCurrentTaskNumber`/`getCurrentTaskNumber`/`ensureRepository`/
+`ensureStagedChanges`/`commit`).
 
-골격(W2)과 액션 활성화(W3)가 먼저 바뀌어야 나머지 표시 작업의 기준이 생긴다. 문구 번들(W1)은 화면 구성이
-확정된 뒤에 옮기는 편이 중복 수정이 적다.
+`plugin.xml`에서 `JiraTask.CreateStoryBranch` 액션과 툴바·메뉴 참조를 제거하고,
+`JiraTaskAvailability`의 `STORY_BRANCH`와 `storyBranchAvailability()`,
+`JiraTaskSettings.forBranch()`/`BranchSettings`도 함께 지운다.
+툴 윈도우의 "현재 브랜치" 행은 남긴다 — 브랜치를 만들지 않을 뿐, 어느 브랜치에 있는지는 여전히 유용하다.
 
-## 5. 수동 확인 기록
+### 2.3 `완료` 전환 (D2)
 
-(W9에서 채운다)
+파일 단위 삭제는 없다. `AdvanceTask.kt`, `AdvanceCurrentTask.kt`, `TaskIssueTransitioner.kt`와
+`JiraClient`의 `listTransitions`·`transition`·`findTransitionId`는 **`진행 중` 전환에 계속 쓰이므로
+전부 남긴다.** 걷어낼 것은 `완료` 쪽 경로뿐이다 (V3).
+
+### 2.4 축소
+
+| 파일 | 무엇을 뺄까 |
+| --- | --- |
+| `domain/policy/PolicyConfig.kt` (411줄) | `WorkPolicy` 병합·직렬화·검증 경로. Jira 연결 설정만 남긴다 |
+| `ui/JiraTaskSettings.kt` | `forIssueDraft()`, `IssueDraftSettings`, `issueTypeIds()` |
+| `ui/JiraTaskAvailability.kt` | `JiraTaskCommand.ISSUE_DRAFT` |
+| `infrastructure/JiraClient.kt` | `createIssue`, `linkIssues`, `findAccountId` |
+| `META-INF/plugin.xml` | `JiraTask.CreateIssueDraft` 액션과 툴바·메뉴 참조 |
+| `README.md` / `ARCHITECTURE.md` | "이슈 초안 검증·미리보기·생성"을 전제로 쓰인 문단 전부 |
+
+---
+
+## 3. 목표 기능과 현재 상태
+
+| # | 기능 (Version2.md) | 지금 | 작업 |
+| --- | --- | --- | --- |
+| 1 | Smart Commit — 스프린트 Task 검색·선택 | 없음 (번호를 직접 타이핑) | V5, V6 |
+| 1 | Smart Commit — Jira key 자동 prefix | **있음** (`CommitIssueKey`) | 유지 |
+| 1 | Smart Commit — AI 제목 생성 | 없음 | **이번 범위 아님** |
+| 2 | Smart MR | 없음 | V9 |
+| 2 | Smart MR — AI 제목·본문 | 없음 | **이번 범위 아님** |
+| 3 | Task Start — 선택 후 `진행 중` | 부분 (번호를 타이핑, 전환은 **있음**) | V6 |
+| 4 | Commit Guard | 없음 (안내만, 검사 없음) | V7 |
+| 5 | Jira Quick Search | 없음 | V8 |
+| 6 | Jira Key Navigation | 없음 | V10 |
+
+AI 기능은 이번 개편에서 다루지 않는다. 규칙 기반으로 1·3·4·5·6과 MR 생성까지 완성한 뒤,
+별도 단계에서 제목·본문 생성을 얹는다. 그래야 AI가 실패해도 플러그인이 여전히 쓸모 있다.
+
+---
+
+## 4. 작업
+
+### V1. 이슈 생성·검증 계열 삭제
+
+**목적**: 2.1의 파일을 전부 지우고 컴파일이 통과하는 상태로 되돌린다.
+
+- 2.1의 프로덕션·테스트 파일 삭제
+- `plugin.xml`에서 `JiraTask.CreateIssueDraft` 액션과 툴바·메뉴 참조 제거
+- `JiraTaskAvailability`에서 `ISSUE_DRAFT` 제거, `JiraTaskAvailabilityTest` 정리
+- `JiraTaskSettings.forIssueDraft()` / `IssueDraftSettings` / `issueTypeIds()` 제거
+- 툴 윈도우 툴바(`JiraTaskToolWindow.toolbarGroup()`)에서 해당 액션 참조 제거
+
+**완료 기준**: 빌드·전체 테스트 통과. `JiraTaskPluginRegistrationTest`가 줄어든 액션 목록을 검증한다.
+`grep -ri "draft|validate|template" src/main`이 아무것도 찾지 못한다.
+
+### V2. 설정에서 정책(WorkPolicy) 걷어내기
+
+**목적**: 설정 모델을 "Jira 연결 + 프로젝트 키"로 줄인다.
+
+- `WorkPolicy.kt` 삭제, `JiraTaskConfig.policy` 필드 제거
+- `PolicyConfig.kt`에서 `areas`/`workCategories`/`storyPoints`/`labels` 읽기·병합·직렬화 제거
+- 이전 버전이 저장한 `jira-task.xml`에 정책 값이 남아 있어도 **오류 없이 무시**한다
+- 설정 화면(`JiraTaskConfigurable`)에서 정책 항목 제거
+
+**엣지 케이스 테스트**: 정책 키가 남은 옛 설정 파일 로드, 정책 키만 있고 jira 설정이 없는 파일,
+빈 파일, 깨진 XML.
+
+**완료 기준**: `PolicyConfigTest`·`PolicyConfigRepositoryTest`가 새 모델로 통과하고,
+구버전 설정 파일 픽스처가 마이그레이션 없이 읽힌다.
+
+### V3. `완료` 자동 전환 제거 (RULE.md 4.2)
+
+**목적**: 커밋이 작업을 `완료`로 옮기지 않게 한다. 완료는 MR 병합을 계기로 automation이 판단한다.
+커밋했다고 작업이 끝난 것은 아니다.
+
+- `CommitWithJiraTaskAction`과 `JiraTaskCheckinHandlerFactory`에서 `TaskTarget.DONE` 호출 제거
+- `TaskTarget`에서 `DONE` 제거, `TaskTransitionSettings.doneStatus` 제거
+- 설정 마법사에서 "완료 상태" 선택 단계 제거 (`SetupWizard`, `SetupForms`)
+- `TaskTarget`이 값 하나(`IN_PROGRESS`)만 남으므로, enum을 유지할지 호출부에서 목표 상태를
+  직접 넘길지 정리한다
+- **`진행 중` 전환은 그대로 둔다** (D2). `AdvanceTaskUseCase`와 `AdvanceCurrentTask`는 유지한다
+
+**엣지 케이스 테스트**: 커밋 성공 후 Jira 상태 전환 호출이 **한 번도 일어나지 않음**을 스파이로 확인.
+설정에 완료 상태가 남아 있어도 무시. 작업 시작 시 `진행 중` 전환은 여전히 일어남(회귀 방지).
+
+**완료 기준**: `AdvanceCurrentTaskTest`·`JiraTaskCommitDialogTest`가 새 동작을 검증한다.
+
+### V4. 스토리 브랜치 생성 삭제 (RULE.md 5.1)
+
+**목적**: 브랜치 이름 규칙이 사라졌으므로, 이름 형식을 강제하던 기능을 걷어낸다.
+브랜치는 IntelliJ의 기본 Git 기능으로 만들면 된다.
+
+- 2.2의 프로덕션·테스트 파일 삭제
+- `plugin.xml`에서 `JiraTask.CreateStoryBranch` 액션과 툴바·메뉴 참조 제거
+- `JiraTaskAvailability`에서 `STORY_BRANCH`와 `storyBranchAvailability()` 제거
+- `JiraTaskSettings.forBranch()` / `BranchSettings` 제거.
+  여기서 **스토리** 이슈 유형 요구가 사라진다
+- `GitRepositoryPort`를 대체할 포트를 `domain/commit/`에 만들고 `GitRepository`가 그것을 구현하게 한다.
+  브랜치 전용 함수 세 개는 지운다
+- 설정 마법사의 "스토리 유형" 선택 단계 제거.
+  **`진행 중` 상태 선택은 남긴다** — 작업 전환(D2)에 계속 쓰인다.
+  V3에서 "완료 상태" 단계를 지우므로 마법사 정리는 두 작업을 함께 본다
+
+**엣지 케이스 테스트**: 커밋 경로가 새 포트로 그대로 동작함(작업 번호 저장·조회, 스테이지 확인, 커밋),
+git 저장소가 아닌 디렉터리, 스테이지된 변경 없음.
+
+**완료 기준**: 빌드·전체 테스트 통과. `grep -ri "branch" src/main`이 툴 윈도우의 현재 브랜치 표시와
+V9의 MR 코드 외에는 걸리지 않는다.
+
+### V5. Jira 검색 창구 만들기 (`SprintTaskReader`)
+
+**목적**: 이후 작업 전부가 쓰는 "현재 스프린트의 내 작업" 조회를 한곳에 만든다.
+
+- `domain/jira/SprintTaskReader.kt` — 포트. 두 가지를 노출한다.
+  - `currentSprintTasks(projectKey)`: 열린 스프린트의 내 작업 목록
+  - `issue(issueKey)`: 이슈 하나 (키·제목·상태·타입·스프린트 소속 여부)
+- `JiraClient`에 JQL 검색 구현.
+
+  ```
+  assignee = currentUser()
+    AND sprint IN openSprints()
+    AND issuetype = <작업 유형 ID>
+  ```
+
+- **상태로 거르지 않는다.** 끝난 작업도 그대로 가져온다. 거르는 일은 화면에서 한다 (V6).
+  - 끝난 작업에 후속 커밋을 다는 일이 흔하고(리뷰 지적 반영, 후속 수정), 그때 그 작업을
+    **다시 고를 수단**이 있어야 한다
+  - 한 스프린트의 내 작업은 많아야 수십 건이다. 전부 가져와도 비용 차이가 없다
+  - 조회와 캐시가 하나로 유지된다. 필터된 목록과 실제 스프린트 내용이 어긋나서 생기는
+    버그 부류가 사라진다 (V7의 주의 사항 참고)
+- 상태는 이름이 아니라 **`statusCategory`로 판단한다.** 상태 이름은 사이트 언어와 워크플로마다
+  다르지만 카테고리(`To Do`/`In Progress`/`Done`)는 Jira가 보장한다. 워크플로에 `Done` 계열
+  상태가 여럿이어도(완료/취소 등) 한 번에 묶인다. 커밋 `2e28e89`에서 스프린트 필드를
+  번역된 이름 대신 타입으로 찾도록 고친 것과 같은 이유다.
+  화면 정렬(V6)과 전환 여부 판단(V6)이 이 값을 쓴다
+- 결과는 캐시한다. 커밋 창이 열릴 때마다 네트워크를 치면 안 된다.
+  TTL은 짧게(수십 초) 두고 수동 새로 고침을 제공한다
+- **호출은 전부 백그라운드 스레드.** EDT에서 부르면 IDE가 멈춘다
+  (`CommitIssueKey`가 이미 지키는 규칙과 같다)
+
+**엣지 케이스 테스트**: 열린 스프린트가 없음, 내 작업이 0건, 내 작업이 전부 끝남,
+`Done` 카테고리의 상태 이름이 "완료"가 아닌 프로젝트, 상태 카테고리가 응답에 없는 이슈,
+스프린트 필드가 없는 프로젝트, JQL 권한 오류(403), 네트워크 실패, 응답 페이지네이션, 캐시 만료.
+
+**완료 기준**: `JiraClientTest`가 가짜 transport로 위 경우를 전부 덮는다.
+
+### V6. Task Start를 "검색·선택"으로 바꾸기 (Version2 #1, #3)
+
+**목적**: 작업 번호를 외워 타이핑하는 대화상자를 없애고, 목록에서 고르게 한다.
+
+- `StartTaskDialog`를 검색 가능한 목록으로 교체 (`SpeedSearch`를 붙인 리스트)
+  - V5의 `currentSprintTasks()` 결과를 보여준다:
+    `S15P11A108-257  [AUTH-001 | FE] 회원가입 화면 구현`
+  - 로딩 중·비어 있음·오류 상태를 각각 보여준다
+
+**목록 정렬** — 상태 카테고리로 묶어 이 순서로 놓는다.
+
+| 순서 | 그룹 | 왜 여기인가 |
+| --- | --- | --- |
+| 1 | `해야 할 일` | 이 화면을 여는 이유의 대부분이다. 새 작업을 시작한다 |
+| 2 | `진행 중` | 이어서 하는 경우(다음 날, 새 IDE 세션)에만 필요하다. 하나씩 끝내므로 보통 1건이다 |
+| 3 | `완료` | 후속 커밋용. 흐리게 표시하고 맨 아래에 둔다. 접어 두어도 좋다 |
+
+작업은 하나를 끝내고 다음으로 넘어간다(RULE.md 5.1). 여러 작업을 오가며 하지 않으므로
+`진행 중`이 위에 있을 이유가 없다.
+
+- 고르면 로컬 git 설정(`jira-task.current-task`)에 저장하고 `진행 중`으로 옮긴다 (D2).
+  **저장이 먼저다.** 전환이 실패해도 작업 선택은 유효해야 한다 (현재 `StartTaskAction`이 지키는 순서)
+- **`완료`인 작업을 고르면 번호만 저장하고 전환하지 않는다.** RULE.md 4.3 "되돌리지 않는다".
+  후속 커밋에 키는 붙지만 보드는 흔들리지 않는다. 화면에도 그렇게 안내한다
+  ("커밋에만 사용합니다. 상태는 그대로 둡니다")
+- **탈출구를 남긴다**: 목록을 못 불러와도 번호를 직접 입력할 수 있어야 한다.
+  Jira가 죽었다고 커밋을 못 하면 안 된다
+
+**엣지 케이스 테스트**: 목록 로딩 실패 후 수동 입력, 빈 목록, 선택 취소,
+**`완료`인 작업을 고름(번호는 저장되고 전환 호출은 일어나지 않음)**,
+이미 `진행 중`인 작업을 다시 고름(`AlreadyThere`로 조용히 통과 — RULE.md 4.3 멱등),
+저장은 됐지만 상태 전환이 실패한 경우(경고만, 선택은 유지),
+automation이 이미 옮겨 둔 작업을 고름, 세 그룹이 각각 비어 있는 경우의 정렬.
+
+### V7. Commit Guard (Version2 #4)
+
+**목적**: 커밋 직전에 세 가지를 확인한다. RULE.md 5.2 그대로다.
+
+`JiraTaskCheckinHandlerFactory`의 `beforeCheckin`에서:
+
+| 검사 | 실패 시 |
+| --- | --- |
+| 메시지에 이슈 키가 있는가 | 경고 + "작업 선택" 액션 |
+| 그 키가 실제로 존재하는가 | 경고 + 키 표시 |
+| 그 작업이 현재 스프린트에 있는가 | 경고 (RULE.md 3.2 이탈) |
+
+- **막지 않고 경고한다.** 커밋을 거부하면 오프라인·Jira 장애 때 일을 못 한다.
+  "그래도 커밋" 선택지를 반드시 준다
+- Jira 조회 실패는 경고하지 않는다. 확인할 수 없는 것과 위반한 것은 다르다
+- V5 캐시를 쓴다. 커밋마다 네트워크를 치지 않는다
+
+> **주의: 캐시 목록에 없다는 것만으로 "스프린트 밖"이라고 경고하지 않는다.**
+> `currentSprintTasks()`는 `assignee = currentUser()`로 좁힌 목록이다. 남의 작업 키로 커밋하는
+> 경우(대신 처리, 페어 작업)가 있으므로, 목록에 없으면 `issue(key)`로 한 번 더 확인하고
+> 그 결과의 스프린트 소속 여부로 판단한다. 캐시는 **빠른 통과 경로**이지 판단 근거가 아니다.
+
+- `완료`인 작업에 커밋하는 것 자체는 **경고하지 않는다.** 규칙 위반이 아니고,
+  automation도 되돌리지 않는다 (RULE.md 4.3). V5가 상태로 거르지 않으므로 캐시에도 그대로 있다
+
+**엣지 케이스 테스트**: 키 없음, 형식은 맞지만 없는 키, 다른 프로젝트의 키, 스프린트 밖 작업,
+**현재 스프린트의 `완료`된 작업에 커밋(경고 없음)**, **캐시에 없지만 스프린트에는 있는
+남의 작업 키(경고 없음)**, Jira 오프라인, 여러 키가 든 메시지, 사용자가 경고를 무시하고 커밋.
+
+### V8. Jira Quick Search (Version2 #5)
+
+**목적**: IDE를 떠나지 않고 `PROJ-81`을 찾아 제목·설명·상태를 보고 간단히 고친다.
+
+- 툴 윈도우에 검색 입력 + 결과 패널을 추가한다 (또는 `Search Everywhere` 기여자로 붙인다)
+- 이슈 키 직접 입력과 제목 부분 일치 검색을 모두 받는다
+- **여기서는 `완료`도 찾는다.** V5의 `currentSprintTasks()` 필터를 재사용하지 않는다.
+  끝난 작업의 내용을 다시 보는 것이 검색의 주된 쓰임이다.
+  스프린트·담당자로도 좁히지 않는다 — 남의 작업도 찾을 수 있어야 한다
+- 표시: 키, 제목, 상태, 담당자, 스프린트, 설명
+- **수정은 제목·설명만** 허용한다. RULE.md 3.2가 허용한 범위이고, 상태·스프린트는 automation과
+  계획의 영역이다. 저장은 `PUT /issue/{key}`, 설명은 ADF(`AdfDocument`)로 보낸다
+- 삭제 버튼을 만들지 않는다 (RULE.md 6.2)
+
+**엣지 케이스 테스트**: 없는 키, 권한 없는 이슈, 빈 검색어, `완료`된 이슈가 결과에 나옴,
+지난 스프린트의 이슈가 결과에 나옴, 편집 중 충돌(409), 저장 실패 시 입력값 보존,
+설명이 ADF가 아닌 옛 이슈.
+
+### V9. Smart MR — GitLab (Version2 #2)
+
+**목적**: 현재 브랜치에서 MR을 만들고 작업 이슈를 연결한다.
+
+- 브랜치의 커밋 메시지에서 이슈 키를 전부 추출한다 (`git log <base>..HEAD`)
+- 대상 브랜치와 base 브랜치를 고르는 대화상자.
+  추출한 이슈 키 목록을 보여주고 조정하게 한다
+- 제목·본문은 **규칙 기반**으로 만든다. AI는 다음 단계다
+  - 제목: 이슈가 하나면 `KEY 이슈 제목`, 여럿이면 브랜치 이름 기반
+  - 본문: 이슈 키 목록 + 링크, 커밋 목록
+- `POST /projects/{id}/merge_requests`로 생성한다
+- **인증**: GitLab 토큰이 필요하다. Jira 토큰과 같은 방식(PasswordSafe)으로 저장하고,
+  설정 화면에 GitLab 주소·토큰 항목을 추가한다
+- 프로젝트 ID는 git remote URL에서 유도한다
+
+**엣지 케이스 테스트**: remote가 GitLab이 아님, remote 없음, 푸시하지 않은 브랜치,
+이미 열린 MR이 있음, 이슈 키가 하나도 없음, 토큰 없음·만료, base 브랜치와 동일, API 4xx/5xx.
+
+**완료 기준**: 가짜 HTTP transport로 위 경우를 덮고, 실제 생성은 테스트 프로젝트에서만 확인한다.
+
+### V10. Jira Key Navigation (Version2 #6)
+
+**목적**: 코드·커밋 로그·주석의 `PROJ-81`을 눌러 Jira로 이동한다.
+
+- **가장 싼 방법을 먼저 검토한다.** IntelliJ에는 이미
+  `Settings | Version Control | Issue Navigation`이 있다. 설정 마법사가 Jira 주소·프로젝트 키로
+  **이 항목을 자동 등록**해 주는 것만으로 충분할 수 있다
+- 그것으로 부족한 곳(코드·주석)만 링크 제공자를 직접 붙인다
+- 패턴은 설정된 프로젝트 키에만 반응한다. 아무 대문자-숫자 조합에 반응하면 오탐이 심하다
+
+**엣지 케이스 테스트**: 프로젝트 키 미설정, 여러 프로젝트 키, 문자열 리터럴 안의 키,
+키처럼 보이지만 아닌 것(`UTF-8`, `HTTP-2`).
+
+### V11. 문서 정리
+
+- `README.md`: 기능 표를 Version2 기준으로 다시 쓴다. 이슈 생성·검증 문단 삭제
+- `ARCHITECTURE.md`: 1장 목표·범위·비범위를 RULE.md 0장·6장과 일치시킨다.
+  `domain/validation`, `domain/template`, `domain/input`이 사라진 구조도를 반영한다
+- `MIGRATION-LOG.md`: V1~V10에서 내린 결정을 이어서 기록한다
+- `Version2.md`: 반영이 끝나면 지운다. 결정 내용은 RULE.md와 이 문서에 남는다
+
+---
+
+## 5. 순서와 의존
+
+```
+V1 (이슈 생성·검증 삭제) ─┬─ V2 (설정 축소)
+                          ├─ V3 (완료 전환 제거) ─┐
+                          └─ V4 (브랜치 생성 삭제) ┴─ 설정 마법사 단계 정리
+
+V5 (SprintTaskReader) ─┬─ V6 (Task 선택)
+                       ├─ V7 (Commit Guard)
+                       └─ V8 (Quick Search)
+
+V9  (Smart MR)    — 독립. GitLab 인증 설정이 선행
+V10 (Navigation)  — 독립. 가장 작다. 먼저 해도 된다
+V11 (문서)        — 마지막
+```
+
+**V1~V4를 먼저 끝낸다.** 지울 것을 지우기 전에 새 기능을 얹으면, 사라질 코드에 맞춰 새 코드를 쓰게 된다.
+V5는 V6~V8의 공통 기반이므로 그다음이다.
+
+---
+
+## 6. 이번 범위에서 하지 않는 것
+
+| 항목 | 이유 |
+| --- | --- |
+| AI 커밋 제목·MR 본문 생성 | 규칙 기반으로 먼저 완성한다. AI는 다음 단계 |
+| AI Task 추천, AI commit 분할, AI Jira 검색 | Claude + MCP 같은 범용 에이전트가 더 잘한다 (Version2.md) |
+| GitHub PR 지원 | 대상은 GitLab MR이다 |
+| 브랜치 생성·이름 형식 강제 | RULE.md 5.1. 브랜치 이름은 내용 요약이면 되고 규칙이 없다 |
+| 이슈 생성·삭제 기능의 부활 | RULE.md 전제 A·B |
+| 스프린트 생성·이슈 이동·일괄 수정 | RULE.md 전제 B |
+| Jira automation 규칙을 코드로 복제 | RULE.md 4.3. 정본은 Jira에 있다 |
