@@ -4,6 +4,7 @@ import io.github.gudwns1812.jiratask.domain.jira.JiraNamedValue
 import io.github.gudwns1812.jiratask.domain.policy.PolicyConfigurationError
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -11,15 +12,15 @@ import org.junit.Test
 class PolicyConfigRepositoryTest {
 
     @Test
-    fun `has no config initially and returns default policy`() {
+    fun `has no config initially and reads an empty one`() {
         val repository = PolicyConfigRepository(JiraTaskConfigStorage())
 
         assertFalse(repository.hasConfig())
-        assertEquals(listOf(1, 2, 3, 5, 8), repository.loadWorkPolicy().storyPoints)
+        assertNull(repository.loadConfig().projectKey)
     }
 
     @Test
-    fun `saves and reloads a project key while preserving default policy`() {
+    fun `saves and reloads a project key`() {
         val repository = PolicyConfigRepository(JiraTaskConfigStorage())
 
         repository.setProjectKey("S15P11A108")
@@ -27,7 +28,6 @@ class PolicyConfigRepositoryTest {
 
         assertTrue(repository.hasConfig())
         assertEquals("S15P11A108", loaded.projectKey)
-        assertEquals(listOf(1, 2, 3, 5, 8), loaded.policy.storyPoints)
     }
 
     @Test

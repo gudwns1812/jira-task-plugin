@@ -98,7 +98,7 @@ class StartTaskAction @JvmOverloads constructor(
 
                     // 번호를 저장한 다음에야 Jira를 건드린다. 전환이 실패해도 저장은 유효하다.
                     if (result is StartTaskResult.Success) {
-                        AdvanceCurrentTask.run(project, result.taskNumber, TaskTarget.IN_PROGRESS)
+                        AdvanceCurrentTask.run(project, result.taskNumber)
                     }
                 }
             })

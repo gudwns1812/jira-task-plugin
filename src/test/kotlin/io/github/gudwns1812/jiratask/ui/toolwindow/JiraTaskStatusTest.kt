@@ -20,10 +20,6 @@ class JiraTaskStatusTest {
         taskIssueType = "작업",
         epicIssueType = "에픽",
         storyStartStatus = "진행 중",
-        taskDoneStatus = "완료",
-        areas = listOf("FE"),
-        workCategories = listOf("PLAN"),
-        storyPoints = listOf(1),
     )
 
     private fun rowsOf(status: JiraTaskStatus): Map<String, String> = status.rows().toMap()
@@ -39,7 +35,7 @@ class JiraTaskStatusTest {
         assertEquals("https://team.atlassian.net", rows["Jira 주소"])
         assertEquals("A108 프로젝트", rows["프로젝트"])
         assertEquals("스토리", rows["스토리 유형"])
-        assertEquals("진행 중", rows["스토리 시작 상태"])
+        assertEquals("진행 중", rows["작업 시작 상태"])
         assertEquals("257", rows["현재 작업 번호"])
         assertEquals("feat/100-signup", rows["현재 브랜치"])
     }

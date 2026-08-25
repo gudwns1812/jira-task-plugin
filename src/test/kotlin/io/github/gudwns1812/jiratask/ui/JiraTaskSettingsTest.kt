@@ -6,10 +6,11 @@ import io.github.gudwns1812.jiratask.infrastructure.CredentialStorageError
 import io.github.gudwns1812.jiratask.infrastructure.JiraTaskConfigStorage
 import io.github.gudwns1812.jiratask.infrastructure.PolicyConfigRepository
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** 명령을 실행하기 전 설정이 충분한지 보는 규칙. CLI `getBranchConfig`의 안내 문구와 우선순위를 따른다. */
+/** 명령을 실행하기 전 설정이 충분한지 보는 규칙. 안내 문구와 환경 변수 우선순위를 함께 본다. */
 class JiraTaskSettingsTest {
 
     private class FakeCredentials(private val token: String? = null, private val failure: Exception? = null) :
@@ -63,18 +64,9 @@ class JiraTaskSettingsTest {
 
     @Test
     fun `asks for setup when no project key is configured`() {
-        val lookup = settings(repository()).forIssueDraft()
+        val lookup = settings(repository()).forCommit()
 
         assertEquals(SettingsLookup.Missing(JiraTaskSettings.NO_PROJECT_KEY), lookup)
-    }
-
-    @Test
-    fun `returns the project key and the policy for an issue draft`() {
-        val lookup = settings(configuredRepository()).forIssueDraft()
-
-        val ready = lookup as SettingsLookup.Ready
-        assertEquals("S15P11A108", ready.value.projectKey)
-        assertEquals(listOf(1, 2, 3, 5, 8), ready.value.policy.storyPoints)
     }
 
     @Test
@@ -90,36 +82,8 @@ class JiraTaskSettingsTest {
     }
 
     @Test
-    fun `returns everything a branch creation needs`() {
-        val ready = settings(configuredRepository()).forBranch() as SettingsLookup.Ready
-
-        assertEquals(
-            BranchSettings(
-                projectKey = "S15P11A108",
-                baseUrl = "https://team.atlassian.net",
-                email = "gudwns1423@gmail.com",
-                apiToken = "token",
-                storyIssueTypeId = "10001",
-                inProgressStatusId = "21",
-            ),
-            ready.value,
-        )
-    }
-
-    @Test
-    fun `lists every missing branch setting at once`() {
-        val lookup = settings(repository(), FakeCredentials(null)).forBranch()
-
-        val message = (lookup as SettingsLookup.Missing).message
-        assertTrue(message.startsWith("브랜치 생성 설정이 없습니다: "))
-        listOf("프로젝트 키", "Jira 주소", "스토리 타입", "진행 상태", "JIRA_EMAIL", "JIRA_API_TOKEN").forEach {
-            assertTrue("$it 안내가 있어야 한다", message.contains(it))
-        }
-    }
-
-    @Test
     fun `reports only the token when the rest is configured`() {
-        val lookup = settings(configuredRepository(), FakeCredentials(null)).forBranch()
+        val lookup = settings(taskConfiguredRepository(), FakeCredentials(null)).forTaskTransition()
 
         val message = (lookup as SettingsLookup.Missing).message
         assertTrue(message.contains("JIRA_API_TOKEN"))
@@ -130,7 +94,7 @@ class JiraTaskSettingsTest {
     @Test
     fun `prefers the environment variables over the saved values`() {
         val lookup = settings(
-            configuredRepository(),
+            taskConfiguredRepository(),
             FakeCredentials("saved-token"),
             environment = { name ->
                 when (name) {
@@ -139,7 +103,7 @@ class JiraTaskSettingsTest {
                     else -> null
                 }
             },
-        ).forBranch()
+        ).forTaskTransition()
 
         val ready = lookup as SettingsLookup.Ready
         assertEquals("env@example.com", ready.value.email)
@@ -148,7 +112,8 @@ class JiraTaskSettingsTest {
 
     @Test
     fun `explains a credential store failure instead of crashing`() {
-        val lookup = settings(configuredRepository(), FakeCredentials(failure = CredentialStorageError())).forBranch()
+        val lookup = settings(taskConfiguredRepository(), FakeCredentials(failure = CredentialStorageError()))
+            .forTaskTransition()
 
         assertTrue((lookup as SettingsLookup.Missing).message.contains("자격 증명"))
     }
@@ -159,9 +124,8 @@ class JiraTaskSettingsTest {
         val broken = PolicyConfigRepository(storage)
 
         listOf(
-            settings(broken).forIssueDraft(),
             settings(broken).forCommit(),
-            settings(broken).forBranch(),
+            settings(broken).forTaskTransition(),
         ).forEach { lookup ->
             assertTrue(lookup is SettingsLookup.Missing)
             assertTrue((lookup as SettingsLookup.Missing).message.contains("projectKey"))
@@ -180,7 +144,6 @@ class JiraTaskSettingsTest {
                 apiToken = "token",
                 taskIssueTypeId = "10002",
                 inProgressStatus = JiraNamedValue("21", "진행 중"),
-                doneStatus = JiraNamedValue("31", "완료"),
             ),
             ready.value,
         )
@@ -191,7 +154,7 @@ class JiraTaskSettingsTest {
         val missing = settings(configuredRepository()).forTaskTransition() as SettingsLookup.Missing
 
         assertTrue(missing.message.contains("작업 타입(설정 마법사)"))
-        assertTrue(missing.message.contains("작업 완료 상태(설정 마법사)"))
+        assertFalse("완료 상태는 더 이상 요구하지 않는다", missing.message.contains("작업 완료 상태"))
     }
 
     @Test

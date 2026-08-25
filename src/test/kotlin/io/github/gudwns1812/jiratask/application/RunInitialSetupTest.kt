@@ -91,7 +91,6 @@ class RunInitialSetupTest {
                 ),
                 statuses = JiraSettings.Statuses(
                     story = JiraSettings.Statuses.StoryStatuses(JiraNamedValue("3", "진행 중")),
-                    task = JiraSettings.Statuses.TaskStatuses(JiraNamedValue("4", "완료")),
                 ),
             ),
             savedJira,

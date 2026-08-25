@@ -9,13 +9,11 @@ import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import io.github.gudwns1812.jiratask.application.CredentialStore
 import io.github.gudwns1812.jiratask.infrastructure.JiraTaskConfigStorage
 import io.github.gudwns1812.jiratask.infrastructure.PolicyConfigRepository
-import io.github.gudwns1812.jiratask.ui.branch.CreateStoryBranchAction
 import io.github.gudwns1812.jiratask.ui.commit.CommitWithJiraTaskAction
 import io.github.gudwns1812.jiratask.ui.commit.JiraTaskCheckinHandlerFactory
-import io.github.gudwns1812.jiratask.ui.issue.CreateIssueDraftAction
 import io.github.gudwns1812.jiratask.ui.task.StartTaskAction
 
-/** 툴바에 놓인 액션 4개가 설정 상태에 따라 켜지고 꺼지는지, 꺼진 이유가 툴팁에 들어가는지 확인한다. */
+/** 툴바에 놓인 액션 2개가 설정 상태에 따라 켜지고 꺼지는지, 꺼진 이유가 툴팁에 들어가는지 확인한다. */
 class JiraTaskActionUpdateTest : BasePlatformTestCase() {
 
     private object NoCredentials : CredentialStore {
@@ -43,8 +41,6 @@ class JiraTaskActionUpdateTest : BasePlatformTestCase() {
         val settings = JiraTaskSettings(repository, NoCredentials) { null }
         val availability = JiraTaskAvailability(repository)
         return listOf(
-            CreateIssueDraftAction(settings, availability),
-            CreateStoryBranchAction(settings, availability),
             StartTaskAction(availability),
             CommitWithJiraTaskAction(settings, JiraTaskCheckinHandlerFactory(settings), availability),
         )
@@ -90,46 +86,17 @@ class JiraTaskActionUpdateTest : BasePlatformTestCase() {
     fun `test explains why each action is off before any setup`() {
         val actions = actionsUsing(repository()).associateBy { it.javaClass.simpleName }
 
-        val draft = update(actions.getValue("CreateIssueDraftAction"), projectContext())
-        assertFalse(draft.presentation.isEnabled)
-        assertEquals(JiraTaskAvailability.NO_PROJECT_KEY, draft.presentation.description)
-
         val commit = update(actions.getValue("CommitWithJiraTaskAction"), projectContext())
         assertFalse(commit.presentation.isEnabled)
         assertEquals(JiraTaskAvailability.NO_PROJECT_KEY, commit.presentation.description)
-
-        val branch = update(actions.getValue("CreateStoryBranchAction"), projectContext())
-        assertFalse(branch.presentation.isEnabled)
-        assertTrue(branch.presentation.description!!.contains("스토리 시작 상태"))
 
         val startTask = update(actions.getValue("StartTaskAction"), projectContext())
         assertTrue("작업 번호 저장은 Jira 설정 없이도 된다", startTask.presentation.isEnabled)
     }
 
-    fun `test enables the story branch action only after the wizard filled the ids`() {
-        val repository = repository().apply { setProjectKey("S15P11A108") }
-        val branch = actionsUsing(repository).first { it is CreateStoryBranchAction }
-
-        val beforeWizard = update(branch, projectContext())
-        assertFalse(beforeWizard.presentation.isEnabled)
-        assertTrue(beforeWizard.presentation.description!!.contains("Jira 주소"))
-
-        repository.saveConfig(
-            mapOf(
-                "jira" to mapOf(
-                    "baseUrl" to "https://team.atlassian.net",
-                    "issueTypes" to mapOf("story" to mapOf("id" to "10001", "name" to "스토리")),
-                    "statuses" to mapOf("story" to mapOf("start" to mapOf("id" to "21", "name" to "진행 중"))),
-                ),
-            ),
-        )
-
-        assertTrue(update(branch, projectContext()).presentation.isEnabled)
-    }
-
     fun `test still guides the user when a disabled action is invoked from elsewhere`() {
         // 툴바에서는 비활성이지만 검색·단축키로 실행될 수 있다. 그때도 예외 없이 안내만 해야 한다.
-        val action = actionsUsing(repository()).first { it is CreateIssueDraftAction }
+        val action = actionsUsing(repository()).first { it is CommitWithJiraTaskAction }
 
         action.actionPerformed(TestActionEvent.createTestEvent(action, projectContext()))
     }

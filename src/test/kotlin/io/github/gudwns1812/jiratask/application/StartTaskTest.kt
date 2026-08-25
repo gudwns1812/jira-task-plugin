@@ -1,22 +1,19 @@
 package io.github.gudwns1812.jiratask.application
 
-import io.github.gudwns1812.jiratask.domain.branch.GitRepositoryError
-import io.github.gudwns1812.jiratask.domain.branch.GitRepositoryPort
+import io.github.gudwns1812.jiratask.domain.commit.GitRepositoryError
+import io.github.gudwns1812.jiratask.domain.commit.CommitRepositoryPort
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 private class StartTaskFakeGitRepository(
     private val ensureRepositoryFailure: GitRepositoryError? = null,
-) : GitRepositoryPort {
+) : CommitRepositoryPort {
     var savedTaskNumber: String? = null
         private set
 
     override fun ensureRepository() {
         ensureRepositoryFailure?.let { throw it }
     }
-    override fun ensureCleanWorkingTree() {}
-    override fun ensureBranchAbsent(branchName: String) {}
-    override fun createAndSwitch(branchName: String) {}
     override fun setCurrentTaskNumber(taskNumber: String) { savedTaskNumber = taskNumber }
     override fun getCurrentTaskNumber(): String? = savedTaskNumber
     override fun ensureStagedChanges() {}

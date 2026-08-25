@@ -4,10 +4,9 @@
     <vendor url="https://github.com/gudwns1812/jira-task-plugin">gudwns1812</vendor>
 
     <description><![CDATA[
-        Brings the RULE.md based Jira workflow into the IDE.
-        Provides a first-run setup wizard, issue draft validation with a request preview,
-        story branch creation with a Jira status transition, current task number tracking
-        in the status bar, and automatic Jira issue keys in Git commit messages.
+        Fits the RULE.md based Jira workflow into the IDE's Git flow.
+        Provides a first-run setup wizard, current task tracking in the status bar,
+        and automatic Jira issue keys in Git commit messages.
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
@@ -38,16 +37,6 @@
         <group id="JiraTask.Menu" text="Jira Task" popup="true">
             <add-to-group group-id="ToolsMenu" anchor="last"/>
 
-            <action id="JiraTask.CreateIssueDraft"
-                    class="io.github.gudwns1812.jiratask.ui.issue.CreateIssueDraftAction"
-                    text="Create Issue Draft"
-                    description="이슈 입력을 RULE.md 기준으로 검증하고 생성 요청 초안을 만듭니다"
-                    icon="AllIcons.General.Add"/>
-            <action id="JiraTask.CreateStoryBranch"
-                    class="io.github.gudwns1812.jiratask.ui.branch.CreateStoryBranchAction"
-                    text="Create Story Branch"
-                    description="스토리 번호로 브랜치를 만들고 Jira 스토리를 진행 중으로 전환합니다"
-                    icon="AllIcons.Vcs.Branch"/>
             <action id="JiraTask.StartTask"
                     class="io.github.gudwns1812.jiratask.ui.task.StartTaskAction"
                     text="Start Jira Task"
@@ -68,8 +57,6 @@
 
         <!-- 툴 윈도우 상단 아이콘 툴바. 메뉴와 같은 액션을 참조해 동작이 갈라지지 않게 한다. -->
         <group id="JiraTask.ToolWindowToolbar">
-            <reference id="JiraTask.CreateIssueDraft"/>
-            <reference id="JiraTask.CreateStoryBranch"/>
             <reference id="JiraTask.StartTask"/>
             <reference id="JiraTask.Commit"/>
             <separator/>
