@@ -81,7 +81,6 @@ class EditSettingsTest {
         assertEquals("작업", snapshot.taskIssueType)
         assertEquals("에픽", snapshot.epicIssueType)
         assertEquals("진행 중", snapshot.storyStartStatus)
-        assertEquals("완료", snapshot.taskDoneStatus)
     }
 
     @Test
@@ -98,7 +97,6 @@ class EditSettingsTest {
             snapshot.taskIssueType,
             snapshot.epicIssueType,
             snapshot.storyStartStatus,
-            snapshot.taskDoneStatus,
         )
         assertTrue(shownValues.none { it.contains("gudwns1423") })
     }
@@ -125,7 +123,6 @@ class EditSettingsTest {
         assertEquals("S15P11A108", saved.projectKey)
         assertEquals("스토리", saved.storyIssueType)
         assertEquals("진행 중", saved.storyStartStatus)
-        assertEquals(JiraNamedValue("31", "완료"), store.config.jira?.statuses?.task?.done)
         assertEquals("gudwns1423@gmail.com", store.config.jira?.email)
     }
 
@@ -203,7 +200,7 @@ class EditSettingsTest {
 
         assertEquals("", snapshot.projectKey)
         assertEquals("", snapshot.baseUrl)
-        assertEquals("", snapshot.taskDoneStatus)
+        assertEquals("", snapshot.storyStartStatus)
     }
 
     @Test

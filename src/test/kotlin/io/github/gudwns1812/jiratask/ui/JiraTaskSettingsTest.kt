@@ -6,6 +6,7 @@ import io.github.gudwns1812.jiratask.infrastructure.CredentialStorageError
 import io.github.gudwns1812.jiratask.infrastructure.JiraTaskConfigStorage
 import io.github.gudwns1812.jiratask.infrastructure.PolicyConfigRepository
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -170,7 +171,6 @@ class JiraTaskSettingsTest {
                 apiToken = "token",
                 taskIssueTypeId = "10002",
                 inProgressStatus = JiraNamedValue("21", "진행 중"),
-                doneStatus = JiraNamedValue("31", "완료"),
             ),
             ready.value,
         )
@@ -181,7 +181,7 @@ class JiraTaskSettingsTest {
         val missing = settings(configuredRepository()).forTaskTransition() as SettingsLookup.Missing
 
         assertTrue(missing.message.contains("작업 타입(설정 마법사)"))
-        assertTrue(missing.message.contains("작업 완료 상태(설정 마법사)"))
+        assertFalse("완료 상태는 더 이상 요구하지 않는다", missing.message.contains("작업 완료 상태"))
     }
 
     @Test

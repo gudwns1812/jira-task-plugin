@@ -16,7 +16,6 @@ data class SettingsSnapshot(
     val taskIssueType: String,
     val epicIssueType: String,
     val storyStartStatus: String,
-    val taskDoneStatus: String,
 ) {
     companion object
 }
@@ -29,7 +28,6 @@ fun SettingsSnapshot.Companion.from(config: JiraTaskConfig): SettingsSnapshot = 
     taskIssueType = config.jira?.issueTypes?.task?.name.orEmpty(),
     epicIssueType = config.jira?.issueTypes?.epic?.name.orEmpty(),
     storyStartStatus = config.jira?.statuses?.story?.start?.name.orEmpty(),
-    taskDoneStatus = config.jira?.statuses?.task?.done?.name.orEmpty(),
 )
 
 /** 저장된 설정이 없거나 아직 읽지 못한 상태를 나타내는 빈 스냅샷. */

@@ -19,18 +19,6 @@ import io.github.gudwns1812.jiratask.ui.TaskTransitionSettings
 import io.github.gudwns1812.jiratask.ui.notifyAndRefresh
 import io.github.gudwns1812.jiratask.ui.setup.SetupWizardLauncher
 
-/** 작업 이슈를 옮길 곳. 작업을 시작하면 진행 중으로, 커밋하면 완료로 간다. */
-enum class TaskTarget {
-    IN_PROGRESS,
-    DONE,
-    ;
-
-    fun statusOf(settings: TaskTransitionSettings): JiraNamedValue = when (this) {
-        IN_PROGRESS -> settings.inProgressStatus
-        DONE -> settings.doneStatus
-    }
-}
-
 /** [AdvanceTaskResult]를 알림 한 줄로 옮긴다. */
 object AdvanceTaskReports {
 
@@ -52,10 +40,13 @@ object AdvanceTaskReports {
 }
 
 /**
- * 현재 작업 번호의 Jira 작업 이슈를 다음 상태로 옮긴다. 작업 시작과 커밋 성공 뒤에 부르는 공통 자리다.
+ * 현재 작업 번호의 Jira 작업 이슈를 `진행 중`으로 옮긴다. 담당자가 작업을 고른 직후에 부른다.
  *
- * 작업 번호 저장이나 커밋은 이 시점에 이미 끝나 있다. 그래서 설정이 없거나 Jira가 실패해도
- * 되돌리지 않고 알림 한 줄로 알린다 — 커밋을 실패로 보이게 만들면 사용자가 더 헷갈린다.
+ * 여기서 옮기는 이유는 커밋 시점이 늦기 때문이다(RULE.md 4.2). automation에도 커밋을 계기로 하는
+ * 같은 전환이 있어 두 경로가 겹치지만, 이미 목표 상태면 아무 일도 하지 않으므로 충돌하지 않는다.
+ *
+ * 작업 번호 저장은 이 시점에 이미 끝나 있다. 그래서 설정이 없거나 Jira가 실패해도 되돌리지 않고
+ * 알림 한 줄로 알린다 — 선택을 실패로 보이게 만들면 사용자가 더 헷갈린다.
  */
 object AdvanceCurrentTask {
 
@@ -63,12 +54,11 @@ object AdvanceCurrentTask {
     fun inBackground(
         project: Project,
         taskNumber: String,
-        target: TaskTarget,
         settings: JiraTaskSettings = JiraTaskSettings(),
         createTransitioner: (TaskTransitionSettings) -> TaskIssueTransitioner = ::jiraClientFor,
     ) {
         ApplicationManager.getApplication().executeOnPooledThread(
-            Runnable { run(project, taskNumber, target, settings, createTransitioner) },
+            Runnable { run(project, taskNumber, settings, createTransitioner) },
         )
     }
 
@@ -76,7 +66,6 @@ object AdvanceCurrentTask {
     fun run(
         project: Project,
         taskNumber: String,
-        target: TaskTarget,
         settings: JiraTaskSettings = JiraTaskSettings(),
         createTransitioner: (TaskTransitionSettings) -> TaskIssueTransitioner = ::jiraClientFor,
     ) {
@@ -87,7 +76,7 @@ object AdvanceCurrentTask {
                 NotificationAction.createSimple("설정 시작") { SetupWizardLauncher.launch(project) },
             )
             is SettingsLookup.Ready -> {
-                val report = AdvanceTaskReports.of(advance(lookup.value, taskNumber, target, createTransitioner))
+                val report = AdvanceTaskReports.of(advance(lookup.value, taskNumber, createTransitioner))
                 notifyAndRefresh(project, report.type, report.message)
             }
         }
@@ -96,7 +85,6 @@ object AdvanceCurrentTask {
     private fun advance(
         settings: TaskTransitionSettings,
         taskNumber: String,
-        target: TaskTarget,
         createTransitioner: (TaskTransitionSettings) -> TaskIssueTransitioner,
     ): AdvanceTaskResult {
         val taskKey = try {
@@ -104,7 +92,7 @@ object AdvanceCurrentTask {
         } catch (error: TaskNumberError) {
             return AdvanceTaskResult.Failure(1, error.message ?: "작업 번호가 올바르지 않습니다.")
         }
-        val status = target.statusOf(settings)
+        val status = settings.inProgressStatus
 
         return AdvanceTaskUseCase(createTransitioner(settings)).execute(
             AdvanceTaskCommand(

@@ -35,7 +35,6 @@ data class TaskTransitionSettings(
     val apiToken: String,
     val taskIssueTypeId: String,
     val inProgressStatus: JiraNamedValue,
-    val doneStatus: JiraNamedValue,
 )
 
 /**
@@ -53,13 +52,12 @@ class JiraTaskSettings(
         SettingsLookup.Ready(CommitSettings(projectKey))
     }
 
-    /** 작업 시작·커밋 뒤 상태 전환에 필요한 설정. 하나라도 없으면 무엇이 없는지 알려준다. */
+    /** 작업을 시작할 때의 상태 전환에 필요한 설정. 하나라도 없으면 무엇이 없는지 알려준다. */
     fun forTaskTransition(): SettingsLookup<TaskTransitionSettings> = withConfig { config ->
         val baseUrl = config.jira?.baseUrl
         val email = environment("JIRA_EMAIL") ?: config.jira?.email
         val taskIssueTypeId = config.jira?.issueTypes?.task?.id
         val inProgressStatus = config.jira?.statuses?.story?.start
-        val doneStatus = config.jira?.statuses?.task?.done
         val apiToken = environment("JIRA_API_TOKEN")
             ?: if (baseUrl != null && email != null) {
                 try {
@@ -76,7 +74,6 @@ class JiraTaskSettings(
             "Jira 주소(설정 마법사)".takeIf { baseUrl == null },
             "작업 타입(설정 마법사)".takeIf { taskIssueTypeId == null },
             "진행 상태(설정 마법사)".takeIf { inProgressStatus == null },
-            "작업 완료 상태(설정 마법사)".takeIf { doneStatus == null },
             "JIRA_EMAIL 또는 초기 설정 이메일".takeIf { email == null },
             "JIRA_API_TOKEN 또는 IDE 비밀번호 저장소의 토큰".takeIf { apiToken == null },
         )
@@ -92,7 +89,6 @@ class JiraTaskSettings(
                 apiToken = apiToken!!,
                 taskIssueTypeId = taskIssueTypeId!!,
                 inProgressStatus = inProgressStatus!!,
-                doneStatus = doneStatus!!,
             ),
         )
     }

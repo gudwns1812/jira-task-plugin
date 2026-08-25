@@ -21,12 +21,8 @@ data class JiraSettings(
         val epic: JiraNamedValue? = null,
     )
 
-    data class Statuses(
-        val story: StoryStatuses? = null,
-        val task: TaskStatuses? = null,
-    ) {
+    data class Statuses(val story: StoryStatuses? = null) {
         data class StoryStatuses(val start: JiraNamedValue? = null)
-        data class TaskStatuses(val done: JiraNamedValue? = null)
     }
 }
 
@@ -94,7 +90,6 @@ private fun JiraSettings.IssueTypes.toRawMap(): Map<String, Any?> {
 private fun JiraSettings.Statuses.toRawMap(): Map<String, Any?> {
     val result = mutableMapOf<String, Any?>()
     story?.start?.let { result["story"] = mapOf("start" to mapOf("id" to it.id, "name" to it.name)) }
-    task?.done?.let { result["task"] = mapOf("done" to mapOf("id" to it.id, "name" to it.name)) }
     return result
 }
 
@@ -329,10 +324,11 @@ private fun readStatuses(obj: Map<*, *>, errors: MutableList<String>): JiraSetti
         rejectUnknownKeys(storyRaw, setOf("start"), "jira.statuses.story", errors)
         JiraSettings.Statuses.StoryStatuses(readOptionalNamedValue(storyRaw, "start", "jira.statuses.story.start", errors))
     }
-    val task = (raw["task"] as? Map<*, *>)?.let { taskRaw ->
+    // `task.done`은 커밋이 작업을 완료로 옮기던 시절의 값이다. 예전 설정 파일에 남아 있어도
+    // 오류로 막지 않고 무시한다(RULE.md 4.2).
+    (raw["task"] as? Map<*, *>)?.let { taskRaw ->
         rejectUnknownKeys(taskRaw, setOf("done"), "jira.statuses.task", errors)
-        JiraSettings.Statuses.TaskStatuses(readOptionalNamedValue(taskRaw, "done", "jira.statuses.task.done", errors))
     }
 
-    return JiraSettings.Statuses(story, task)
+    return JiraSettings.Statuses(story)
 }
