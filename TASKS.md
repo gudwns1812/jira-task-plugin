@@ -160,6 +160,8 @@ AI 기능은 이번 개편에서 다루지 않는다. 규칙 기반으로 1·3·
 
 ## 4. 작업
 
+**V1~V4는 완료했다.** 각 작업 아래에 실제로 무엇이 달라졌는지 적어 두었다.
+
 ### V1. 이슈 생성·검증 계열 삭제
 
 **목적**: 2.1의 파일을 전부 지우고 컴파일이 통과하는 상태로 되돌린다.
@@ -172,6 +174,10 @@ AI 기능은 이번 개편에서 다루지 않는다. 규칙 기반으로 1·3·
 
 **완료 기준**: 빌드·전체 테스트 통과. `JiraTaskPluginRegistrationTest`가 줄어든 액션 목록을 검증한다.
 `grep -ri "draft|validate|template" src/main`이 아무것도 찾지 못한다.
+
+**완료** (`e337a5b`). 계획한 파일 외에 `JiraClient`에서 생성 전용 엔드포인트를 함께 걷어냈다 —
+`createIssue`·`linkIssues`·`findAccountId`에 더해 `findFieldIds`·`findSprintId`·`storyContext`·
+`currentUserName`·`listPriorities`와 커스텀 필드 이름 추측 상수들까지 전부 이슈를 만들 때만 쓰던 것이었다.
 
 ### V2. 설정에서 정책(WorkPolicy) 걷어내기
 
@@ -187,6 +193,9 @@ AI 기능은 이번 개편에서 다루지 않는다. 규칙 기반으로 1·3·
 
 **완료 기준**: `PolicyConfigTest`·`PolicyConfigRepositoryTest`가 새 모델로 통과하고,
 구버전 설정 파일 픽스처가 마이그레이션 없이 읽힌다.
+
+**완료** (`ef87f6f`). 옛 설정 파일의 정책 키는 허용 목록에 남겨 무시하고, 다시 쓰지도 않는다.
+`LEGACY_POLICY_KEYS`가 그 자리다.
 
 ### V3. `완료` 자동 전환 제거 (RULE.md 4.2)
 
@@ -204,6 +213,10 @@ AI 기능은 이번 개편에서 다루지 않는다. 규칙 기반으로 1·3·
 설정에 완료 상태가 남아 있어도 무시. 작업 시작 시 `진행 중` 전환은 여전히 일어남(회귀 방지).
 
 **완료 기준**: `AdvanceCurrentTaskTest`·`JiraTaskCommitDialogTest`가 새 동작을 검증한다.
+
+**완료** (`7dc18e7`). `TaskTarget` enum은 없앴다 — 값이 하나뿐이라 `AdvanceCurrentTask`가 항상
+`진행 중`으로 옮긴다. 옛 설정의 `jira.statuses.task.done`도 정책 키와 같은 방식으로 무시한다.
+화면 문구 "스토리 시작 상태"는 "작업 시작 상태"로 바꿨다 — 이제 작업 전환에만 쓰인다.
 
 ### V4. 스토리 브랜치 생성 삭제 (RULE.md 5.1)
 
@@ -226,6 +239,15 @@ git 저장소가 아닌 디렉터리, 스테이지된 변경 없음.
 
 **완료 기준**: 빌드·전체 테스트 통과. `grep -ri "branch" src/main`이 툴 윈도우의 현재 브랜치 표시와
 V9의 MR 코드 외에는 걸리지 않는다.
+
+**완료** (`e9c0ff5`). `StoryIssueReader.kt`에 `JiraIssue`와 Jira 예외 타입들이 함께 들어 있어
+파일째 지울 수 없었다 — 인터페이스만 걷어내고 공유 타입은 `domain/jira/JiraIssue.kt`로 옮겼다.
+새 포트 이름은 `domain/commit/CommitRepositoryPort`다.
+
+> **V6로 넘긴 것**: 작업 시작 상태를 여전히 **스토리** 이슈 유형의 워크플로에서 고른다
+> (`jira.statuses.story.start`). 브랜치가 사라진 지금은 작업 유형의 워크플로에서 고르는 편이 맞다.
+> 지금도 동작은 한다 — `AdvanceTaskUseCase`가 ID로 못 찾으면 상태 이름으로 찾기 때문이다.
+> 설정 키가 바뀌는 변경이라 Task Start를 손보는 V6에서 함께 처리한다.
 
 ### V5. Jira 검색 창구 만들기 (`SprintTaskReader`)
 
