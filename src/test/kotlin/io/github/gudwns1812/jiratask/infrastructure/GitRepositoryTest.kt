@@ -1,6 +1,6 @@
 package io.github.gudwns1812.jiratask.infrastructure
 
-import io.github.gudwns1812.jiratask.domain.branch.GitRepositoryError
+import io.github.gudwns1812.jiratask.domain.commit.GitRepositoryError
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
@@ -30,37 +30,6 @@ private fun createRepository(): File {
 }
 
 class GitRepositoryTest {
-
-    @Test
-    fun `creates and switches to a new branch in a clean temporary repository`() {
-        val directory = createRepository()
-        try {
-            val repository = GitRepository(directory)
-            repository.ensureRepository()
-            repository.ensureCleanWorkingTree()
-            repository.ensureBranchAbsent("feat/100-signup")
-            repository.createAndSwitch("feat/100-signup")
-
-            assertEquals("feat/100-signup\n", runGit(directory, "branch", "--show-current"))
-        } finally {
-            directory.deleteRecursively()
-        }
-    }
-
-    @Test
-    fun `rejects a dirty working tree and a duplicate branch name`() {
-        val directory = createRepository()
-        try {
-            val repository = GitRepository(directory)
-            File(directory, "dirty.txt").writeText("dirty")
-            assertThrows(GitRepositoryError::class.java) { repository.ensureCleanWorkingTree() }
-
-            runGit(directory, "switch", "-c", "feat/100-signup")
-            assertThrows(GitRepositoryError::class.java) { repository.ensureBranchAbsent("feat/100-signup") }
-        } finally {
-            directory.deleteRecursively()
-        }
-    }
 
     @Test
     fun `saves and reads the current task number per repository`() {

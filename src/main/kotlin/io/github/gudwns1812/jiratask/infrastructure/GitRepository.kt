@@ -1,47 +1,23 @@
 package io.github.gudwns1812.jiratask.infrastructure
 
-import io.github.gudwns1812.jiratask.domain.branch.GitRepositoryError
-import io.github.gudwns1812.jiratask.domain.branch.GitRepositoryPort
+import io.github.gudwns1812.jiratask.domain.commit.CommitRepositoryPort
+import io.github.gudwns1812.jiratask.domain.commit.GitRepositoryError
 import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
- * IDE의 Git4Idea 서비스 대신 CLI와 동일하게 `git` 실행 파일을 직접 호출한다.
- * CLI(`src/infrastructure/git-repository.ts`)가 하는 일이 rev-parse/status/switch/commit 같은
- * 단순한 명령 조합뿐이라, Git4Idea의 무거운 캐시·리프레시 계층 없이도 동일한 동작을 재현할 수 있다.
+ * IDE의 Git4Idea 서비스 대신 `git` 실행 파일을 직접 호출한다. 하는 일이 rev-parse/config/commit 같은
+ * 단순한 명령 조합뿐이라, Git4Idea의 무거운 캐시·리프레시 계층 없이도 같은 동작을 얻을 수 있다.
  */
 class GitRepository(
     private val workingDirectory: File = File(System.getProperty("user.dir")),
-) : GitRepositoryPort {
+) : CommitRepositoryPort {
 
     override fun ensureRepository() {
         val result = run("rev-parse", "--is-inside-work-tree")
         if (result == null || result.exitCode != 0 || result.stdout.trim() != "true") {
             throw GitRepositoryError("Git 저장소에서 실행해야 합니다.")
         }
-    }
-
-    override fun ensureCleanWorkingTree() {
-        val result = runOrThrow("status", "--porcelain")
-        if (result.stdout.trim().isNotEmpty()) {
-            throw GitRepositoryError("커밋되지 않은 변경 사항이 있어 브랜치를 만들 수 없습니다.")
-        }
-    }
-
-    override fun ensureBranchAbsent(branchName: String) {
-        val result = runOrThrow("for-each-ref", "--format=%(refname:short)", "refs/heads", "refs/remotes")
-        val existing = result.stdout.lineSequence()
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .any { it == branchName || it.endsWith("/$branchName") }
-
-        if (existing) {
-            throw GitRepositoryError("이미 존재하는 브랜치입니다: $branchName")
-        }
-    }
-
-    override fun createAndSwitch(branchName: String) {
-        runOrThrow("switch", "-c", branchName)
     }
 
     override fun setCurrentTaskNumber(taskNumber: String) {

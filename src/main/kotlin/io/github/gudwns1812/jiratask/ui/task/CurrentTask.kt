@@ -7,7 +7,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.StatusBar
 import com.intellij.openapi.wm.WindowManager
 import io.github.gudwns1812.jiratask.application.StartTaskResult
-import io.github.gudwns1812.jiratask.domain.branch.GitRepositoryError
+import io.github.gudwns1812.jiratask.domain.commit.GitRepositoryError
 import io.github.gudwns1812.jiratask.domain.task.TaskNumberError
 import io.github.gudwns1812.jiratask.domain.task.TaskNumbers
 import io.github.gudwns1812.jiratask.infrastructure.GitRepository

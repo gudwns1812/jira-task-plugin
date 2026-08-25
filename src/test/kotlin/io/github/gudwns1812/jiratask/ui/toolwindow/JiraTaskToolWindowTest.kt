@@ -202,7 +202,6 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
 
         assertEquals(
             listOf(
-                "JiraTask.CreateStoryBranch",
                 "JiraTask.StartTask",
                 "JiraTask.Commit",
                 "JiraTask.RunSetupWizard",

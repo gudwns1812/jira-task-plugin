@@ -14,7 +14,6 @@ import io.github.gudwns1812.jiratask.domain.jira.JiraProject
 import io.github.gudwns1812.jiratask.domain.jira.JiraRequestError
 import io.github.gudwns1812.jiratask.domain.jira.JiraSetupReader
 import io.github.gudwns1812.jiratask.domain.jira.JiraTransition
-import io.github.gudwns1812.jiratask.domain.jira.StoryIssueReader
 import io.github.gudwns1812.jiratask.domain.jira.TaskIssueTransitioner
 import java.net.URI
 import java.net.URLEncoder
@@ -49,7 +48,7 @@ class JiraClient(
     email: String,
     apiToken: String,
     private val transport: JiraHttpTransport = HttpClientJiraTransport(),
-) : StoryIssueReader, JiraSetupReader, TaskIssueTransitioner {
+) : JiraSetupReader, TaskIssueTransitioner {
 
     private val baseUrl = baseUrl.trimEnd('/')
     private val authorization = "Basic " + Base64.getEncoder().encodeToString("$email:$apiToken".toByteArray())
@@ -118,9 +117,6 @@ class JiraClient(
 
         return array.map(::decodeIssueTypeWithStatuses)
     }
-
-    override fun findTransitionId(issueKey: String, targetStatusId: String): String? =
-        listTransitions(issueKey).firstOrNull { it.toStatusId == targetStatusId }?.id
 
     override fun listTransitions(issueKey: String): List<JiraTransition> {
         val body = requestObject("/rest/api/3/issue/${encode(issueKey)}/transitions")

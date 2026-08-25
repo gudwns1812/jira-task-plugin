@@ -1,7 +1,7 @@
 package io.github.gudwns1812.jiratask.application
 
-import io.github.gudwns1812.jiratask.domain.branch.GitRepositoryError
-import io.github.gudwns1812.jiratask.domain.branch.GitRepositoryPort
+import io.github.gudwns1812.jiratask.domain.commit.GitRepositoryError
+import io.github.gudwns1812.jiratask.domain.commit.CommitRepositoryPort
 import io.github.gudwns1812.jiratask.domain.task.TaskNumberError
 import io.github.gudwns1812.jiratask.domain.task.TaskNumbers
 
@@ -10,7 +10,7 @@ sealed class StartTaskResult {
     data class Failure(val exitCode: Int, val message: String) : StartTaskResult()
 }
 
-class StartTaskUseCase(private val gitRepository: GitRepositoryPort) {
+class StartTaskUseCase(private val gitRepository: CommitRepositoryPort) {
 
     fun execute(taskNumber: String): StartTaskResult {
         try {

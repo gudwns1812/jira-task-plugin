@@ -50,7 +50,7 @@ class JiraClientTest {
         assertEquals("1", issue.statusId)
         assertEquals("To Do", issue.statusName)
 
-        assertEquals("31", client.findTransitionId("S15P11A108-100", "2"))
+        assertEquals("31", client.listTransitions("S15P11A108-100").single { it.toStatusId == "2" }.id)
         client.transition("S15P11A108-100", "31")
 
         val lastCall = transport.calls.last()
@@ -122,12 +122,12 @@ class JiraClientTest {
     }
 
     @Test
-    fun `returns null when no transition targets the requested status`() {
+    fun `lists no transition targeting an unreachable status`() {
         val transport = ScriptedJiraHttpTransport(
             mutableListOf(JiraHttpResponse(200, """{"transitions":[{"id":"31","to":{"id":"2","name":"In Progress"}}]}""")),
         )
         val client = JiraClient("https://team.atlassian.net", "user@example.com", "secret", transport)
 
-        assertNull(client.findTransitionId("S15P11A108-100", "99"))
+        assertNull(client.listTransitions("S15P11A108-100").firstOrNull { it.toStatusId == "99" })
     }
 }

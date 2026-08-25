@@ -11,7 +11,6 @@ import com.intellij.openapi.vcs.changes.ui.CommitMessageProvider
 import com.intellij.openapi.vcs.checkin.CheckinHandlerFactory
 import com.intellij.openapi.wm.StatusBarWidgetFactory
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
-import io.github.gudwns1812.jiratask.ui.branch.CreateStoryBranchAction
 import io.github.gudwns1812.jiratask.ui.commit.CommitWithJiraTaskAction
 import io.github.gudwns1812.jiratask.ui.commit.JiraTaskCheckinHandlerFactory
 import io.github.gudwns1812.jiratask.ui.commit.JiraTaskCommitMessageProvider
@@ -24,7 +23,6 @@ class JiraTaskPluginRegistrationTest : BasePlatformTestCase() {
     fun `test every menu action is registered with its implementation`() {
         val manager = ActionManager.getInstance()
         val expected = mapOf(
-            "JiraTask.CreateStoryBranch" to CreateStoryBranchAction::class.java,
             "JiraTask.StartTask" to StartTaskAction::class.java,
             "JiraTask.Commit" to CommitWithJiraTaskAction::class.java,
             "JiraTask.RunSetupWizard" to RunSetupWizardAction::class.java,
@@ -42,21 +40,19 @@ class JiraTaskPluginRegistrationTest : BasePlatformTestCase() {
 
         assertTrue(group is DefaultActionGroup)
         val children = (group as DefaultActionGroup).childActionsOrStubs
-        assertEquals("액션 4개와 구분선 1개", 4, children.count { it !is Separator })
+        assertEquals("액션 3개와 구분선 1개", 3, children.count { it !is Separator })
         assertEquals(1, children.count { it is Separator })
         assertTrue(group.isPopup)
     }
 
-    fun `test the issue draft action is gone`() {
+    fun `test the removed actions are gone`() {
+        val manager = ActionManager.getInstance()
+
         // 사람이 스프린트 전에 Jira에서 이슈를 전부 만든다(RULE.md 전제 A). 도구는 만들지 않는다.
-        assertNull(
-            "이슈 초안 액션은 제거돼야 한다",
-            ActionManager.getInstance().getAction("JiraTask.CreateIssueDraft"),
-        )
-        assertNull(
-            "자리표시자 액션도 남아 있으면 안 된다",
-            ActionManager.getInstance().getAction("JiraTask.CreateIssue"),
-        )
+        assertNull("이슈 초안 액션은 제거돼야 한다", manager.getAction("JiraTask.CreateIssueDraft"))
+        assertNull("자리표시자 액션도 남아 있으면 안 된다", manager.getAction("JiraTask.CreateIssue"))
+        // 브랜치 이름에 규칙이 없다(RULE.md 5.1). 브랜치는 IDE의 기본 Git 기능으로 만든다.
+        assertNull("스토리 브랜치 액션은 제거돼야 한다", manager.getAction("JiraTask.CreateStoryBranch"))
     }
 
     fun `test the notification group is registered`() {
