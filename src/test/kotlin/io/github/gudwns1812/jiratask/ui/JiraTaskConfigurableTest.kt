@@ -112,7 +112,8 @@ class JiraTaskConfigurableTest : BasePlatformTestCase() {
         val texts = textsOf(configurable.createComponent())
 
         assertTrue(texts.count { it == JiraTaskConfigurable.NOT_CONFIGURED } >= 6)
-        assertTrue("기본 정책은 항상 보여준다", texts.any { it.contains("FE, BE, AI, QA, INFRA") })
+        // 업무 정책은 이슈를 만들 때만 쓰던 값이라 더는 설정에 없다(RULE.md 전제 A).
+        assertFalse(texts.any { it.contains("FE, BE, AI, QA, INFRA") })
     }
 
     fun `test reports no modification until an editable field changes`() {

@@ -2,6 +2,7 @@ package io.github.gudwns1812.jiratask.domain.policy
 
 import io.github.gudwns1812.jiratask.domain.jira.JiraNamedValue
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -9,54 +10,41 @@ import org.junit.Test
 class PolicyConfigTest {
 
     @Test
-    fun `default policy config matches RULE md defaults`() {
-        val policy = WorkPolicy.DEFAULT
-
-        assertEquals(listOf("FE", "BE", "AI", "QA", "INFRA"), policy.areas)
-        assertEquals(listOf(1, 2, 3, 5, 8), policy.storyPoints)
-        assertEquals("Infra", policy.labels.areas["INFRA"])
-    }
-
-    @Test
-    fun `overrides areas and area labels`() {
-        val policy = WorkPolicy.resolve(
+    fun `ignores the work policy keys an older version saved`() {
+        // 이슈를 만들 때만 쓰던 값이다. 남아 있어도 오류가 아니라 무시 대상이다.
+        val config = JiraTaskConfig.resolve(
             mapOf(
+                "projectKey" to "S15P11A108",
                 "areas" to listOf("FE", "MOBILE"),
+                "workCategories" to listOf("PLAN"),
+                "storyPoints" to listOf(1, 2, 13),
                 "labels" to mapOf("areas" to mapOf("MOBILE" to "Mobile")),
             ),
         )
 
-        assertEquals(listOf("FE", "MOBILE"), policy.areas)
-        assertEquals("Mobile", policy.labels.areas["MOBILE"])
+        assertEquals("S15P11A108", config.projectKey)
     }
 
     @Test
-    fun `rejects a story point outside the allowed set`() {
-        assertThrows(PolicyConfigurationError::class.java) {
-            WorkPolicy.resolve(mapOf("storyPoints" to listOf(1, 2, 13)))
-        }
+    fun `reads a file that has nothing but the old policy keys`() {
+        val config = JiraTaskConfig.resolve(mapOf("areas" to listOf("FE")))
+
+        assertNull(config.projectKey)
+        assertNull(config.jira)
     }
 
     @Test
-    fun `rejects a label key that is not in the allowed area list`() {
-        assertThrows(PolicyConfigurationError::class.java) {
-            WorkPolicy.resolve(mapOf("labels" to mapOf("areas" to mapOf("MOBILE" to "Mobile"))))
-        }
-    }
-
-    @Test
-    fun `rejects duplicate area values`() {
-        assertThrows(PolicyConfigurationError::class.java) {
-            WorkPolicy.resolve(mapOf("areas" to listOf("FE", "FE")))
-        }
-    }
-
-    @Test
-    fun `reads project key alongside policy overrides`() {
+    fun `does not write the old policy keys back out`() {
         val config = JiraTaskConfig.resolve(mapOf("projectKey" to "S15P11A108", "areas" to listOf("FE")))
 
-        assertEquals("S15P11A108", config.projectKey)
-        assertEquals(listOf("FE"), config.policy.areas)
+        assertEquals(setOf("projectKey"), config.toRawMap().keys)
+    }
+
+    @Test
+    fun `still rejects a key it has never known`() {
+        assertThrows(PolicyConfigurationError::class.java) {
+            JiraTaskConfig.resolve(mapOf("projectKey" to "S15P11A108", "unknownField" to 1))
+        }
     }
 
     @Test
@@ -99,13 +87,15 @@ class PolicyConfigTest {
     }
 
     @Test
-    fun `reports an invalid project key together with a duplicate area in one error`() {
+    fun `reports the invalid project key and the bad base url in one error`() {
         val error = assertThrows(PolicyConfigurationError::class.java) {
-            JiraTaskConfig.resolve(mapOf("projectKey" to "team project", "areas" to listOf("FE", "FE")))
+            JiraTaskConfig.resolve(
+                mapOf("projectKey" to "team project", "jira" to mapOf("baseUrl" to "ftp://team.atlassian.net")),
+            )
         }
 
         assertTrue(error.message!!.contains("projectKey"))
-        assertTrue(error.message!!.contains("areas"))
+        assertTrue(error.message!!.contains("baseUrl"))
     }
 
     @Test
@@ -140,14 +130,13 @@ class PolicyConfigTest {
     }
 
     @Test
-    fun `mergeWith preserves project key and policy when only jira base url changes`() {
+    fun `mergeWith preserves the project key when only the jira base url changes`() {
         val current = JiraTaskConfig.resolve(mapOf("projectKey" to "S15P11A108"))
 
         val merged = current.mergeWith(mapOf("jira" to mapOf("baseUrl" to "http://127.0.0.1:8080")))
 
         assertEquals("S15P11A108", merged.projectKey)
         assertEquals("http://127.0.0.1:8080", merged.jira?.baseUrl)
-        assertEquals(listOf(1, 2, 3, 5, 8), merged.policy.storyPoints)
     }
 
     @Test

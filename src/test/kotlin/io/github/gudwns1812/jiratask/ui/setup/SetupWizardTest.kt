@@ -138,16 +138,6 @@ class SetupWizardTest {
     }
 
     @Test
-    fun `keeps the default work policy after the wizard saves`() {
-        val repository = repository()
-
-        wizard(ScriptedPrompter(), repository, RecordingCredentialStore()).run()
-
-        assertEquals(listOf(1, 2, 3, 5, 8), repository.loadConfig().policy.storyPoints)
-        assertEquals(listOf("FE", "BE", "AI", "QA", "INFRA"), repository.loadConfig().policy.areas)
-    }
-
-    @Test
     fun `saves nothing when the connection dialog is cancelled`() {
         val repository = repository()
         val credentials = RecordingCredentialStore()

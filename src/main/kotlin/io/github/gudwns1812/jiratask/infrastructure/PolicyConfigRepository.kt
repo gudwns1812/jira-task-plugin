@@ -4,7 +4,6 @@ import com.google.gson.Gson
 import com.google.gson.JsonParser
 import io.github.gudwns1812.jiratask.domain.policy.JiraTaskConfig
 import io.github.gudwns1812.jiratask.domain.policy.PolicyConfigurationError
-import io.github.gudwns1812.jiratask.domain.policy.WorkPolicy
 import io.github.gudwns1812.jiratask.domain.policy.default
 import io.github.gudwns1812.jiratask.domain.policy.mergeWith
 import io.github.gudwns1812.jiratask.domain.policy.resolve
@@ -15,8 +14,6 @@ class PolicyConfigRepository(
 ) {
 
     fun hasConfig(): Boolean = storage.configJson.isNotBlank()
-
-    fun loadWorkPolicy(): WorkPolicy = loadConfig().policy
 
     fun loadConfig(): JiraTaskConfig {
         val json = storage.configJson

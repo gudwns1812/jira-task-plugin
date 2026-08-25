@@ -38,9 +38,6 @@ class JiraTaskConfigurable @JvmOverloads constructor(
     private val epicIssueTypeLabel = JBLabel()
     private val storyStartStatusLabel = JBLabel()
     private val taskDoneStatusLabel = JBLabel()
-    private val areasLabel = JBLabel()
-    private val workCategoriesLabel = JBLabel()
-    private val storyPointsLabel = JBLabel()
     private val problemLabel = JBLabel().apply { isVisible = false }
 
     private var saved: SettingsSnapshot = SettingsSnapshot.empty()
@@ -67,12 +64,6 @@ class JiraTaskConfigurable @JvmOverloads constructor(
                 row {
                     comment("이메일과 API 토큰은 이 화면에 표시하지 않습니다. 토큰은 IDE 비밀번호 저장소(PasswordSafe)에만 보관됩니다.")
                 }
-            }
-
-            group("업무 정책") {
-                row("영역:") { cell(areasLabel) }
-                row("업무 분류:") { cell(workCategoriesLabel) }
-                row("스토리 포인트:") { cell(storyPointsLabel) }
             }
 
             row {
@@ -122,9 +113,6 @@ class JiraTaskConfigurable @JvmOverloads constructor(
         epicIssueTypeLabel.text = snapshot.epicIssueType.orNotConfigured()
         storyStartStatusLabel.text = snapshot.storyStartStatus.orNotConfigured()
         taskDoneStatusLabel.text = snapshot.taskDoneStatus.orNotConfigured()
-        areasLabel.text = snapshot.areas.joinToString(", ")
-        workCategoriesLabel.text = snapshot.workCategories.joinToString(", ")
-        storyPointsLabel.text = snapshot.storyPoints.joinToString(", ")
         problemLabel.text = problem.orEmpty()
         problemLabel.isVisible = problem != null
     }

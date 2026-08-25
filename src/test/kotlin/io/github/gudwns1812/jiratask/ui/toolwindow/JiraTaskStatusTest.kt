@@ -21,9 +21,6 @@ class JiraTaskStatusTest {
         epicIssueType = "에픽",
         storyStartStatus = "진행 중",
         taskDoneStatus = "완료",
-        areas = listOf("FE"),
-        workCategories = listOf("PLAN"),
-        storyPoints = listOf(1),
     )
 
     private fun rowsOf(status: JiraTaskStatus): Map<String, String> = status.rows().toMap()

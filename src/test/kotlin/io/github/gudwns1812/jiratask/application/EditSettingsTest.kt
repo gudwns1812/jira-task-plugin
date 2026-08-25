@@ -60,15 +60,14 @@ class EditSettingsTest {
         (useCaseOf(store).load() as SettingsLoad.Loaded).snapshot
 
     @Test
-    fun `loads an empty snapshot with the default policy when nothing is configured`() {
+    fun `loads an empty snapshot when nothing is configured`() {
         val snapshot = loadedSnapshot(FakeConfigStore())
 
         assertEquals("", snapshot.projectKey)
         assertEquals("", snapshot.baseUrl)
         assertEquals("", snapshot.projectName)
         assertEquals("", snapshot.storyIssueType)
-        assertEquals(listOf("FE", "BE", "AI", "QA", "INFRA"), snapshot.areas)
-        assertEquals(listOf(1, 2, 3, 5, 8), snapshot.storyPoints)
+        assertEquals("", snapshot.storyStartStatus)
     }
 
     @Test
@@ -100,7 +99,7 @@ class EditSettingsTest {
             snapshot.epicIssueType,
             snapshot.storyStartStatus,
             snapshot.taskDoneStatus,
-        ) + snapshot.areas + snapshot.workCategories
+        )
         assertTrue(shownValues.none { it.contains("gudwns1423") })
     }
 
@@ -199,11 +198,12 @@ class EditSettingsTest {
     }
 
     @Test
-    fun `an empty snapshot exposes the default policy`() {
+    fun `an empty snapshot has no configured value at all`() {
         val snapshot = SettingsSnapshot.empty()
 
         assertEquals("", snapshot.projectKey)
-        assertEquals(listOf("PLAN", "UX", "DESIGN", "TECH", "INFRA", "DOCS", "QA", "PT"), snapshot.workCategories)
+        assertEquals("", snapshot.baseUrl)
+        assertEquals("", snapshot.taskDoneStatus)
     }
 
     @Test
@@ -215,7 +215,6 @@ class EditSettingsTest {
                     baseUrl = "https://old.atlassian.net",
                     project = JiraProjectRef("10000", "예전 프로젝트"),
                 ),
-                policy = JiraTaskConfig.default().policy,
             ),
         )
 
