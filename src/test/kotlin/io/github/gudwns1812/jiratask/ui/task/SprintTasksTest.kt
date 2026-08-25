@@ -130,7 +130,7 @@ class SprintTasksTest : BasePlatformTestCase() {
 
         val found = cache.find("S15P11A108-257", settings()) { reader }
 
-        assertEquals("S15P11A108-257", found?.key)
+        assertEquals("S15P11A108-257", (found as TaskAnswer.Known).task.key)
         assertEquals("목록에 있으면 되묻지 않는다", 0, reader.singleCalls)
     }
 
@@ -143,7 +143,7 @@ class SprintTasksTest : BasePlatformTestCase() {
 
         val found = cache.find("S15P11A108-999", settings()) { reader }
 
-        assertEquals("S15P11A108-999", found?.key)
+        assertEquals("S15P11A108-999", (found as TaskAnswer.Known).task.key)
         assertEquals(1, reader.singleCalls)
     }
 
@@ -162,20 +162,38 @@ class SprintTasksTest : BasePlatformTestCase() {
         val cache = sprintTasks()
         cache.current(settings(), { reader }) { 0 }
 
-        assertNotNull(cache.find("s15p11a108-257", settings()) { reader })
+        assertTrue(cache.find("s15p11a108-257", settings()) { reader } is TaskAnswer.Known)
         assertEquals(0, reader.singleCalls)
     }
 
-    fun `test has nothing to offer when the key lookup fails`() {
-        val reader = FakeReader(failure = JiraNetworkError())
+    fun `test separates a key it could not ask about from one that does not exist`() {
+        // 커밋 가드는 없는 키에는 경고하고 물어보지 못한 키에는 침묵한다(RULE.md 5.2).
+        val offline = FakeReader(failure = JiraNetworkError())
+        val missing = FakeReader(single = null)
 
-        assertNull(sprintTasks().find("S15P11A108-1", settings()) { reader })
+        assertEquals(TaskAnswer.Unanswered, sprintTasks().find("S15P11A108-1", settings()) { offline })
+        assertEquals(TaskAnswer.NotFound, sprintTasks().find("S15P11A108-9999", settings()) { missing })
     }
 
-    fun `test has nothing to offer for a key that does not exist`() {
+    fun `test cannot answer without settings instead of claiming the key is missing`() {
         val reader = FakeReader(single = null)
 
-        assertNull(sprintTasks().find("S15P11A108-9999", settings()) { reader })
+        assertEquals(TaskAnswer.Unanswered, sprintTasks().find("S15P11A108-1", settings(configured = false)) { reader })
+        assertEquals("설정이 없으면 Jira를 부르지 않는다", 0, reader.singleCalls)
+    }
+
+    fun `test the cache-only lookup never touches the network`() {
+        // 커밋 직전 검사는 EDT에서 불린다. 여기서 네트워크를 타면 커밋 창이 멈춘다.
+        val reader = FakeReader(tasks = listOf(task("S15P11A108-257")), single = task("S15P11A108-999"))
+        val cache = sprintTasks()
+
+        assertEquals(TaskAnswer.Unanswered, cache.findCached("S15P11A108-257"))
+
+        cache.current(settings(), { reader }) { 0 }
+
+        assertTrue(cache.findCached("S15P11A108-257") is TaskAnswer.Known)
+        assertEquals("캐시에 없는 키는 모른다고 답한다", TaskAnswer.Unanswered, cache.findCached("S15P11A108-999"))
+        assertEquals(0, reader.singleCalls)
     }
 
     fun `test invalidate drops both the list and the single keys`() {

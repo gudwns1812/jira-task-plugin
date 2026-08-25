@@ -12,6 +12,22 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentMap
 import java.util.concurrent.atomic.AtomicReference
 
+/**
+ * 이슈 키 하나를 물어본 답.
+ *
+ * [NotFound]와 [Unanswered]를 반드시 갈라 둔다. 커밋 가드는 없는 키에는 경고하지만
+ * 물어보지 못한 키에는 아무 말도 하지 않는다 — 확인할 수 없는 것과 위반한 것은 다르다(RULE.md 5.2).
+ */
+sealed interface TaskAnswer {
+    data class Known(val task: SprintTask) : TaskAnswer
+
+    /** Jira가 그런 이슈는 없다고 답했다(또는 볼 권한이 없다). */
+    data object NotFound : TaskAnswer
+
+    /** 물어보지 못했다 — 설정이 없거나 Jira가 답하지 않았다. */
+    data object Unanswered : TaskAnswer
+}
+
 /** 스프린트 작업을 읽어 본 결과. 실패를 값으로 돌려준다 — 커밋 창은 예외를 감당할 수 없다. */
 sealed interface SprintTaskLoad {
     data class Loaded(val tasks: List<SprintTask>) : SprintTaskLoad
@@ -82,22 +98,35 @@ class SprintTasks(private val project: Project) {
      *
      * 목록은 담당자로 좁힌 것이라 남의 작업 키는 여기에 없다(대신 처리, 페어 작업).
      * 캐시에 없다는 것만으로 "스프린트 밖"이라고 볼 수 없는 이유다(RULE.md 5.2).
-     * 확인할 수 없으면 null — 호출한 쪽이 "모른다"와 "위반"을 구분해야 한다.
      */
     fun find(
         issueKey: String,
         settings: JiraTaskSettings = JiraTaskSettings(),
         createReader: (TaskTransitionSettings) -> SprintTaskReader = ::jiraClientFor,
-    ): SprintTask? {
-        cached.get()?.tasks?.firstOrNull { it.key.equals(issueKey, ignoreCase = true) }?.let { return it }
-        singles[issueKey.uppercase()]?.let { return it }
+    ): TaskAnswer {
+        cached.get()?.tasks?.firstOrNull { it.key.equals(issueKey, ignoreCase = true) }
+            ?.let { return TaskAnswer.Known(it) }
+        singles[issueKey.uppercase()]?.let { return TaskAnswer.Known(it) }
 
-        val ready = settings.forTaskTransition() as? SettingsLookup.Ready ?: return null
+        val ready = settings.forTaskTransition() as? SettingsLookup.Ready ?: return TaskAnswer.Unanswered
         return try {
-            createReader(ready.value).task(issueKey)?.also { singles[issueKey.uppercase()] = it }
+            val task = createReader(ready.value).task(issueKey)
+                ?: return TaskAnswer.NotFound
+            singles[issueKey.uppercase()] = task
+            TaskAnswer.Known(task)
         } catch (error: Exception) {
-            null
+            TaskAnswer.Unanswered
         }
+    }
+
+    /**
+     * 이미 알고 있는 답만 준다. **네트워크를 타지 않으므로 EDT에서 불러도 안전하다.**
+     * 커밋 직전 검사가 쓰는 자리다 — 커밋 창을 멈춰 가며 물어볼 만한 일이 아니다.
+     */
+    fun findCached(issueKey: String): TaskAnswer {
+        cached.get()?.tasks?.firstOrNull { it.key.equals(issueKey, ignoreCase = true) }
+            ?.let { return TaskAnswer.Known(it) }
+        return singles[issueKey.uppercase()]?.let { TaskAnswer.Known(it) } ?: TaskAnswer.Unanswered
     }
 
     /** 캐시를 비운다. 작업을 시작했거나 설정이 바뀌었을 때. */
