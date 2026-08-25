@@ -1,6 +1,7 @@
 package io.github.gudwns1812.jiratask.ui
 
 import io.github.gudwns1812.jiratask.application.CredentialStore
+import io.github.gudwns1812.jiratask.domain.jira.JiraNamedValue
 import io.github.gudwns1812.jiratask.infrastructure.CredentialStorageError
 import io.github.gudwns1812.jiratask.infrastructure.JiraTaskConfigStorage
 import io.github.gudwns1812.jiratask.infrastructure.PolicyConfigRepository
@@ -32,6 +33,23 @@ class JiraTaskSettingsTest {
                     "email" to "gudwns1423@gmail.com",
                     "issueTypes" to mapOf("story" to mapOf("id" to "10001", "name" to "스토리")),
                     "statuses" to mapOf("story" to mapOf("start" to mapOf("id" to "21", "name" to "진행 중"))),
+                ),
+            ),
+        )
+    }
+
+    private fun taskConfiguredRepository() = repository().apply {
+        saveConfig(
+            mapOf(
+                "projectKey" to "S15P11A108",
+                "jira" to mapOf(
+                    "baseUrl" to "https://team.atlassian.net",
+                    "email" to "gudwns1423@gmail.com",
+                    "issueTypes" to mapOf("task" to mapOf("id" to "10002", "name" to "작업")),
+                    "statuses" to mapOf(
+                        "story" to mapOf("start" to mapOf("id" to "21", "name" to "진행 중")),
+                        "task" to mapOf("done" to mapOf("id" to "31", "name" to "완료")),
+                    ),
                 ),
             ),
         )
@@ -148,5 +166,42 @@ class JiraTaskSettingsTest {
             assertTrue(lookup is SettingsLookup.Missing)
             assertTrue((lookup as SettingsLookup.Missing).message.contains("projectKey"))
         }
+    }
+
+    @Test
+    fun `returns everything a task transition needs`() {
+        val ready = settings(taskConfiguredRepository()).forTaskTransition() as SettingsLookup.Ready
+
+        assertEquals(
+            TaskTransitionSettings(
+                projectKey = "S15P11A108",
+                baseUrl = "https://team.atlassian.net",
+                email = "gudwns1423@gmail.com",
+                apiToken = "token",
+                taskIssueTypeId = "10002",
+                inProgressStatus = JiraNamedValue("21", "진행 중"),
+                doneStatus = JiraNamedValue("31", "완료"),
+            ),
+            ready.value,
+        )
+    }
+
+    @Test
+    fun `names every missing value for a task transition`() {
+        val missing = settings(configuredRepository()).forTaskTransition() as SettingsLookup.Missing
+
+        assertTrue(missing.message.contains("작업 타입(설정 마법사)"))
+        assertTrue(missing.message.contains("작업 완료 상태(설정 마법사)"))
+    }
+
+    @Test
+    fun `prefers the environment token for a task transition`() {
+        val ready = settings(
+            taskConfiguredRepository(),
+            credentials = FakeCredentials(failure = CredentialStorageError()),
+            environment = { name -> "env-token".takeIf { name == "JIRA_API_TOKEN" } },
+        ).forTaskTransition() as SettingsLookup.Ready
+
+        assertEquals("env-token", ready.value.apiToken)
     }
 }

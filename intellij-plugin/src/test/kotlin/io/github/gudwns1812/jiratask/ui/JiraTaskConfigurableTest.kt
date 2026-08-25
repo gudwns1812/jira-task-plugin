@@ -4,6 +4,7 @@ import com.intellij.openapi.extensions.ExtensionPointName
 import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.options.ConfigurableEP
 import com.intellij.openapi.options.ConfigurationException
+import com.intellij.openapi.project.Project
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import io.github.gudwns1812.jiratask.application.EditSettingsUseCase
 import io.github.gudwns1812.jiratask.domain.policy.PolicyConfigurationError
@@ -13,6 +14,7 @@ import java.awt.Container
 import javax.swing.JComponent
 import javax.swing.JLabel
 import javax.swing.text.JTextComponent
+import kotlinx.coroutines.runBlocking
 
 class JiraTaskConfigurableTest : BasePlatformTestCase() {
 
@@ -220,6 +222,14 @@ class JiraTaskConfigurableTest : BasePlatformTestCase() {
     fun `test reports the setup as needed only while nothing is configured`() {
         assertTrue(JiraTaskSetupStartupActivity.setupNeeded(repository()))
         assertFalse(JiraTaskSetupStartupActivity.setupNeeded(configuredRepository()))
+    }
+
+    fun `test the startup activity refreshes the current task number`() {
+        val refreshed = mutableListOf<Project>()
+
+        runBlocking { JiraTaskSetupStartupActivity { refreshed += it }.execute(project) }
+
+        assertEquals("상태 표시줄 위젯을 숨겨도 캐시가 채워져야 한다", listOf(project), refreshed)
     }
 
     private fun buttonsOf(container: Container): List<javax.swing.JButton> {

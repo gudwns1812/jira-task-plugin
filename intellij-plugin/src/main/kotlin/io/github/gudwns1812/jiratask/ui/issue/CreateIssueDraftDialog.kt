@@ -1,38 +1,46 @@
 package io.github.gudwns1812.jiratask.ui.issue
 
-import com.intellij.openapi.ide.CopyPasteManager
+import com.intellij.icons.AllIcons
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
-import com.intellij.ui.components.JBScrollPane
-import com.intellij.ui.components.JBTextArea
+import com.intellij.ui.components.JBLabel
 import com.intellij.ui.dsl.builder.panel
-import io.github.gudwns1812.jiratask.domain.policy.WorkPolicy
-import java.awt.datatransfer.StringSelection
+import com.intellij.util.ui.JBUI
+import com.intellij.util.ui.NamedColorUtil
+import com.intellij.util.ui.UIUtil
+import java.awt.Color
+import javax.swing.BoxLayout
+import javax.swing.Icon
 import javax.swing.JComponent
+import javax.swing.JPanel
 
 /**
- * CLI의 `template` + `validate --file` + `create --dry-run`을 하나로 합친 다이얼로그다.
- * 입력이 바뀔 때마다 검증 결과를 갱신하고, "미리보기"로 생성 요청 초안(JSON)을 보여준다.
+ * 이슈를 만드는 다이얼로그. CLI의 `template`(작성 예시) + `validate`(실시간 검증)에 더해,
+ * 확인을 누르면 **실제로 Jira 이슈를 만든다**.
  *
- * 실제 Jira 생성은 CLI에도 없는 기능이라(`create`는 `--dry-run` 없이는 거부한다) 여기서도 제공하지 않는다.
- * 대신 확인 버튼은 만들어진 초안 JSON을 클립보드로 복사한다.
+ * 입력이 바뀔 때마다 검증하고, 문제는 필드 경로(`dueDate`) 대신 화면의 칸 이름(`기한`)으로
+ * 빨간색으로 알려준다. 문제가 난 칸이 접혀 있으면 펼쳐 바로 고칠 수 있게 한다.
  */
-class CreateIssueDraftDialog(
+class CreateIssueDraftDialog @JvmOverloads constructor(
     project: Project?,
-    private val projectKey: String,
-    private val policy: WorkPolicy = WorkPolicy.DEFAULT,
+    private val context: IssueDraftContext,
+    private val onRemember: (RememberedInput) -> Unit = {},
+    /** 확인을 눌렀을 때 실제 생성을 맡는다. 다이얼로그는 입력과 검증만 책임진다. */
+    private val onCreate: (IssueFormInput, IssueDraftView) -> Unit = { _, _ -> },
 ) : DialogWrapper(project, false) {
 
-    val form: IssueDraftForm = IssueDraftForm { refresh() }
+    val form: IssueDraftForm = IssueDraftForm(context) { refresh() }
 
-    private val problemsArea: JBTextArea = readOnlyArea(4)
-    private val previewArea: JBTextArea = readOnlyArea(10)
+    private val problemsPanel: JPanel = JPanel().apply {
+        layout = BoxLayout(this, BoxLayout.Y_AXIS)
+        isOpaque = false
+    }
 
-    private var view: IssueDraftView = IssueDraftPresenter.present(form.values(), projectKey, policy)
+    private var view: IssueDraftView = IssueDraftPresenter.present(form.values(), context.projectKey, context.policy)
 
     init {
-        title = "Jira 이슈 초안"
-        setOKButtonText("초안 복사")
+        title = "Jira 이슈 만들기"
+        setOKButtonText("만들기")
         init()
         refresh()
     }
@@ -40,13 +48,7 @@ class CreateIssueDraftDialog(
     override fun createCenterPanel(): JComponent = panel {
         row { cell(form.panel) }
         group("검증 결과") {
-            row { cell(JBScrollPane(problemsArea)) }
-        }
-        group("생성 요청 초안") {
-            row {
-                button("미리보기") { showPreview() }
-            }
-            row { cell(JBScrollPane(previewArea)) }
+            row { cell(problemsPanel) }
         }
     }
 
@@ -54,44 +56,59 @@ class CreateIssueDraftDialog(
     fun currentView(): IssueDraftView = view
 
     /** 화면에 보이는 검증 결과 문구. */
-    fun problemsText(): String = problemsArea.text
+    fun problemsText(): String = problemLabels().joinToString("\n") { it.text }
 
-    /** 화면에 보이는 요청 초안 문구. 미리보기를 누르기 전에는 빈 문자열이다. */
-    fun previewText(): String = previewArea.text
+    /** 검증 결과 줄들. 색까지 확인할 수 있게 컴포넌트로 돌려준다. */
+    fun problemLabels(): List<JBLabel> = problemsPanel.components.filterIsInstance<JBLabel>()
 
     fun refresh() {
-        view = IssueDraftPresenter.present(form.values(), projectKey, policy)
-        problemsArea.text = problemsText(view)
+        view = IssueDraftPresenter.present(form.values(), context.projectKey, context.policy)
+        // 고칠 칸이 접혀 있으면 오류를 보여줘도 손을 쓸 수 없다.
+        form.revealProblems(view.problemPaths())
+        showProblems(view)
         isOKActionEnabled = view.isValid
+    }
+
+    // 다이얼로그를 띄우지 않고 확인 동작을 검증할 수 있게 공개 범위를 넓힌다.
+    public override fun doOKAction() {
         if (!view.isValid) {
-            previewArea.text = ""
+            return
         }
-    }
-
-    fun showPreview() {
-        previewArea.text = view.json ?: NO_DRAFT
-    }
-
-    override fun doOKAction() {
-        val json = view.json ?: return
-        CopyPasteManager.getInstance().setContents(StringSelection(json))
+        // 다음에 열 때 다시 타이핑하지 않도록 이번에 쓴 값을 기억한다.
+        onRemember(form.rememberedInput())
+        onCreate(form.values(), view)
         super.doOKAction()
     }
 
-    private fun problemsText(view: IssueDraftView): String = buildString {
-        view.errors.forEach { appendLine("오류 - $it") }
-        view.warnings.forEach { appendLine("경고 - $it") }
-        if (view.errors.isEmpty()) {
-            appendLine("오류 없음. 레이블: ${view.labels.joinToString(", ").ifEmpty { "없음" }}")
+    private fun showProblems(view: IssueDraftView) {
+        problemsPanel.removeAll()
+
+        view.errors.forEach { problem ->
+            problemsPanel.add(
+                problemLabel(problem.display(), AllIcons.General.Error, NamedColorUtil.getErrorForeground()),
+            )
         }
-    }.trimEnd()
+        view.warnings.forEach { problem ->
+            problemsPanel.add(problemLabel(problem.display(), AllIcons.General.Warning, UIUtil.getLabelForeground()))
+        }
+        if (view.errors.isEmpty()) {
+            val labels = view.labels.joinToString(", ").ifEmpty { "없음" }
+            problemsPanel.add(
+                problemLabel(
+                    "만들 준비가 됐습니다. 레이블: $labels",
+                    AllIcons.General.InspectionsOK,
+                    UIUtil.getLabelForeground(),
+                ),
+            )
+        }
 
-    private fun readOnlyArea(rows: Int): JBTextArea = JBTextArea(rows, 60).apply {
-        isEditable = false
-        lineWrap = true
+        problemsPanel.revalidate()
+        problemsPanel.repaint()
     }
 
-    companion object {
-        const val NO_DRAFT: String = "오류를 먼저 해결하세요."
-    }
+    private fun problemLabel(text: String, icon: Icon, color: Color): JBLabel =
+        JBLabel(text, icon, JBLabel.LEFT).apply {
+            foreground = color
+            border = JBUI.Borders.emptyBottom(2)
+        }
 }

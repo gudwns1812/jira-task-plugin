@@ -6,6 +6,10 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import io.github.gudwns1812.jiratask.domain.jira.JiraAuthenticationError
+import io.github.gudwns1812.jiratask.domain.jira.JiraCreatedIssue
+import io.github.gudwns1812.jiratask.domain.jira.JiraDraftReader
+import io.github.gudwns1812.jiratask.domain.jira.JiraFieldIds
+import io.github.gudwns1812.jiratask.domain.jira.JiraIssueCreator
 import io.github.gudwns1812.jiratask.domain.jira.JiraIssue
 import io.github.gudwns1812.jiratask.domain.jira.JiraIssueTypeWithStatuses
 import io.github.gudwns1812.jiratask.domain.jira.JiraNamedValue
@@ -13,7 +17,10 @@ import io.github.gudwns1812.jiratask.domain.jira.JiraNetworkError
 import io.github.gudwns1812.jiratask.domain.jira.JiraProject
 import io.github.gudwns1812.jiratask.domain.jira.JiraRequestError
 import io.github.gudwns1812.jiratask.domain.jira.JiraSetupReader
+import io.github.gudwns1812.jiratask.domain.jira.JiraStoryContext
+import io.github.gudwns1812.jiratask.domain.jira.JiraTransition
 import io.github.gudwns1812.jiratask.domain.jira.StoryIssueReader
+import io.github.gudwns1812.jiratask.domain.jira.TaskIssueTransitioner
 import java.net.URI
 import java.net.URLEncoder
 import java.net.http.HttpClient
@@ -47,13 +54,13 @@ class JiraClient(
     email: String,
     apiToken: String,
     private val transport: JiraHttpTransport = HttpClientJiraTransport(),
-) : StoryIssueReader, JiraSetupReader {
+) : StoryIssueReader, JiraSetupReader, JiraDraftReader, JiraIssueCreator, TaskIssueTransitioner {
 
     private val baseUrl = baseUrl.trimEnd('/')
     private val authorization = "Basic " + Base64.getEncoder().encodeToString("$email:$apiToken".toByteArray())
 
     override fun getIssue(issueKey: String): JiraIssue {
-        val body = requestObject("/rest/api/3/issue/${encode(issueKey)}?fields=issuetype,status")
+        val body = requestObject("/rest/api/3/issue/${encode(issueKey)}?fields=issuetype,status,summary")
         val fields = body.objectOrNull("fields")
         val issuetype = fields?.objectOrNull("issuetype")
         val status = fields?.objectOrNull("status")
@@ -68,7 +75,182 @@ class JiraClient(
             throw JiraRequestError("Jira 이슈 응답 형식이 올바르지 않습니다.")
         }
 
-        return JiraIssue(key, issueTypeId, issueTypeName, statusId, statusName)
+        return JiraIssue(key, issueTypeId, issueTypeName, statusId, statusName, fields.stringOrNull("summary").orEmpty())
+    }
+
+    override fun currentUserName(): String? = try {
+        requestObject("/rest/api/3/myself").stringOrNull("displayName")
+    } catch (error: JiraRequestError) {
+        null
+    }
+
+    override fun listPriorities(): List<String> = try {
+        val json = requestJson("/rest/api/3/priority")
+        (json as? JsonArray)?.mapNotNull { it.takeIf { item -> item.isJsonObject }?.asJsonObject?.stringOrNull("name") }
+            ?: emptyList()
+    } catch (error: JiraRequestError) {
+        emptyList()
+    }
+
+    /**
+     * 스토리에서 물려받을 값. 스프린트는 Jira 사이트마다 커스텀 필드 ID가 달라 REST v3로는 안정적으로
+     * 읽을 수 없으므로, 이름이 고정된 Agile API를 먼저 쓰고 실패하면 v3의 `parent`만 읽는다.
+     */
+    override fun storyContext(storyKey: String): JiraStoryContext {
+        agileStoryContext(storyKey)?.let { return it }
+
+        val fields = requestObject("/rest/api/3/issue/${encode(storyKey)}?fields=summary,parent").objectOrNull("fields")
+        return JiraStoryContext(
+            summary = fields?.stringOrNull("summary"),
+            epicKey = fields?.objectOrNull("parent")?.stringOrNull("key"),
+            sprint = null,
+        )
+    }
+
+    private fun agileStoryContext(storyKey: String): JiraStoryContext? = try {
+        val fields = requestObject("/rest/agile/1.0/issue/${encode(storyKey)}?fields=summary,epic,sprint,parent")
+            .objectOrNull("fields") ?: return null
+        JiraStoryContext(
+            summary = fields.stringOrNull("summary"),
+            epicKey = fields.objectOrNull("epic")?.stringOrNull("key")
+                ?: fields.objectOrNull("parent")?.stringOrNull("key"),
+            sprint = fields.objectOrNull("sprint")?.stringOrNull("name"),
+            sprintId = fields.objectOrNull("sprint")?.get("id")?.takeIf { it.isJsonPrimitive }?.asInt,
+        )
+    } catch (error: JiraRequestError) {
+        null
+    }
+
+    override fun createIssue(fields: Map<String, Any?>): JiraCreatedIssue {
+        val body = gson.toJson(mapOf("fields" to fields))
+        val response = parseObject(
+            request("/rest/api/3/issue", method = "POST", body = body, extraHeaders = JSON_CONTENT_TYPE),
+        )
+        val key = response.stringOrNull("key")
+            ?: throw JiraRequestError("Jira가 만든 이슈 키를 알려주지 않았습니다.")
+        return JiraCreatedIssue(key)
+    }
+
+    override fun findAccountId(query: String): String? {
+        val json = requestJson("/rest/api/3/user/search?query=${encode(query)}")
+        val users = (json as? JsonArray) ?: return null
+        return users.asSequence()
+            .mapNotNull { it.takeIf { user -> user.isJsonObject }?.asJsonObject }
+            .mapNotNull { it.stringOrNull("accountId") }
+            .firstOrNull()
+    }
+
+    /** 스토리 포인트·스프린트는 사이트마다 커스텀 필드 ID가 달라 이름으로 찾아야 한다. */
+    override fun findFieldIds(): JiraFieldIds {
+        val json = requestJson("/rest/api/3/field")
+        val fields = (json as? JsonArray) ?: return JiraFieldIds()
+        val decoded = fields.asSequence()
+            .mapNotNull { it.takeIf { field -> field.isJsonObject }?.asJsonObject }
+            .mapNotNull { field ->
+                val id = field.stringOrNull("id") ?: return@mapNotNull null
+                DecodedField(
+                    id = id,
+                    name = field.stringOrNull("name")?.trim()?.lowercase().orEmpty(),
+                    customType = field.objectOrNull("schema")?.stringOrNull("custom"),
+                )
+            }
+            .toList()
+
+        return JiraFieldIds(
+            storyPoints = decoded.firstByName(STORY_POINT_FIELD_NAMES),
+            // 스프린트 필드 이름은 사이트 로케일에 따라 "스프린트"로 올 수 있으므로, 이름보다
+            // Jira Software가 붙이는 필드 타입을 먼저 본다(로케일과 무관하게 고정된 값이다).
+            sprint = decoded.firstOrNull { it.customType == SPRINT_FIELD_TYPE }?.id
+                ?: decoded.firstByName(SPRINT_FIELD_NAMES),
+        )
+    }
+
+    private fun List<DecodedField>.firstByName(candidates: List<String>): String? =
+        candidates.firstNotNullOfOrNull { candidate -> firstOrNull { it.name == candidate }?.id }
+
+    private data class DecodedField(val id: String, val name: String, val customType: String?)
+
+    override fun findSprintId(projectKey: String, sprintName: String): Int? {
+        val matchingIds = linkedSetOf<Int>()
+        for (boardId in boardIds(projectKey)) {
+            // 권한이 없거나 응답이 깨진 보드 하나가 나머지 보드 탐색을 막지 않게 한다.
+            val found = try {
+                sprintIdsNamed(boardId, sprintName)
+            } catch (error: Exception) {
+                continue
+            }
+            matchingIds += found
+            // 같은 이름의 서로 다른 스프린트가 있으면 잘못 지정하지 않도록 포기한다.
+            if (matchingIds.size > 1) {
+                return null
+            }
+        }
+        return matchingIds.singleOrNull()
+    }
+
+    /** 보드 하나에서 이름이 정확히 일치하는 진행 중·예정 스프린트 ID들. 두 개를 찾으면 더 보지 않는다. */
+    private fun sprintIdsNamed(boardId: Int, sprintName: String): List<Int> {
+        val ids = linkedSetOf<Int>()
+        var startAt = 0
+        while (true) {
+            val page = requestObject(
+                "/rest/agile/1.0/board/$boardId/sprint?state=active,future&startAt=$startAt&maxResults=50",
+            )
+            val sprints = page.arrayOrNull("values")
+                ?: throw JiraRequestError("Jira 스프린트 목록 응답 형식이 올바르지 않습니다.")
+            sprints.asSequence()
+                .mapNotNull { it.takeIf { sprint -> sprint.isJsonObject }?.asJsonObject }
+                .filter { it.stringOrNull("name") == sprintName }
+                .mapNotNull { it.intOrNull("id") }
+                .forEach { ids += it }
+            if (ids.size > 1) {
+                return ids.toList()
+            }
+
+            val isLast = page.booleanOrNull("isLast")
+                ?: throw JiraRequestError("Jira 스프린트 목록 응답 형식이 올바르지 않습니다.")
+            if (isLast) {
+                return ids.toList()
+            }
+            if (sprints.isEmpty) {
+                throw JiraRequestError("Jira 스프린트 목록의 다음 페이지를 확인할 수 없습니다.")
+            }
+            startAt += sprints.size()
+        }
+    }
+
+    private fun boardIds(projectKey: String): List<Int> {
+        val ids = mutableListOf<Int>()
+        var startAt = 0
+        while (true) {
+            val page = requestObject(
+                "/rest/agile/1.0/board?projectKeyOrId=${encode(projectKey)}&startAt=$startAt&maxResults=50",
+            )
+            val boards = page.arrayOrNull("values")
+                ?: throw JiraRequestError("Jira 보드 목록 응답 형식이 올바르지 않습니다.")
+            ids += boards.mapNotNull { it.takeIf { board -> board.isJsonObject }?.asJsonObject?.intOrNull("id") }
+
+            val isLast = page.booleanOrNull("isLast")
+                ?: throw JiraRequestError("Jira 보드 목록 응답 형식이 올바르지 않습니다.")
+            if (isLast) {
+                return ids
+            }
+            if (boards.isEmpty) {
+                throw JiraRequestError("Jira 보드 목록의 다음 페이지를 확인할 수 없습니다.")
+            }
+            startAt += boards.size()
+        }
+    }
+
+    override fun linkIssues(inwardKey: String, outwardKey: String, linkTypeName: String) {
+        val body = gson.toJson(
+            mapOf(
+                "type" to mapOf("name" to linkTypeName),
+                "inwardIssue" to mapOf("key" to inwardKey),
+                "outwardIssue" to mapOf("key" to outwardKey),
+            ),
+        )
+        request("/rest/api/3/issueLink", method = "POST", body = body, extraHeaders = JSON_CONTENT_TYPE)
     }
 
     override fun verifyIdentity() {
@@ -104,7 +286,8 @@ class JiraClient(
             if (isLast) {
                 return projects
             }
-            startAt += 50
+            // 요청한 maxResults가 아니라 실제로 받은 개수만큼 넘긴다(서버가 더 적게 줄 수 있다).
+            startAt += values.size()
         }
     }
 
@@ -116,21 +299,22 @@ class JiraClient(
         return array.map(::decodeIssueTypeWithStatuses)
     }
 
-    override fun findTransitionId(issueKey: String, targetStatusId: String): String? {
+    override fun findTransitionId(issueKey: String, targetStatusId: String): String? =
+        listTransitions(issueKey).firstOrNull { it.toStatusId == targetStatusId }?.id
+
+    override fun listTransitions(issueKey: String): List<JiraTransition> {
         val body = requestObject("/rest/api/3/issue/${encode(issueKey)}/transitions")
         val transitions = body.arrayOrNull("transitions")
             ?: throw JiraRequestError("Jira 전환 응답 형식이 올바르지 않습니다.")
 
-        for (element in transitions) {
-            val obj = element.takeIf { it.isJsonObject }?.asJsonObject ?: continue
-            val id = obj.stringOrNull("id")
-            val targetId = obj.objectOrNull("to")?.stringOrNull("id")
-            if (id != null && targetId == targetStatusId) {
-                return id
-            }
-        }
+        return transitions.mapNotNull { element ->
+            val obj = element.takeIf { it.isJsonObject }?.asJsonObject ?: return@mapNotNull null
+            val id = obj.stringOrNull("id") ?: return@mapNotNull null
+            val target = obj.objectOrNull("to") ?: return@mapNotNull null
+            val targetId = target.stringOrNull("id") ?: return@mapNotNull null
 
-        return null
+            JiraTransition(id, targetId, target.stringOrNull("name").orEmpty())
+        }
     }
 
     override fun transition(issueKey: String, transitionId: String) {
@@ -171,6 +355,8 @@ class JiraClient(
         }
     }
 
+    private val gson = Gson()
+
     private fun encode(value: String): String = URLEncoder.encode(value, Charsets.UTF_8).replace("+", "%20")
 
     private fun parseJson(text: String): JsonElement = try {
@@ -208,6 +394,17 @@ class JiraClient(
     }
 }
 
+private val JSON_CONTENT_TYPE = mapOf("Content-Type" to "application/json")
+
+/** 팀 관리형·회사 관리형 프로젝트에서 스토리 포인트 필드 이름이 다르다. */
+private val STORY_POINT_FIELD_NAMES =
+    listOf("story points", "story point estimate", "스토리 포인트", "스토리 포인트 추정치")
+
+/** Jira Software가 스프린트 필드에 붙이는 타입. 필드 이름이 번역돼도 이 값은 그대로다. */
+private const val SPRINT_FIELD_TYPE = "com.pyxis.greenhopper.jira:gh-sprint"
+
+private val SPRINT_FIELD_NAMES = listOf("sprint", "스프린트")
+
 private fun JsonObject.objectOrNull(key: String): JsonObject? = get(key)?.takeIf { it.isJsonObject }?.asJsonObject
 
 private fun JsonObject.arrayOrNull(key: String): JsonArray? = get(key)?.takeIf { it.isJsonArray }?.asJsonArray
@@ -217,3 +414,6 @@ private fun JsonObject.stringOrNull(key: String): String? =
 
 private fun JsonObject.booleanOrNull(key: String): Boolean? =
     get(key)?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isBoolean }?.asBoolean
+
+private fun JsonObject.intOrNull(key: String): Int? =
+    get(key)?.takeIf { it.isJsonPrimitive }?.let { runCatching { it.asInt }.getOrNull() }

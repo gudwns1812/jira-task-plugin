@@ -1,5 +1,6 @@
 package io.github.gudwns1812.jiratask.ui.issue
 
+import com.google.gson.GsonBuilder
 import com.google.gson.JsonParser
 import io.github.gudwns1812.jiratask.domain.policy.WorkPolicy
 import org.junit.Assert.assertEquals
@@ -34,17 +35,17 @@ class IssueDraftPresenterTest {
     fun `builds a draft for a valid task with derived labels`() {
         val view = present(validTask())
 
-        assertEquals(emptyList<String>(), view.errors)
+        assertEquals(emptyList<IssueProblem>(), view.errors)
         assertTrue(view.isValid)
         assertEquals(listOf("FE"), view.labels)
-        val json = view.json!!
-        assertTrue(json.contains("\"projectKey\": \"S15P11A108\""))
-        assertTrue(json.contains("\"issueType\": \"task\""))
-        assertTrue(json.contains("\"summary\": \"[AUTH-001 | FE] 회원가입 폼\""))
-        assertTrue(json.contains("\"storyPoints\": 3"))
-        assertTrue(json.contains("\"epicKey\": \"S15P11A108-1\""))
-        assertTrue(json.contains("## 설명"))
-        assertTrue(json.contains("## 결과물"))
+        val draft = view.draft!!
+        assertEquals("S15P11A108", draft.projectKey)
+        assertEquals("task", draft.issueType)
+        assertEquals("[AUTH-001 | FE] 회원가입 폼", draft.summary)
+        assertEquals(3, draft.policyFields.storyPoints)
+        assertEquals("S15P11A108-1", draft.relationships.epicKey)
+        assertTrue(draft.description!!.contains("## 설명"))
+        assertTrue(draft.description!!.contains("## 결과물"))
     }
 
     @Test
@@ -52,7 +53,10 @@ class IssueDraftPresenterTest {
         val view = present(validTask().copy(deliverables = "\n첫 번째 결과물\n\n   \n두 번째 결과물\n"))
 
         assertTrue(view.isValid)
-        assertTrue(view.json!!.contains("[] 첫 번째 결과물\\n[] 두 번째 결과물"))
+        assertEquals(
+            "## 설명\n이메일 회원가입 폼을 만든다.\n\n## 결과물\n[] 첫 번째 결과물\n[] 두 번째 결과물",
+            view.draft!!.description,
+        )
     }
 
     @Test
@@ -68,8 +72,8 @@ class IssueDraftPresenterTest {
 
         assertTrue(view.isValid)
         assertEquals(listOf("feat"), view.labels)
-        assertTrue(view.json!!.contains("feat/100-signup"))
-        assertFalse("빈 스프린트는 초안에 담지 않는다", view.json!!.contains("sprint"))
+        assertEquals("`feat/100-signup`", view.draft!!.description)
+        assertNull("빈 스프린트는 초안에 담지 않는다", view.draft!!.policyFields.sprint)
     }
 
     @Test
@@ -77,72 +81,72 @@ class IssueDraftPresenterTest {
         val view = present(IssueFormInput(type = "epic", title = "[AUTH] 인증"))
 
         assertTrue(view.isValid)
-        assertTrue(view.json!!.contains("\"issueType\": \"epic\""))
-        assertFalse(view.json!!.contains("description"))
+        assertEquals("epic", view.draft!!.issueType)
+        assertNull(view.draft!!.description)
     }
 
     @Test
     fun `reports every missing required field at once`() {
         val view = present(IssueFormInput(type = "task"))
 
-        assertNull(view.json)
+        assertNull(view.draft)
         assertFalse(view.isValid)
-        assertTrue(view.errors.any { it.startsWith("epicKey:") })
-        assertTrue(view.errors.any { it.startsWith("title:") })
-        assertTrue(view.errors.any { it.startsWith("assignee:") })
-        assertTrue(view.errors.any { it.startsWith("priority:") })
-        assertTrue(view.errors.any { it.startsWith("sprint:") })
-        assertTrue(view.errors.any { it.startsWith("dueDate:") })
-        assertTrue(view.errors.any { it.startsWith("storyPoints:") })
-        assertTrue(view.errors.any { it.startsWith("description.summary:") })
-        assertTrue(view.errors.any { it.startsWith("description.deliverables:") })
+        assertTrue(view.errors.any { it.path == "epicKey" })
+        assertTrue(view.errors.any { it.path == "title" })
+        assertTrue(view.errors.any { it.path == "assignee" })
+        assertTrue(view.errors.any { it.path == "priority" })
+        assertTrue(view.errors.any { it.path == "sprint" })
+        assertTrue(view.errors.any { it.path == "dueDate" })
+        assertTrue(view.errors.any { it.path == "storyPoints" })
+        assertTrue(view.errors.any { it.path == "description.summary" })
+        assertTrue(view.errors.any { it.path == "description.deliverables" })
     }
 
     @Test
     fun `rejects a story point that is not in the policy`() {
         val view = present(validTask().copy(storyPoints = "4"))
 
-        assertTrue(view.errors.any { it.contains("스토리 포인트는 1, 2, 3, 5, 8 중 하나여야 합니다.") })
-        assertNull(view.json)
+        assertTrue(view.errors.any { it.message.contains("스토리 포인트는 1, 2, 3, 5, 8 중 하나여야 합니다.") })
+        assertNull(view.draft)
     }
 
     @Test
     fun `rejects a story point that is not a number`() {
         val view = present(validTask().copy(storyPoints = "삼"))
 
-        assertTrue(view.errors.any { it.startsWith("storyPoints:") })
-        assertNull(view.json)
+        assertTrue(view.errors.any { it.path == "storyPoints" })
+        assertNull(view.draft)
     }
 
     @Test
     fun `rejects an impossible due date`() {
         val view = present(validTask().copy(dueDate = "2026-02-30"))
 
-        assertTrue(view.errors.any { it.contains("YYYY-MM-DD") })
-        assertNull(view.json)
+        assertTrue(view.errors.any { it.message.contains("YYYY-MM-DD") })
+        assertNull(view.draft)
     }
 
     @Test
     fun `rejects a title that does not follow the rule`() {
         val view = present(validTask().copy(title = "회원가입 폼"))
 
-        assertTrue(view.errors.any { it.startsWith("title:") })
-        assertNull(view.json)
+        assertTrue(view.errors.any { it.path == "title" })
+        assertNull(view.draft)
     }
 
     @Test
     fun `rejects an unknown area in the title`() {
         val view = present(validTask().copy(title = "[AUTH-001 | XX] 회원가입 폼"))
 
-        assertTrue(view.errors.any { it.contains("담당 영역은") })
+        assertTrue(view.errors.any { it.message.contains("담당 영역은") })
     }
 
     @Test
     fun `keeps building the draft when only warnings are reported`() {
         val view = present(validTask().copy(deliverables = "폼"))
 
-        assertEquals(emptyList<String>(), view.errors)
-        assertTrue(view.warnings.any { it.startsWith("description.deliverables:") })
+        assertEquals(emptyList<IssueProblem>(), view.errors)
+        assertTrue(view.warnings.any { it.path == "description.deliverables" })
         assertTrue("경고만 있으면 초안은 만들어진다", view.isValid)
     }
 
@@ -153,7 +157,7 @@ class IssueDraftPresenterTest {
         val rejected = present(validTask().copy(storyPoints = "3"), policy)
         val accepted = present(validTask().copy(storyPoints = "2"), policy)
 
-        assertTrue(rejected.errors.any { it.contains("1, 2 중 하나") })
+        assertTrue(rejected.errors.any { it.message.contains("1, 2 중 하나") })
         assertTrue(accepted.isValid)
     }
 
@@ -182,6 +186,7 @@ class IssueDraftPresenterTest {
 
     @Test
     fun `produces the same draft as the CLI dry run for the same input`() {
+        // CLI와의 동등성 확인용이므로 직렬화는 이 테스트에서만 한다(화면은 JSON을 쓰지 않는다).
         // dist/cli/index.js create -f task.json -p S15P11A108 --dry-run 의 실제 출력
         val cliOutput = """
             {
@@ -200,7 +205,36 @@ class IssueDraftPresenterTest {
 
         val view = present(validTask().copy(storyKey = ""))
 
-        assertEquals(JsonParser.parseString(cliOutput), JsonParser.parseString(view.json!!))
+        val json = GsonBuilder().disableHtmlEscaping().create().toJson(view.draft!!)
+        assertEquals(JsonParser.parseString(cliOutput), JsonParser.parseString(json))
+    }
+
+    @Test
+    fun `names the field on screen instead of the json path`() {
+        val view = present(IssueFormInput(type = "task"))
+
+        val displays = view.errors.map { it.display() }
+        assertTrue(displays.any { it.startsWith("기한: ") })
+        assertTrue(displays.any { it.startsWith("설명: ") })
+        assertTrue(displays.any { it.startsWith("결과물: ") })
+        assertTrue(displays.any { it.startsWith("담당자: ") })
+        assertTrue("필드 경로를 그대로 보여주지 않는다", displays.none { it.startsWith("dueDate") })
+    }
+
+    @Test
+    fun `numbers a deliverable that is blank`() {
+        val view = present(validTask().copy(deliverables = "회원가입 화면"))
+            .let { present(validTask().copy(deliverables = "회원가입 화면")) }
+
+        assertTrue(view.isValid)
+        assertEquals("결과물 2번째", IssueFieldLabels.of("description.deliverables.1"))
+    }
+
+    @Test
+    fun `tells which fields need attention`() {
+        val view = present(validTask().copy(dueDate = "", assignee = ""))
+
+        assertEquals(setOf("dueDate", "assignee"), view.problemPaths())
     }
 
     @Test

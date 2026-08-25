@@ -1,7 +1,7 @@
 package io.github.gudwns1812.jiratask.ui.issue
 
-import com.google.gson.GsonBuilder
 import io.github.gudwns1812.jiratask.application.CreateDraftUseCase
+import io.github.gudwns1812.jiratask.domain.jira.CreateRequestDraft
 import io.github.gudwns1812.jiratask.domain.policy.WorkPolicy
 import io.github.gudwns1812.jiratask.domain.template.IssueTemplates
 import io.github.gudwns1812.jiratask.domain.validation.ValidationMessage
@@ -81,14 +81,28 @@ data class IssueFormInput(
     }
 }
 
+/**
+ * 검증 결과 한 건. 어느 칸이 문제인지 사람이 읽는 이름([label])과 함께 들고 있어야
+ * 화면에서 그 칸을 짚어줄 수 있다([path]는 CLI와 같은 필드 경로).
+ */
+data class IssueProblem(val path: String, val message: String) {
+    val label: String get() = IssueFieldLabels.of(path)
+
+    fun display(): String = "$label: $message"
+}
+
 /** 다이얼로그가 그려야 할 상태. CLI `validate`의 오류·경고 출력과 `create --dry-run`의 JSON에 대응한다. */
 data class IssueDraftView(
-    val errors: List<String>,
-    val warnings: List<String>,
+    val errors: List<IssueProblem>,
+    val warnings: List<IssueProblem>,
     val labels: List<String>,
-    val json: String?,
+    /** 만들 준비가 된 생성 요청. 오류가 있으면 null이다. */
+    val draft: CreateRequestDraft?,
 ) {
-    val isValid: Boolean get() = errors.isEmpty() && json != null
+    val isValid: Boolean get() = errors.isEmpty() && draft != null
+
+    /** 문제가 있는 칸의 필드 경로 — 그 칸은 화면에 꼭 보여줘야 한다. */
+    fun problemPaths(): Set<String> = (errors + warnings).map { it.path }.toSet()
 }
 
 /** 폼 입력 → 검증 결과 + 요청 초안 JSON. Swing에 의존하지 않아 그대로 단위 테스트할 수 있다. */
@@ -96,21 +110,19 @@ object IssueDraftPresenter {
 
     val TYPES: List<String> = listOf("epic", "story", "task")
 
-    private val gson = GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create()
-
     fun present(input: IssueFormInput, projectKey: String, policy: WorkPolicy = WorkPolicy.DEFAULT): IssueDraftView {
         val result = CreateDraftUseCase.execute(input.toRawInput(), projectKey, policy)
 
         return IssueDraftView(
-            errors = result.errors.map(::format),
-            warnings = result.warnings.map(::format),
+            errors = result.errors.map(::toProblem),
+            warnings = result.warnings.map(::toProblem),
             labels = result.derived.labels,
-            json = result.draft?.let { gson.toJson(it) },
+            draft = result.draft,
         )
     }
 
     /** 설명 입력 칸에 보여줄 안내 문구(CLI `template <type>`와 같은 내용). */
     fun templateFor(type: String): String = IssueTemplates.get(type).orEmpty()
 
-    private fun format(message: ValidationMessage): String = "${message.path}: ${message.message}"
+    private fun toProblem(message: ValidationMessage): IssueProblem = IssueProblem(message.path, message.message)
 }

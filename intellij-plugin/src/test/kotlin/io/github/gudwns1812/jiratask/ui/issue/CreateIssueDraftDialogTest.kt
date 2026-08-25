@@ -2,13 +2,44 @@ package io.github.gudwns1812.jiratask.ui.issue
 
 import com.intellij.openapi.util.Disposer
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import com.intellij.util.ui.NamedColorUtil
+import io.github.gudwns1812.jiratask.domain.jira.CreateRequestDraft
 import io.github.gudwns1812.jiratask.domain.policy.WorkPolicy
 
-/** 다이얼로그와 폼의 실제 위젯 동작(유형 전환, 실시간 검증, 미리보기)을 확인한다. */
+/**
+ * 다이얼로그와 폼의 실제 위젯 동작. 작업 입력은 구분·영역·요약으로 줄었고, 컨텍스트가 채운 값은
+ * 접혀 있다가 비어 있거나 문제가 있을 때만 보인다.
+ */
 class CreateIssueDraftDialogTest : BasePlatformTestCase() {
 
-    private fun withDialog(block: (CreateIssueDraftDialog) -> Unit) {
-        val dialog = CreateIssueDraftDialog(project, "S15P11A108", WorkPolicy.DEFAULT)
+    private fun context(
+        featureId: String? = "AUTH-001",
+        remembered: RememberedInput = RememberedInput(storyPoints = 3, dueDate = "2026-08-31"),
+        storyKey: String? = "S15P11A108-100",
+        epicKey: String? = "S15P11A108-1",
+        branch: String? = "feat/100-signup",
+        sprint: String? = "Sprint 7",
+        currentUser: String? = "박형준",
+        lookupNote: String? = null,
+    ) = IssueDraftContext(
+        projectKey = "S15P11A108",
+        policy = WorkPolicy.DEFAULT,
+        storyKey = storyKey,
+        epicKey = epicKey,
+        featureId = featureId,
+        sprint = sprint,
+        branch = branch,
+        currentUser = currentUser,
+        remembered = remembered,
+        lookupNote = lookupNote,
+    )
+
+    private fun withDialog(
+        context: IssueDraftContext = context(),
+        onRemember: (RememberedInput) -> Unit = {},
+        block: (CreateIssueDraftDialog) -> Unit,
+    ) {
+        val dialog = CreateIssueDraftDialog(project, context, onRemember)
         try {
             block(dialog)
         } finally {
@@ -16,102 +47,240 @@ class CreateIssueDraftDialogTest : BasePlatformTestCase() {
         }
     }
 
-    private fun fillValidTask(form: IssueDraftForm) {
-        form.selectType("task")
-        form.epicKeyField.text = "S15P11A108-1"
-        form.titleField.text = "[AUTH-001 | FE] 회원가입 폼"
-        form.assigneeField.text = "박형준"
-        form.priorityField.text = "High"
-        form.storyPointsField.text = "3"
-        form.sprintField.text = "Sprint 1"
-        form.dueDateField.text = "2026-08-31"
-        form.summaryArea.text = "이메일 회원가입 폼을 만든다."
-        form.deliverablesArea.text = "회원가입 화면\n유효성 검사 로직"
-    }
-
-    fun `test starts disabled and reports the missing fields`() {
+    fun `test fills everything it can so only the summary is left to type`() {
         withDialog { dialog ->
-            assertFalse("빈 폼으로는 초안을 만들 수 없다", dialog.isOKActionEnabled)
-            assertTrue(dialog.currentView().errors.isNotEmpty())
+            val form = dialog.form
+            form.selectType("task")
+
+            assertEquals("S15P11A108-1", form.epicKeyField.text)
+            assertEquals("S15P11A108-100", form.storyKeyField.text)
+            assertEquals("담당자는 나 자신이 기본", "박형준", form.assigneeField.text)
+            assertEquals("우선순위 기본은 Low", "Low", form.priorityComboBox.selectedItem)
+            assertEquals(3, form.storyPointsComboBox.selectedItem)
+            assertEquals("스프린트는 스토리에서 물려받는다", "Sprint 7", form.sprintField.text)
+            assertEquals("2026-08-31", form.dueDateField.text)
+            assertEquals("브랜치에서 알아낸 기능 ID가 기본 구분이다", "AUTH-001", form.scopeComboBox.selectedItem)
         }
     }
 
-    fun `test validates while the user types`() {
+    fun `test composes the rule shaped title from the picks and the summary`() {
         withDialog { dialog ->
-            fillValidTask(dialog.form)
+            val form = dialog.form
+            form.selectType("task")
+            form.areaComboBox.selectedItem = "FE"
+            form.summaryField.text = "회원가입 폼"
 
-            assertEquals(emptyList<String>(), dialog.currentView().errors)
-            assertTrue(dialog.isOKActionEnabled)
+            assertEquals("[AUTH-001 | FE] 회원가입 폼", form.composedTitle())
+            assertEquals("[AUTH-001 | FE] 회원가입 폼", form.titlePreviewLabel.text)
         }
     }
 
-    fun `test shows the draft json only after the preview button`() {
+    fun `test only needs the summary and the deliverables to become valid`() {
         withDialog { dialog ->
-            fillValidTask(dialog.form)
-
-            assertEquals("미리보기를 누르기 전에는 초안을 보여주지 않는다", "", dialog.previewText())
-            dialog.showPreview()
-
-            assertTrue(dialog.previewText().contains("\"issueType\": \"task\""))
-            assertTrue(dialog.problemsText().contains("오류 없음"))
-        }
-    }
-
-    fun `test explains that a preview needs a valid input`() {
-        withDialog { dialog ->
-            dialog.showPreview()
-
-            assertNull(dialog.currentView().json)
-            assertEquals(CreateIssueDraftDialog.NO_DRAFT, dialog.previewText())
-            assertTrue(dialog.problemsText().contains("오류 - "))
-        }
-    }
-
-    fun `test clears a stale preview when the input changes`() {
-        withDialog { dialog ->
-            fillValidTask(dialog.form)
-            dialog.showPreview()
-            assertTrue(dialog.previewText().isNotEmpty())
-
-            dialog.form.titleField.text = "형식이 틀린 제목"
-
-            assertEquals("", dialog.previewText())
-        }
-    }
-
-    fun `test collects only the fields of the selected type`() {
-        withDialog { dialog ->
-            fillValidTask(dialog.form)
-            dialog.form.selectType("epic")
-            dialog.form.titleField.text = "[AUTH] 인증"
-
-            val values = dialog.form.values()
-
-            assertEquals("epic", values.type)
-            assertEquals(setOf("type", "title"), values.toRawInput().keys)
-            assertTrue(dialog.isOKActionEnabled)
-        }
-    }
-
-    fun `test shows the writing example of the selected type`() {
-        withDialog { dialog ->
-            dialog.form.selectType("story")
-            assertTrue(dialog.form.templateArea.text.contains("feat/100-signup"))
-
-            dialog.form.selectType("task")
-            assertTrue(dialog.form.templateArea.text.contains("## 결과물"))
-        }
-    }
-
-    fun `test disables the ok action again when the input becomes invalid`() {
-        withDialog { dialog ->
-            fillValidTask(dialog.form)
-            assertTrue(dialog.isOKActionEnabled)
-
-            dialog.form.dueDateField.text = "2026-13-01"
+            val form = dialog.form
+            form.selectType("task")
+            form.areaComboBox.selectedItem = "FE"
 
             assertFalse(dialog.isOKActionEnabled)
-            assertTrue(dialog.currentView().errors.any { it.startsWith("dueDate:") })
+
+            form.summaryField.text = "회원가입 폼"
+            form.descriptionArea.text = "이메일 회원가입 폼을 만든다."
+            form.deliverablesArea.text = "회원가입 화면"
+
+            assertEquals(emptyList<IssueProblem>(), dialog.currentView().errors)
+            assertTrue(dialog.isOKActionEnabled)
+        }
+    }
+
+    fun `test builds a common task title from a work category without an area`() {
+        withDialog { dialog ->
+            val form = dialog.form
+            form.selectType("task")
+            form.scopeComboBox.selectedItem = "PLAN"
+            form.areaComboBox.selectedItem = IssueDraftForm.NO_AREA
+            form.summaryField.text = "스프린트 계획"
+            form.descriptionArea.text = "스프린트 계획을 세운다."
+            form.deliverablesArea.text = "계획 문서"
+
+            assertEquals("[PLAN] 스프린트 계획", form.composedTitle())
+            assertEquals(emptyList<IssueProblem>(), dialog.currentView().errors)
+        }
+    }
+
+    fun `test offers the work categories when the branch tells nothing`() {
+        withDialog(context(featureId = null, storyKey = null, branch = "main")) { dialog ->
+            assertEquals(WorkPolicy.DEFAULT.workCategories, (0 until dialog.form.scopeComboBox.itemCount).map {
+                dialog.form.scopeComboBox.getItemAt(it)
+            })
+            assertEquals("PLAN", dialog.form.scopeComboBox.selectedItem)
+        }
+    }
+
+    fun `test explains quietly why the story could not be read`() {
+        withDialog(context(featureId = null, lookupNote = IssueDraftContextReader.NO_STORY_BRANCH)) { dialog ->
+            dialog.form.selectType("task")
+
+            assertTrue(dialog.currentView().errors.isNotEmpty())
+            // 안내는 폼 안 주석으로만 보여주고 검증 오류로 다루지 않는다.
+            assertTrue(dialog.currentView().errors.none { it.message.contains("브랜치") })
+        }
+    }
+
+    fun `test remembers the reusable values when the draft is accepted`() {
+        var remembered: RememberedInput? = null
+        withDialog(onRemember = { remembered = it }) { dialog ->
+            val form = dialog.form
+            form.selectType("task")
+            form.areaComboBox.selectedItem = "BE"
+            form.summaryField.text = "회원가입 API"
+            form.descriptionArea.text = "회원가입 API를 만든다."
+            form.deliverablesArea.text = "POST /users"
+            form.assigneeField.text = "다른 사람"
+
+            dialog.doOKAction()
+        }
+
+        assertEquals("BE", remembered?.area)
+        assertEquals("다른 사람", remembered?.assignee)
+        assertEquals("AUTH-001", remembered?.scope)
+        assertEquals(3, remembered?.storyPoints)
+    }
+
+    fun `test keeps a plain title field for stories and epics`() {
+        withDialog { dialog ->
+            val form = dialog.form
+
+            form.selectType("story")
+            form.titleField.text = "[AUTH-001] 이메일 회원가입"
+            assertEquals("[AUTH-001] 이메일 회원가입", form.composedTitle())
+            assertEquals("현재 브랜치를 스토리 브랜치 값으로 채운다", "feat/100-signup", form.branchField.text)
+            assertEquals(setOf("type", "epicKey", "title", "branch", "sprint"), form.values().toRawInput().keys)
+
+            form.selectType("epic")
+            form.titleField.text = "[AUTH] 인증"
+            assertEquals(setOf("type", "title"), form.values().toRawInput().keys)
+        }
+    }
+
+    fun `test hands the finished draft to the creator`() {
+        var created: CreateRequestDraft? = null
+        val dialog = CreateIssueDraftDialog(project, context(), {}, { _, view -> created = view.draft })
+        try {
+            val form = dialog.form
+            form.selectType("task")
+            form.areaComboBox.selectedItem = "FE"
+            form.summaryField.text = "회원가입 폼"
+            form.descriptionArea.text = "이메일 회원가입 폼을 만든다."
+            form.deliverablesArea.text = "회원가입 화면"
+
+            dialog.doOKAction()
+        } finally {
+            Disposer.dispose(dialog.disposable)
+        }
+
+        assertNotNull("확인을 누르면 실제로 만들 초안을 넘긴다", created)
+        assertEquals("[AUTH-001 | FE] 회원가입 폼", created!!.summary)
+        assertEquals("S15P11A108-100", created!!.relationships.storyKey)
+        assertEquals("S15P11A108-1", created!!.relationships.epicKey)
+    }
+
+    fun `test does not create anything while the input is invalid`() {
+        var calls = 0
+        val dialog = CreateIssueDraftDialog(project, context(), {}, { _, _ -> calls++ })
+        try {
+            dialog.doOKAction()
+        } finally {
+            Disposer.dispose(dialog.disposable)
+        }
+
+        assertEquals(0, calls)
+    }
+
+    fun `test shows the writing example as placeholders instead of an extra field`() {
+        withDialog { dialog ->
+            val form = dialog.form
+            form.selectType("task")
+
+            assertEquals("회원가입 폼", form.summaryField.emptyText.text)
+            assertEquals("작업 설명을 작성합니다.", form.descriptionArea.emptyText.text)
+            assertEquals("완료 기준 결과물 1", form.deliverablesArea.emptyText.text)
+            assertEquals("2026-08-31", form.dueDateField.emptyText.text)
+
+            form.selectType("story")
+            assertEquals("[AUTH-001] 이메일 회원가입", form.titleField.emptyText.text)
+            form.selectType("epic")
+            assertEquals("[AUTH] 인증", form.titleField.emptyText.text)
+        }
+    }
+
+    fun `test hides the values it already filled but never a required empty one`() {
+        withDialog { dialog ->
+            dialog.form.selectType("task")
+
+            assertEquals(
+                "기억된 값(담당자·우선순위·스프린트·기한)과 유도된 키는 접어둔다",
+                emptySet<String>(),
+                dialog.form.visiblePaths(),
+            )
+        }
+    }
+
+    fun `test keeps the empty required fields on screen`() {
+        // 아무것도 알아내지 못한 상황: 스토리도 못 읽고 Jira 사용자도 모른다.
+        val nothingKnown = context(
+            remembered = RememberedInput(storyPoints = 3),
+            epicKey = null,
+            sprint = null,
+            currentUser = null,
+        )
+        withDialog(nothingKnown) { dialog ->
+            dialog.form.selectType("task")
+
+            val visible = dialog.form.visiblePaths()
+            assertTrue(
+                "비어 있는 필수 칸은 숨기지 않는다",
+                visible.containsAll(setOf("epicKey", "assignee", "sprint", "dueDate")),
+            )
+        }
+    }
+
+    fun `test can show every field on demand`() {
+        withDialog { dialog ->
+            dialog.form.selectType("task")
+            dialog.form.showAllCheckBox.isSelected = true
+            dialog.form.showAllCheckBox.actionListeners.forEach { it.actionPerformed(null) }
+
+            assertTrue(
+                dialog.form.visiblePaths().containsAll(
+                    setOf("epicKey", "storyKey", "assignee", "priority", "storyPoints", "sprint", "dueDate"),
+                ),
+            )
+        }
+    }
+
+    fun `test paints the errors red with the field name`() {
+        withDialog(context(remembered = RememberedInput(), currentUser = null)) { dialog ->
+            dialog.form.selectType("task")
+
+            val labels = dialog.problemLabels()
+            assertTrue(labels.any { it.text.startsWith("기한: ") })
+            assertTrue(labels.any { it.text.startsWith("담당자: ") })
+            assertTrue("오류 줄은 빨간색이다", labels.all { it.foreground == NamedColorUtil.getErrorForeground() })
+            assertTrue("필드 경로는 보여주지 않는다", labels.none { it.text.contains("dueDate") })
+        }
+    }
+
+    fun `test says it is fine when there is nothing to fix`() {
+        withDialog { dialog ->
+            val form = dialog.form
+            form.selectType("task")
+            form.areaComboBox.selectedItem = "FE"
+            form.summaryField.text = "회원가입 폼"
+            form.descriptionArea.text = "이메일 회원가입 폼을 만든다."
+            form.deliverablesArea.text = "회원가입 화면"
+
+            assertTrue(dialog.problemsText().contains("만들 준비가 됐습니다"))
+            assertTrue(dialog.problemsText().contains("FE"))
         }
     }
 }

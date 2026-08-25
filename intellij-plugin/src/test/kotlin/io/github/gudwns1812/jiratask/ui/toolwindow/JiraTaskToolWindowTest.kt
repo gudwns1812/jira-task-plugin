@@ -386,6 +386,22 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
         assertNull("테스트 픽스처 프로젝트는 git 저장소가 아니다", status.branch)
     }
 
+    fun `test caches the task number it read from git`() {
+        val panel = JiraTaskToolWindowPanel(project, testRootDisposable, taskNumberFromGit = { "257" })
+
+        val status = panel.readStatus()
+
+        assertEquals("257", status.taskNumber)
+        assertEquals("커밋 훅은 캐시만 본다", "257", CurrentTaskState.getInstance(project).taskNumber)
+    }
+
+    fun `test keeps the cached task number over the git value`() {
+        CurrentTaskState.getInstance(project).apply("257")
+        val panel = JiraTaskToolWindowPanel(project, testRootDisposable, taskNumberFromGit = { "999" })
+
+        assertEquals("257", panel.readStatus().taskNumber)
+    }
+
     fun `test the tool window is registered on the right side`() {
         val registered = ExtensionPointName<ToolWindowEP>("com.intellij.toolWindow")
             .extensionList
