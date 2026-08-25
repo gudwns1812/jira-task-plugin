@@ -65,3 +65,27 @@ interface SprintTaskReader {
     /** 제목에 [text]가 들어가는 이슈. 상태·스프린트·담당자로 좁히지 않는다(Quick Search). */
     fun searchByText(projectKey: String, text: String, limit: Int): List<SprintTask>
 }
+
+/** 이슈 상세. 검색 결과에서 하나를 열었을 때 보여 줄 것들. */
+data class JiraIssueDetail(
+    val key: String,
+    val summary: String,
+    val description: String,
+    val statusName: String,
+    val assignee: String,
+    val sprint: String,
+)
+
+/**
+ * 이슈 하나를 열어 보고 고치는 경계.
+ *
+ * **제목과 설명만 고칠 수 있다.** 확정된 스프린트에서 수정은 허용되지만 추가·삭제는 아니고
+ * (RULE.md 3.2), 상태와 스프린트는 automation과 계획의 영역이다(RULE.md 6.2).
+ * 그래서 이 포트에는 삭제도, 상태 변경도 없다.
+ */
+interface JiraIssueEditor {
+    fun detail(issueKey: String): JiraIssueDetail?
+
+    /** 제목과 설명을 저장한다. 다른 필드는 건드리지 않는다. */
+    fun updateSummaryAndDescription(issueKey: String, summary: String, description: String)
+}

@@ -11,13 +11,13 @@ import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-private data class SearchCall(val url: String)
+private data class SearchCall(val url: String, val method: String, val body: String?)
 
 private class SearchTransport(private val responses: MutableList<JiraHttpResponse>) : JiraHttpTransport {
     val calls = mutableListOf<SearchCall>()
 
     override fun send(url: String, method: String, body: String?, headers: Map<String, String>): JiraHttpResponse {
-        calls.add(SearchCall(url))
+        calls.add(SearchCall(url, method, body))
         check(responses.isNotEmpty()) { "예상보다 많은 요청이 발생했습니다: $url" }
         return responses.removeAt(0)
     }
@@ -231,5 +231,88 @@ class JiraClientSearchTest {
         client.searchByText("S15P11A108", "회원", limit = 3)
 
         assertTrue(transport.calls.single().url.contains("maxResults=3"))
+    }
+
+    @Test
+    fun `opens an issue with its description flattened back to editable text`() {
+        val adf = """{"type":"doc","version":1,"content":[""" +
+            """{"type":"heading","attrs":{"level":3},"content":[{"type":"text","text":"설명"}]},""" +
+            """{"type":"paragraph","content":[{"type":"text","text":"화면을 만든다."}]},""" +
+            """{"type":"taskList","content":[{"type":"taskItem","content":[{"type":"text","text":"입력 검증"}]}]}]}"""
+        val (client, _) = clientOf(
+            """{"key":"S15P11A108-81","fields":{"summary":"회원가입","description":$adf,""" +
+                """"status":{"name":"진행 중"},"assignee":{"displayName":"박형준"}}}""",
+            """{"fields":{"sprint":{"name":"Sprint 1"}}}""",
+        )
+
+        val detail = client.detail("S15P11A108-81")!!
+
+        assertEquals("회원가입", detail.summary)
+        assertEquals(listOf("## 설명", "화면을 만든다.", "[] 입력 검증"), detail.description.lines())
+        assertEquals("진행 중", detail.statusName)
+        assertEquals("박형준", detail.assignee)
+        assertEquals("Sprint 1", detail.sprint)
+    }
+
+    @Test
+    fun `opens an issue whose description is empty or missing`() {
+        val (client, _) = clientOf(
+            """{"key":"S15P11A108-81","fields":{"summary":"제목만","status":{"name":"할 일"}}}""",
+            """{"fields":{}}""",
+        )
+
+        val detail = client.detail("S15P11A108-81")!!
+
+        assertEquals("", detail.description)
+        assertEquals("", detail.assignee)
+        assertEquals("", detail.sprint)
+    }
+
+    @Test
+    fun `still opens the issue when the sprint name cannot be read`() {
+        // 보여 주기용 값 하나 때문에 상세 조회를 실패시키지 않는다.
+        val (client, _) = clientOf(
+            """{"key":"S15P11A108-81","fields":{"summary":"제목","status":{"name":"할 일"}}}""",
+            """{"broken":true}""",
+        )
+
+        assertEquals("", client.detail("S15P11A108-81")!!.sprint)
+    }
+
+    @Test
+    fun `has no detail to offer for a key that does not exist`() {
+        val transport = SearchTransport(mutableListOf(JiraHttpResponse(404, "{}")))
+        val client = JiraClient("https://team.atlassian.net", "user@example.com", "secret", transport)
+
+        assertNull(client.detail("S15P11A108-9999"))
+    }
+
+    @Test
+    fun `sends only the summary and the description when saving`() {
+        // 상태와 스프린트는 automation과 계획의 영역이다(RULE.md 6.2).
+        val transport = SearchTransport(mutableListOf(JiraHttpResponse(204, "")))
+        val client = JiraClient("https://team.atlassian.net", "user@example.com", "secret", transport)
+
+        client.updateSummaryAndDescription("S15P11A108-81", "새 제목", listOf("## 설명", "새 설명").joinToString("\n"))
+
+        val call = transport.calls.single()
+        assertTrue(call.url.endsWith("/rest/api/3/issue/S15P11A108-81"))
+        assertEquals("PUT", call.method)
+        val body = call.body.orEmpty()
+        assertTrue(body.contains(""""summary":"새 제목""""))
+        assertTrue("설명은 ADF로 보낸다", body.contains(""""type":"doc""""))
+        listOf("status", "sprint", "assignee").forEach {
+            assertFalse("$it 은(는) 보내지 않는다: $body", body.contains(""""$it""""))
+        }
+    }
+
+    @Test
+    fun `reports a conflict instead of pretending the save worked`() {
+        val transport = SearchTransport(mutableListOf(JiraHttpResponse(409, "{}")))
+        val client = JiraClient("https://team.atlassian.net", "user@example.com", "secret", transport)
+
+        assertThrows(JiraRequestError::class.java) {
+            client.updateSummaryAndDescription("S15P11A108-81", "새 제목", "설명")
+        }
     }
 }

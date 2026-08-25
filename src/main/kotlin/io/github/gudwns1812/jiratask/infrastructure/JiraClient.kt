@@ -5,8 +5,11 @@ import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import io.github.gudwns1812.jiratask.domain.jira.AdfDocument
 import io.github.gudwns1812.jiratask.domain.jira.JiraAuthenticationError
 import io.github.gudwns1812.jiratask.domain.jira.JiraIssue
+import io.github.gudwns1812.jiratask.domain.jira.JiraIssueDetail
+import io.github.gudwns1812.jiratask.domain.jira.JiraIssueEditor
 import io.github.gudwns1812.jiratask.domain.jira.JiraIssueTypeWithStatuses
 import io.github.gudwns1812.jiratask.domain.jira.JiraNamedValue
 import io.github.gudwns1812.jiratask.domain.jira.JiraNetworkError
@@ -51,7 +54,7 @@ class JiraClient(
     email: String,
     apiToken: String,
     private val transport: JiraHttpTransport = HttpClientJiraTransport(),
-) : JiraSetupReader, TaskIssueTransitioner, SprintTaskReader {
+) : JiraSetupReader, TaskIssueTransitioner, SprintTaskReader, JiraIssueEditor {
 
     private val baseUrl = baseUrl.trimEnd('/')
     private val authorization = "Basic " + Base64.getEncoder().encodeToString("$email:$apiToken".toByteArray())
@@ -170,6 +173,54 @@ class JiraClient(
     /** JQL 문자열 리터럴 안에서 따옴표와 역슬래시를 막는다. 검색어는 사용자가 자유롭게 친다. */
     private fun escapeJqlText(text: String): String =
         text.replace("\\", "\\\\").replace("\"", "\\\"")
+
+    override fun detail(issueKey: String): JiraIssueDetail? {
+        val body = try {
+            requestObject("/rest/api/3/issue/${encode(issueKey)}?fields=summary,description,status,assignee")
+        } catch (error: JiraRequestError) {
+            return null
+        }
+        val fields = body.objectOrNull("fields")
+
+        return JiraIssueDetail(
+            key = body.stringOrNull("key") ?: return null,
+            summary = fields?.stringOrNull("summary").orEmpty(),
+            description = AdfDocument.textOf(fields?.get("description")?.toKotlinValue()),
+            statusName = fields?.objectOrNull("status")?.stringOrNull("name").orEmpty(),
+            assignee = fields?.objectOrNull("assignee")?.stringOrNull("displayName").orEmpty(),
+            sprint = sprintNameOf(issueKey),
+        )
+    }
+
+    /**
+     * 제목과 설명만 보낸다. 상태와 스프린트는 automation과 계획의 영역이라 손대지 않는다(RULE.md 6.2).
+     * 설명은 REST v3가 요구하는 ADF로 옮긴다.
+     */
+    override fun updateSummaryAndDescription(issueKey: String, summary: String, description: String) {
+        val payload = mapOf(
+            "fields" to mapOf(
+                "summary" to summary,
+                "description" to AdfDocument.of(description),
+            ),
+        )
+        request(
+            "/rest/api/3/issue/${encode(issueKey)}",
+            method = "PUT",
+            body = Gson().toJson(payload.toJsonElement()),
+            extraHeaders = mapOf("Content-Type" to "application/json"),
+        )
+    }
+
+    /**
+     * 스프린트 이름. 사이트마다 커스텀 필드 ID가 달라 REST v3로는 읽을 수 없으므로 이름이 고정된
+     * Agile API를 쓴다. 실패하면 빈 문자열 — 보여 주기용 값 하나 때문에 상세 조회를 실패시키지 않는다.
+     */
+    private fun sprintNameOf(issueKey: String): String = try {
+        requestObject("/rest/agile/1.0/issue/${encode(issueKey)}?fields=sprint")
+            .objectOrNull("fields")?.objectOrNull("sprint")?.stringOrNull("name").orEmpty()
+    } catch (error: Exception) {
+        ""
+    }
 
     override fun verifyIdentity() {
         request("/rest/api/3/myself")

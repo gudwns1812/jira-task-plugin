@@ -19,6 +19,7 @@ data class ActionAvailability(val isEnabled: Boolean, val reason: String?) {
 enum class JiraTaskCommand {
     START_TASK,
     COMMIT,
+    SEARCH,
 }
 
 /**
@@ -46,7 +47,7 @@ class JiraTaskAvailability(private val repository: PolicyConfigRepository = Poli
 
     fun of(command: JiraTaskCommand, snapshot: SettingsSnapshot): ActionAvailability = when (command) {
         JiraTaskCommand.START_TASK -> ActionAvailability.ENABLED
-        JiraTaskCommand.COMMIT ->
+        JiraTaskCommand.COMMIT, JiraTaskCommand.SEARCH ->
             if (snapshot.projectKey.isEmpty()) ActionAvailability.disabled(NO_PROJECT_KEY) else ActionAvailability.ENABLED
     }
 

@@ -204,6 +204,7 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
             listOf(
                 "JiraTask.StartTask",
                 "JiraTask.Commit",
+                "JiraTask.Search",
                 "JiraTask.RunSetupWizard",
             ),
             ids,
