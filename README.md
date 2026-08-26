@@ -1,7 +1,11 @@
 # jira-task-plugin
 
-`RULE.md`의 Jira 업무 규칙을 IntelliJ IDEA 안에서 강제하는 플러그인이다. 이슈 입력 검증, 요청 초안
-미리보기, Story 브랜치 생성, 현재 작업 번호 추적, 커밋 메시지 이슈 키 부착을 IDE 안에서 처리한다.
+IntelliJ IDEA의 Git 흐름에 Jira를 끼워 넣는 플러그인이다.
+
+Jira를 대신 조작하지 않는다. 에픽·스토리·작업은 사람이 스프린트 전에 Jira에서 전부 만들고
+([RULE.md](RULE.md) 전제 A), 상태는 대부분 Jira automation이 옮긴다. 플러그인이 하는 일은
+그 계획을 **개발하는 동안 잊지 않게** 돕는 것이다 — 작업을 고르고, 커밋에 키를 붙이고,
+커밋 전에 한 번 확인하고, MR을 만들고, 이슈를 찾아본다.
 
 ## 기능
 
@@ -9,18 +13,20 @@
 | --- | --- |
 | 초기 설정 마법사 | `Tools > Jira Task > Run Setup Wizard`, 설정이 없으면 시작 시 알림 |
 | 설정 확인·수정 | `Settings \| Tools \| Jira Task` |
-| 이슈 초안 검증·미리보기·생성 | `Tools > Jira Task > Create Issue Draft` |
-| 스토리 브랜치 생성 | `Tools > Jira Task > Create Story Branch` |
-| 현재 작업 번호 저장 | `Tools > Jira Task > Start Jira Task`, 상태 표시줄 위젯(클릭하면 변경) |
-| 현재 상태 한눈에 보기 | 오른쪽 사이드바 `Jira Task` 툴 윈도우(설정·작업 번호·브랜치 + 실행 버튼) |
-| 커밋 | `Tools > Jira Task > Commit with Jira Task`, Git 커밋 창의 이슈 키 자동 접두 |
+| 현재 스프린트의 내 작업 고르기 | `Tools > Jira Task > Start Jira Task`, 상태 표시줄 위젯(클릭하면 변경) |
+| 커밋 메시지 이슈 키 자동 접두 | Git 커밋 창(별도 조작 없음), `Tools > Jira Task > Commit with Jira Task` |
+| 커밋 전 확인 | 커밋 직전 자동. 키 누락·오타·스프린트 이탈을 경고하고 막지는 않는다 |
+| GitLab MR 만들기 | `Tools > Jira Task > Create Merge Request` |
+| 이슈 검색·간단 수정 | `Tools > Jira Task > Search Jira Issues` |
+| 이슈 키 클릭 → Jira 열기 | 커밋 메시지·VCS 로그·주석 어디서나(설정을 자동 등록한다) |
+| 현재 상태 한눈에 보기 | 오른쪽 사이드바 `Jira Task` 툴 윈도우 |
 
 ## 설정과 자격 증명
 
 - 설정은 IntelliJ 표준 방식(애플리케이션 레벨 `PersistentStateComponent`, `jira-task.xml`)으로 보관한다.
-- Jira API 토큰은 설정 파일에 저장하지 않고 IDE 비밀번호 저장소(PasswordSafe)에만 보관하며,
-  이메일과 토큰은 설정 화면에 표시하지 않는다.
-- `JIRA_EMAIL`·`JIRA_API_TOKEN` 환경 변수가 있으면 저장된 값보다 먼저 사용한다.
+- Jira API 토큰과 GitLab 액세스 토큰은 설정 파일에 저장하지 않고 IDE 비밀번호 저장소(PasswordSafe)에만
+  보관한다. 이메일과 토큰은 설정 화면에 표시하지 않으며, 토큰 입력 칸은 저장된 값을 되읽어 채우지 않는다.
+- `JIRA_EMAIL`·`JIRA_API_TOKEN`·`GITLAB_TOKEN` 환경 변수가 있으면 저장된 값보다 먼저 사용한다.
 - 초기 설정은 IDE 시작 직후 모달 창을 띄우지 않고 "설정 시작" 액션이 붙은 알림으로 안내한다.
 - 오류는 종료 코드가 아니라 알림 심각도(정보/경고/오류)로 전달한다.
 
@@ -29,10 +35,10 @@
 의존 방향은 `UI -> Application -> Domain`이고, `Infrastructure`는 Domain이 정의한 포트를 구현한다.
 
 ```
-domain/          RULE.md 규칙, 검증, 브랜치·커밋·작업 번호, 정책 설정 (IntelliJ API 미의존)
-application/     유스케이스: 검증, 초안, 이슈 생성, 브랜치 생성, 작업 시작, 커밋, 초기 설정, 설정 편집
-infrastructure/  JiraClient(HttpClient), PasswordSafe 자격 증명, 설정 저장소, git 실행
-ui/              Settings 패널, 마법사·이슈·브랜치·작업·커밋 다이얼로그와 액션, 툴 윈도우, 알림
+domain/          커밋 메시지, 작업 번호, 스프린트 작업, MR 초안, 이슈 링크 규칙 (IntelliJ API 미의존)
+application/     유스케이스: 작업 시작, 커밋, MR 생성, 초기 설정, 설정 편집, 상태 전환
+infrastructure/  JiraClient·GitLabClient(HttpClient), PasswordSafe 자격 증명, 설정 저장소, git 실행
+ui/              Settings 패널, 마법사·작업·커밋·MR·검색 다이얼로그와 액션, 툴 윈도우, 알림
 ```
 
 자세한 설계는 [ARCHITECTURE.md](ARCHITECTURE.md)에 있다.
