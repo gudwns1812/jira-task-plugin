@@ -48,6 +48,11 @@
                     text="Commit with Jira Task"
                     description="현재 작업 번호로 이슈 키를 붙여 스테이지된 변경 사항을 커밋합니다"
                     icon="AllIcons.Actions.Commit"/>
+            <action id="JiraTask.CreateMergeRequest"
+                    class="io.github.gudwns1812.jiratask.ui.mr.CreateMergeRequestAction"
+                    text="Create Merge Request"
+                    description="현재 브랜치의 커밋에서 Jira 작업 키를 모아 GitLab MR을 만듭니다"
+                    icon="AllIcons.Vcs.Merge"/>
             <action id="JiraTask.Search"
                     class="io.github.gudwns1812.jiratask.ui.search.JiraSearchAction"
                     text="Search Jira Issues"
@@ -65,6 +70,7 @@
         <group id="JiraTask.ToolWindowToolbar">
             <reference id="JiraTask.StartTask"/>
             <reference id="JiraTask.Commit"/>
+            <reference id="JiraTask.CreateMergeRequest"/>
             <reference id="JiraTask.Search"/>
             <separator/>
             <reference id="JiraTask.RunSetupWizard"/>

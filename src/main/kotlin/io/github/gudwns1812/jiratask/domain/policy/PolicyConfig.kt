@@ -26,9 +26,13 @@ data class JiraSettings(
     }
 }
 
+/** MR을 만들 GitLab. 토큰은 여기 두지 않고 자격 증명 저장소에 보관한다. */
+data class GitLabSettings(val baseUrl: String? = null)
+
 data class JiraTaskConfig(
     val projectKey: String? = null,
     val jira: JiraSettings? = null,
+    val gitlab: GitLabSettings? = null,
 ) {
     companion object
 }
@@ -48,16 +52,29 @@ fun JiraTaskConfig.Companion.resolve(rawConfig: Any?): JiraTaskConfig {
     val obj = asConfigObject(rawConfig, "설정")
     val errors = mutableListOf<String>()
 
-    rejectUnknownKeys(obj, LEGACY_POLICY_KEYS + setOf("projectKey", "jira"), "", errors)
+    rejectUnknownKeys(obj, LEGACY_POLICY_KEYS + setOf("projectKey", "jira", "gitlab"), "", errors)
     val projectKey = readProjectKey(obj, errors)
     val jira = readJiraSettings(obj, errors)
+    val gitlab = readGitLabSettings(obj, errors)
 
     // projectKey 오류와 jira 오류를 한 번에 모아 던진다.
     if (errors.isNotEmpty()) {
         throw PolicyConfigurationError("설정 형식이 올바르지 않습니다. ${errors.joinToString("; ")}")
     }
 
-    return JiraTaskConfig(projectKey = projectKey, jira = jira)
+    return JiraTaskConfig(projectKey = projectKey, jira = jira, gitlab = gitlab)
+}
+
+private fun readGitLabSettings(obj: Map<*, *>, errors: MutableList<String>): GitLabSettings? {
+    val raw = obj["gitlab"] as? Map<*, *> ?: return null
+    rejectUnknownKeys(raw, setOf("baseUrl"), "gitlab", errors)
+
+    val baseUrl = readOptionalText(raw, "baseUrl", "gitlab.baseUrl", errors) ?: return null
+    if (!isHttpUrl(baseUrl)) {
+        errors += "gitlab.baseUrl: http 또는 https 주소여야 합니다."
+        return null
+    }
+    return GitLabSettings(baseUrl)
 }
 
 /** [JiraTaskConfig.resolve]가 다시 읽을 수 있는 원시 구조로 되돌린다(설정 파일 저장용). */
@@ -65,6 +82,7 @@ fun JiraTaskConfig.toRawMap(): Map<String, Any?> {
     val result = mutableMapOf<String, Any?>()
     projectKey?.let { result["projectKey"] = it }
     jira?.let { result["jira"] = it.toRawMap() }
+    gitlab?.baseUrl?.let { result["gitlab"] = mapOf("baseUrl" to it) }
     return result
 }
 

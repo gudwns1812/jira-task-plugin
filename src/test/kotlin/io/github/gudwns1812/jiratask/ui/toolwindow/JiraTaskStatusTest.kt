@@ -20,6 +20,7 @@ class JiraTaskStatusTest {
         taskIssueType = "작업",
         epicIssueType = "에픽",
         storyStartStatus = "진행 중",
+        gitLabBaseUrl = "https://lab.ssafy.com",
     )
 
     private fun rowsOf(status: JiraTaskStatus): Map<String, String> = status.rows().toMap()

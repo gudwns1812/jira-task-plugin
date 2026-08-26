@@ -264,7 +264,7 @@ class SetupWizardTest {
         )
         assertEquals("Jira 주소를 입력하세요.", SetupFailureMessages.of(SetupInputError("Jira 주소를 입력하세요.")))
         assertEquals(
-            "운영체제 자격 증명 저장소에 Jira API 토큰을 저장하거나 읽지 못했습니다.",
+            "운영체제 자격 증명 저장소에 API 토큰을 저장하거나 읽지 못했습니다.",
             SetupFailureMessages.of(CredentialStorageError()),
         )
         assertEquals(

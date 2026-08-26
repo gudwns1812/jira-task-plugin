@@ -90,14 +90,18 @@ class JiraTaskConfigurableTest : BasePlatformTestCase() {
         assertFalse(texts.contains("완료"))
     }
 
-    fun `test never shows the configured email or a password field`() {
+    fun `test never shows a stored secret, only takes a new one`() {
         val configurable = configurableOf(configuredRepository())
 
         val component = configurable.createComponent()
 
         val texts = textsOf(component)
         assertTrue("이메일이 화면에 노출되면 안 된다", texts.none { it.contains("gudwns1423") })
-        assertEmpty(collectPasswordFields(component))
+
+        // GitLab 토큰 칸은 입력 전용이다. 저장된 값을 되읽어 채우지 않는다.
+        val secrets = collectPasswordFields(component)
+        assertSize(1, secrets)
+        assertEmpty((secrets.single() as javax.swing.JPasswordField).password.toList())
     }
 
     private fun collectPasswordFields(container: Container): List<Container> {
@@ -262,11 +266,12 @@ class JiraTaskConfigurableTest : BasePlatformTestCase() {
         return fields
     }
 
-    fun `test lists exactly the two editable fields`() {
+    fun `test lists exactly the editable fields`() {
         val configurable = configurableOf(configuredRepository())
 
         val values = textFieldValues(configurable.createComponent())
 
-        assertEquals(listOf("S15P11A108", "https://team.atlassian.net"), values)
+        // 프로젝트 키, Jira 주소, GitLab 주소, 그리고 비어 있는 GitLab 토큰 칸.
+        assertEquals(listOf("S15P11A108", "https://team.atlassian.net", "", ""), values)
     }
 }

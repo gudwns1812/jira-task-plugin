@@ -16,6 +16,7 @@ data class SettingsSnapshot(
     val taskIssueType: String,
     val epicIssueType: String,
     val storyStartStatus: String,
+    val gitLabBaseUrl: String,
 ) {
     companion object
 }
@@ -28,6 +29,7 @@ fun SettingsSnapshot.Companion.from(config: JiraTaskConfig): SettingsSnapshot = 
     taskIssueType = config.jira?.issueTypes?.task?.name.orEmpty(),
     epicIssueType = config.jira?.issueTypes?.epic?.name.orEmpty(),
     storyStartStatus = config.jira?.statuses?.story?.start?.name.orEmpty(),
+    gitLabBaseUrl = config.gitlab?.baseUrl.orEmpty(),
 )
 
 /** 저장된 설정이 없거나 아직 읽지 못한 상태를 나타내는 빈 스냅샷. */
@@ -37,16 +39,23 @@ fun SettingsSnapshot.Companion.empty(): SettingsSnapshot = SettingsSnapshot.from
  * 설정 화면에서 사용자가 직접 편집할 수 있는 값. 공백만 입력한 필드는 "변경하지 않음"으로
  * 본다 — CLI `config set`에서 해당 옵션을 생략한 것과 같다(얕은 병합이라 값 삭제는 지원하지 않음).
  */
-data class SettingsEdit(val projectKey: String, val baseUrl: String) {
+data class SettingsEdit(
+    val projectKey: String,
+    val baseUrl: String,
+    val gitLabBaseUrl: String = "",
+) {
 
     fun projectKeyOrNull(): String? = projectKey.trim().ifEmpty { null }
 
     fun baseUrlOrNull(): String? = baseUrl.trim().ifEmpty { null }
 
+    fun gitLabBaseUrlOrNull(): String? = gitLabBaseUrl.trim().ifEmpty { null }
+
     fun toConfigUpdate(): Map<String, Any?> {
         val update = mutableMapOf<String, Any?>()
         projectKeyOrNull()?.let { update["projectKey"] = it }
         baseUrlOrNull()?.let { update["jira"] = mapOf("baseUrl" to it) }
+        gitLabBaseUrlOrNull()?.let { update["gitlab"] = mapOf("baseUrl" to it) }
         return update
     }
 
@@ -54,7 +63,8 @@ data class SettingsEdit(val projectKey: String, val baseUrl: String) {
     fun changes(snapshot: SettingsSnapshot): Boolean {
         val projectKeyChanged = projectKeyOrNull()?.let { it != snapshot.projectKey } ?: false
         val baseUrlChanged = baseUrlOrNull()?.let { it != snapshot.baseUrl } ?: false
-        return projectKeyChanged || baseUrlChanged
+        val gitLabChanged = gitLabBaseUrlOrNull()?.let { it != snapshot.gitLabBaseUrl } ?: false
+        return projectKeyChanged || baseUrlChanged || gitLabChanged
     }
 }
 

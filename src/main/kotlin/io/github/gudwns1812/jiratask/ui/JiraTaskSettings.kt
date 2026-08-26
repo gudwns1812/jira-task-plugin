@@ -4,6 +4,7 @@ import io.github.gudwns1812.jiratask.application.CredentialStore
 import io.github.gudwns1812.jiratask.domain.jira.JiraNamedValue
 import io.github.gudwns1812.jiratask.domain.policy.PolicyConfigurationError
 import io.github.gudwns1812.jiratask.infrastructure.CredentialStorageError
+import io.github.gudwns1812.jiratask.infrastructure.GitLabTokenStore
 import io.github.gudwns1812.jiratask.infrastructure.PasswordSafeCredentialStore
 import io.github.gudwns1812.jiratask.infrastructure.PolicyConfigRepository
 
@@ -14,6 +15,13 @@ sealed interface SettingsLookup<out T> {
 }
 
 data class CommitSettings(val projectKey: String)
+
+/** MR을 만드는 데 필요한 값. Jira 주소는 본문에 이슈 링크를 적는 데 쓴다. */
+data class MergeRequestSettings(
+    val gitLabBaseUrl: String,
+    val gitLabToken: String,
+    val jiraBaseUrl: String?,
+)
 
 /**
  * 작업 이슈의 상태를 옮기는 데 필요한 값. 진행 중 상태는 스토리 브랜치 생성에 쓰는 값을 함께 쓴다 —
@@ -35,12 +43,29 @@ data class TaskTransitionSettings(
 class JiraTaskSettings(
     private val repository: PolicyConfigRepository = PolicyConfigRepository(),
     private val credentials: CredentialStore = PasswordSafeCredentialStore(),
+    private val gitLabTokens: GitLabTokenStore = GitLabTokenStore(),
     private val environment: (String) -> String? = { System.getenv(it) },
 ) {
     fun forCommit(): SettingsLookup<CommitSettings> = withConfig { config ->
         val projectKey = config.projectKey
             ?: return@withConfig SettingsLookup.Missing(NO_PROJECT_KEY)
         SettingsLookup.Ready(CommitSettings(projectKey))
+    }
+
+    /** MR 생성에 필요한 설정. GitLab 주소와 토큰이 없으면 무엇이 없는지 알려준다. */
+    fun forMergeRequest(): SettingsLookup<MergeRequestSettings> = withConfig { config ->
+        val baseUrl = config.gitlab?.baseUrl
+            ?: return@withConfig SettingsLookup.Missing(NO_GITLAB)
+
+        val token = environment("GITLAB_TOKEN")
+            ?: try {
+                gitLabTokens.get(baseUrl)
+            } catch (error: CredentialStorageError) {
+                return@withConfig SettingsLookup.Missing(error.message ?: NO_GITLAB_TOKEN)
+            }
+            ?: return@withConfig SettingsLookup.Missing(NO_GITLAB_TOKEN)
+
+        SettingsLookup.Ready(MergeRequestSettings(baseUrl, token, config.jira?.baseUrl))
     }
 
     /** 작업을 시작할 때의 상태 전환에 필요한 설정. 하나라도 없으면 무엇이 없는지 알려준다. */
@@ -99,5 +124,9 @@ class JiraTaskSettings(
         const val NO_PROJECT_KEY: String =
             "Jira 프로젝트 키가 없습니다. 설정 마법사를 실행하거나 Settings | Tools | Jira Task에서 지정하세요."
         const val NO_TOKEN: String = "Jira API 토큰을 읽지 못했습니다."
+        const val NO_GITLAB: String =
+            "GitLab 주소가 설정되지 않았습니다. Settings | Tools | Jira Task 에서 입력하세요."
+        const val NO_GITLAB_TOKEN: String =
+            "GitLab 액세스 토큰이 없습니다. GITLAB_TOKEN 환경 변수 또는 설정 화면에서 입력하세요."
     }
 }

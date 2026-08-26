@@ -14,6 +14,7 @@ import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import io.github.gudwns1812.jiratask.ui.commit.CommitWithJiraTaskAction
 import io.github.gudwns1812.jiratask.ui.commit.JiraTaskCheckinHandlerFactory
 import io.github.gudwns1812.jiratask.ui.commit.JiraTaskCommitMessageProvider
+import io.github.gudwns1812.jiratask.ui.mr.CreateMergeRequestAction
 import io.github.gudwns1812.jiratask.ui.search.JiraSearchAction
 import io.github.gudwns1812.jiratask.ui.task.CurrentTaskWidgetFactory
 import io.github.gudwns1812.jiratask.ui.task.StartTaskAction
@@ -26,6 +27,7 @@ class JiraTaskPluginRegistrationTest : BasePlatformTestCase() {
         val expected = mapOf(
             "JiraTask.StartTask" to StartTaskAction::class.java,
             "JiraTask.Commit" to CommitWithJiraTaskAction::class.java,
+            "JiraTask.CreateMergeRequest" to CreateMergeRequestAction::class.java,
             "JiraTask.Search" to JiraSearchAction::class.java,
             "JiraTask.RunSetupWizard" to RunSetupWizardAction::class.java,
         )
@@ -42,7 +44,7 @@ class JiraTaskPluginRegistrationTest : BasePlatformTestCase() {
 
         assertTrue(group is DefaultActionGroup)
         val children = (group as DefaultActionGroup).childActionsOrStubs
-        assertEquals("액션 4개와 구분선 1개", 4, children.count { it !is Separator })
+        assertEquals("액션 5개와 구분선 1개", 5, children.count { it !is Separator })
         assertEquals(1, children.count { it is Separator })
         assertTrue(group.isPopup)
     }
