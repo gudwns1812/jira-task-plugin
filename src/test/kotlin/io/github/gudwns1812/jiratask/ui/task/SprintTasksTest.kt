@@ -2,6 +2,7 @@ package io.github.gudwns1812.jiratask.ui.task
 
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import io.github.gudwns1812.jiratask.application.CredentialStore
+import io.github.gudwns1812.jiratask.domain.jira.EmptySprintReason
 import io.github.gudwns1812.jiratask.domain.jira.JiraNetworkError
 import io.github.gudwns1812.jiratask.domain.jira.JiraStatusCategory
 import io.github.gudwns1812.jiratask.domain.jira.SprintTask
@@ -22,6 +23,9 @@ class SprintTasksTest : BasePlatformTestCase() {
         var tasks: List<SprintTask> = emptyList(),
         var single: SprintTask? = null,
         var failure: Exception? = null,
+        /** (mineOnly, openSprintOnly) -> 개수. 비어 있으면 0으로 본다. */
+        var counts: Map<Pair<Boolean, Boolean>, Int> = emptyMap(),
+        var countFailure: Exception? = null,
     ) : SprintTaskReader {
         var listCalls = 0
         var singleCalls = 0
@@ -39,6 +43,16 @@ class SprintTasksTest : BasePlatformTestCase() {
         }
 
         override fun searchByText(projectKey: String, text: String, limit: Int): List<SprintTask> = emptyList()
+
+        override fun countTasks(
+            projectKey: String,
+            taskIssueTypeId: String,
+            mineOnly: Boolean,
+            openSprintOnly: Boolean,
+        ): Int {
+            countFailure?.let { throw it }
+            return counts[mineOnly to openSprintOnly] ?: 0
+        }
     }
 
     private fun task(key: String, category: JiraStatusCategory = JiraStatusCategory.TO_DO, inSprint: Boolean = true) =
@@ -67,9 +81,46 @@ class SprintTasksTest : BasePlatformTestCase() {
     fun `test reads the sprint tasks and reports them`() {
         val reader = FakeReader(tasks = listOf(task("S15P11A108-257")))
 
-        val load = sprintTasks().current(settings(), { reader }) { 0 }
+        val load = sprintTasks().current(settings(), { reader }) { 0 } as SprintTaskLoad.Loaded
 
-        assertEquals(listOf("S15P11A108-257"), (load as SprintTaskLoad.Loaded).tasks.map { it.key })
+        assertEquals(listOf("S15P11A108-257"), load.tasks.map { it.key })
+        assertNull("결과가 있으면 이유를 붙이지 않는다", load.reason)
+    }
+
+    private fun reasonWhenEmpty(counts: Map<Pair<Boolean, Boolean>, Int>): EmptySprintReason? {
+        val reader = FakeReader(counts = counts)
+        return (sprintTasks().current(settings(), { reader }) { 0 } as SprintTaskLoad.Loaded).reason
+    }
+
+    fun `test says the sprint was never started`() {
+        // 작업은 있고 내 것도 있는데, 열린 스프린트에는 아무것도 없다.
+        val reason = reasonWhenEmpty(mapOf((false to false) to 3, (true to false) to 2, (false to true) to 0))
+
+        assertEquals(EmptySprintReason.NO_OPEN_SPRINT, reason)
+    }
+
+    fun `test says nothing is assigned to me`() {
+        val reason = reasonWhenEmpty(mapOf((false to false) to 3, (true to false) to 0, (false to true) to 3))
+
+        assertEquals(EmptySprintReason.NONE_ASSIGNED_TO_ME, reason)
+    }
+
+    fun `test says my tasks are not in the sprint`() {
+        val reason = reasonWhenEmpty(mapOf((false to false) to 3, (true to false) to 2, (false to true) to 3))
+
+        assertEquals(EmptySprintReason.NOT_IN_SPRINT, reason)
+    }
+
+    fun `test says the project has no task type issues at all`() {
+        assertEquals(EmptySprintReason.NO_TASK_TYPE, reasonWhenEmpty(emptyMap()))
+    }
+
+    fun `test falls back to the plain notice when counting fails`() {
+        val reader = FakeReader(countFailure = JiraNetworkError())
+
+        val load = sprintTasks().current(settings(), { reader }) { 0 } as SprintTaskLoad.Loaded
+
+        assertEquals(EmptySprintReason.UNKNOWN, load.reason)
     }
 
     fun `test does not ask jira again inside the ttl`() {

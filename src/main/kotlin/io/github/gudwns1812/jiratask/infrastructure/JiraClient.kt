@@ -89,11 +89,27 @@ class JiraClient(
     override fun currentSprintTasks(projectKey: String, taskIssueTypeId: String): List<SprintTask> {
         // 상태로 거르지 않는다. 끝난 작업도 목록에 담아 두고 화면이 아래로 내린다(RULE.md 6.1).
         val jql = """project = "$projectKey" AND issuetype = $taskIssueTypeId """ +
-            "AND assignee = currentUser() AND sprint IN openSprints() ORDER BY key ASC"
+            "AND assignee = currentUser() AND sprint IN openSprints() ORDER BY created ASC"
 
         return searchIssues(jql, MAX_SPRINT_TASKS) { key, summary, status ->
             SprintTask(key, summary, status.name, status.category, inOpenSprint = true)
         }
+    }
+
+    override fun countTasks(
+        projectKey: String,
+        taskIssueTypeId: String,
+        mineOnly: Boolean,
+        openSprintOnly: Boolean,
+    ): Int {
+        val jql = buildString {
+            append("""project = "$projectKey" AND issuetype = $taskIssueTypeId""")
+            if (mineOnly) append(" AND assignee = currentUser()")
+            if (openSprintOnly) append(" AND sprint IN openSprints()")
+        }
+
+        // 개수만 알면 되므로 한 건만 받아 본다. 있고 없고를 가리는 것이 전부다.
+        return searchIssues(jql, 1) { _, _, _ -> Unit }.size
     }
 
     override fun task(issueKey: String): SprintTask? {

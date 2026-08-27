@@ -54,7 +54,7 @@ class StartTaskAction @JvmOverloads constructor(
                 ApplicationManager.getApplication().invokeLater({
                     if (!project.isDisposed) {
                         when (load) {
-                            is SprintTaskLoad.Loaded -> dialog.show(load.tasks)
+                            is SprintTaskLoad.Loaded -> dialog.show(load.tasks, load.reason)
                             is SprintTaskLoad.NotConfigured -> dialog.showProblem(load.message)
                             is SprintTaskLoad.Failed -> dialog.showProblem(load.message)
                         }

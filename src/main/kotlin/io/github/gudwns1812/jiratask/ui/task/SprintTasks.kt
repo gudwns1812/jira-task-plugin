@@ -2,6 +2,7 @@ package io.github.gudwns1812.jiratask.ui.task
 
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
+import io.github.gudwns1812.jiratask.domain.jira.EmptySprintReason
 import io.github.gudwns1812.jiratask.domain.jira.SprintTask
 import io.github.gudwns1812.jiratask.domain.jira.SprintTaskReader
 import io.github.gudwns1812.jiratask.infrastructure.JiraClient
@@ -30,7 +31,8 @@ sealed interface TaskAnswer {
 
 /** 스프린트 작업을 읽어 본 결과. 실패를 값으로 돌려준다 — 커밋 창은 예외를 감당할 수 없다. */
 sealed interface SprintTaskLoad {
-    data class Loaded(val tasks: List<SprintTask>) : SprintTaskLoad
+    /** [reason]은 [tasks]가 비었을 때만 채워진다. 왜 비었는지 화면이 그대로 보여 준다. */
+    data class Loaded(val tasks: List<SprintTask>, val reason: EmptySprintReason? = null) : SprintTaskLoad
 
     /** 설정이 없어 물어보지도 못했다. */
     data class NotConfigured(val message: String) : SprintTaskLoad
@@ -83,10 +85,11 @@ class SprintTasks(private val project: Project) {
 
         val value = (ready as SettingsLookup.Ready).value
         return try {
-            val tasks = createReader(value).currentSprintTasks(value.projectKey, value.taskIssueTypeId)
+            val reader = createReader(value)
+            val tasks = reader.currentSprintTasks(value.projectKey, value.taskIssueTypeId)
             cached.set(Snapshot(tasks, nowMillis()))
             singles.clear()
-            SprintTaskLoad.Loaded(tasks)
+            SprintTaskLoad.Loaded(tasks, if (tasks.isEmpty()) whyEmpty(reader, value) else null)
         } catch (error: Exception) {
             // 실패는 캐시하지 않는다. 다음 호출이 다시 시도한다.
             SprintTaskLoad.Failed(error.message ?: "Jira 작업 목록을 읽지 못했습니다.")
@@ -117,6 +120,20 @@ class SprintTasks(private val project: Project) {
         } catch (error: Exception) {
             TaskAnswer.Unanswered
         }
+    }
+
+    /**
+     * 목록이 비었을 때만 부른다. 조건을 하나씩 풀어 세어 보고 무엇이 결과를 지웠는지 고른다.
+     * 여기서 실패하면 이유를 모르는 것이므로 원래의 밋밋한 안내로 돌아간다.
+     */
+    private fun whyEmpty(reader: SprintTaskReader, settings: TaskTransitionSettings): EmptySprintReason = try {
+        EmptySprintReason.of(
+            anyTask = reader.countTasks(settings.projectKey, settings.taskIssueTypeId, false, false),
+            mineAnywhere = reader.countTasks(settings.projectKey, settings.taskIssueTypeId, true, false),
+            anyInSprint = reader.countTasks(settings.projectKey, settings.taskIssueTypeId, false, true),
+        )
+    } catch (error: Exception) {
+        EmptySprintReason.UNKNOWN
     }
 
     /**

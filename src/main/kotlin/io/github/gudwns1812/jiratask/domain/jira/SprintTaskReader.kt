@@ -64,6 +64,38 @@ interface SprintTaskReader {
 
     /** 제목에 [text]가 들어가는 이슈. 상태·스프린트·담당자로 좁히지 않는다(Quick Search). */
     fun searchByText(projectKey: String, text: String, limit: Int): List<SprintTask>
+
+    /**
+     * 조건을 하나씩 풀어 가며 작업 개수를 센다. 목록이 비었을 때 **왜** 비었는지 좁히는 데만 쓴다.
+     *
+     * "스프린트에 작업이 없다"와 "스프린트를 아직 시작하지 않았다"와 "내게 배정된 것이 없다"는
+     * 사용자가 할 일이 전혀 다른데, 빈 목록만으로는 구분되지 않는다.
+     */
+    fun countTasks(projectKey: String, taskIssueTypeId: String, mineOnly: Boolean, openSprintOnly: Boolean): Int
+}
+
+/** 스프린트 작업 목록이 빈 이유. 사용자가 다음에 할 일이 저마다 다르다. */
+enum class EmptySprintReason(val message: String) {
+    NO_TASK_TYPE("이 프로젝트에 '작업' 유형 이슈가 없습니다. 설정 마법사에서 작업 유형을 다시 확인하세요."),
+    NO_OPEN_SPRINT("열린 스프린트가 없습니다. Jira 보드에서 스프린트를 시작(Start Sprint)해야 합니다."),
+    NONE_ASSIGNED_TO_ME("열린 스프린트에 작업이 있지만 나에게 배정된 것이 없습니다. Jira에서 담당자를 확인하세요."),
+    NOT_IN_SPRINT("내 작업이 있지만 열린 스프린트에 담겨 있지 않습니다. 스프린트에 넣거나 시작하세요."),
+    /** 조건을 다 풀어도 답이 안 나온다. 여기까지 오면 개수 세기 자체가 실패한 것이다. */
+    UNKNOWN("현재 스프린트에 나에게 배정된 작업이 없습니다."),
+    ;
+
+    companion object {
+        /**
+         * [mineInSprint]가 0일 때, 조건을 하나씩 풀어 센 개수로 이유를 고른다.
+         * 어느 조건을 풀었을 때 결과가 생기는지가 곧 원인이다.
+         */
+        fun of(anyTask: Int, mineAnywhere: Int, anyInSprint: Int): EmptySprintReason = when {
+            anyTask == 0 -> NO_TASK_TYPE
+            anyInSprint == 0 -> NO_OPEN_SPRINT
+            mineAnywhere == 0 -> NONE_ASSIGNED_TO_ME
+            else -> NOT_IN_SPRINT
+        }
+    }
 }
 
 /** 이슈 상세. 검색 결과에서 하나를 열었을 때 보여 줄 것들. */

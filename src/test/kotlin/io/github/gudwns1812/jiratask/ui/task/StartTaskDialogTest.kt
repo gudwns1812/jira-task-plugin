@@ -1,6 +1,7 @@
 package io.github.gudwns1812.jiratask.ui.task
 
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import io.github.gudwns1812.jiratask.domain.jira.EmptySprintReason
 import io.github.gudwns1812.jiratask.domain.jira.JiraStatusCategory
 import io.github.gudwns1812.jiratask.domain.jira.SprintTask
 
@@ -30,12 +31,21 @@ class StartTaskDialogTest : BasePlatformTestCase() {
         assertTrue(rows[2] is SprintTaskRow.Header)
     }
 
-    fun `test tells the user when the sprint holds nothing for them`() {
+    fun `test tells the user why the list is empty, not just that it is`() {
+        // 스프린트 미시작과 배정 없음은 다음에 할 일이 전혀 다르다.
+        val dialog = dialog()
+
+        dialog.show(emptyList(), EmptySprintReason.NO_OPEN_SPRINT)
+
+        assertEquals(EmptySprintReason.NO_OPEN_SPRINT.message, dialog.statusText())
+    }
+
+    fun `test falls back to the plain notice when the reason is unknown`() {
         val dialog = dialog()
 
         dialog.show(emptyList())
 
-        assertEquals(StartTaskDialog.EMPTY, dialog.statusText())
+        assertEquals(EmptySprintReason.UNKNOWN.message, dialog.statusText())
     }
 
     fun `test still takes a typed number when the list could not be read`() {

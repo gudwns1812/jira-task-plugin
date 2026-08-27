@@ -12,6 +12,7 @@ import com.intellij.ui.components.JBTextField
 import com.intellij.ui.dsl.builder.COLUMNS_MEDIUM
 import com.intellij.ui.dsl.builder.columns
 import com.intellij.ui.dsl.builder.panel
+import io.github.gudwns1812.jiratask.domain.jira.EmptySprintReason
 import io.github.gudwns1812.jiratask.domain.jira.SprintTask
 import java.awt.Component
 import java.awt.event.MouseAdapter
@@ -115,11 +116,12 @@ class StartTaskDialog(
         return StartTaskChoice(number, selected)
     }
 
-    /** 목록을 받았다. EDT에서 호출한다. */
-    fun show(tasks: List<SprintTask>) {
+    /** 목록을 받았다. EDT에서 호출한다. [emptyReason]은 목록이 비었을 때 왜 비었는지다. */
+    @JvmOverloads
+    fun show(tasks: List<SprintTask>, emptyReason: EmptySprintReason? = null) {
         loaded = tasks
         showRows(tasks)
-        statusLabel.text = if (tasks.isEmpty()) EMPTY else ""
+        statusLabel.text = if (tasks.isEmpty()) (emptyReason ?: EmptySprintReason.UNKNOWN).message else ""
         selectCurrent()
         refreshState()
     }
@@ -185,6 +187,5 @@ class StartTaskDialog(
 
     companion object {
         const val LOADING: String = "현재 스프린트의 작업을 읽는 중입니다…"
-        const val EMPTY: String = "현재 스프린트에 나에게 배정된 작업이 없습니다."
     }
 }
