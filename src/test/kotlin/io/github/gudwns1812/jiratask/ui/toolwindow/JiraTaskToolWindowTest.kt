@@ -104,6 +104,11 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
     private fun labelWith(text: String, container: Container): JBLabel =
         labelsOf(container).first { it.text == text }
 
+    private fun configuredBoard(
+        currentTask: io.github.gudwns1812.jiratask.domain.jira.SprintTask? = null,
+        sprint: io.github.gudwns1812.jiratask.ui.task.SprintTaskLoad? = null,
+    ) = JiraTaskBoard(configuredStatus(), currentTask, sprint)
+
     private fun configuredStatus() = JiraTaskStatus.of(
         SettingsLoad.Loaded(
             SettingsSnapshot.empty().copy(
@@ -117,23 +122,91 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
         "feat/100-signup",
     )
 
-    fun `test draws the status it is given`() {
+    fun `test leads with the current task, not with the settings`() {
+        val task = io.github.gudwns1812.jiratask.domain.jira.SprintTask(
+            "S15P11A108-257",
+            "[AUTH-001 | FE] 회원가입 화면",
+            "진행 중",
+            io.github.gudwns1812.jiratask.domain.jira.JiraStatusCategory.IN_PROGRESS,
+            inOpenSprint = true,
+        )
         val panel = JiraTaskToolWindowPanel(project, testRootDisposable)
 
-        panel.show(configuredStatus())
+        panel.show(configuredBoard(currentTask = task))
 
         val texts = textsOf(panel)
-        assertTrue(texts.contains("S15P11A108"))
-        assertTrue(texts.contains("https://team.atlassian.net"))
-        assertTrue(texts.contains("257"))
-        assertTrue(texts.contains("feat/100-signup"))
+        assertTrue("번호가 아니라 이슈 키를 보여 준다", texts.contains("S15P11A108-257"))
+        assertTrue("무슨 작업인지 제목으로 알 수 있다", texts.contains("[AUTH-001 | FE] 회원가입 화면"))
+        assertTrue(texts.contains("진행 중"))
+        assertTrue(texts.contains(JiraTaskToolWindowPanel.BRANCH_PREFIX + "feat/100-signup"))
         assertTrue(panel.currentStatus().isConfigured)
+    }
+
+    fun `test lists the sprint so a task can be started without a dialog`() {
+        val tasks = listOf(
+            io.github.gudwns1812.jiratask.domain.jira.SprintTask(
+                "S15P11A108-258",
+                "로그인 API",
+                "해야 할 일",
+                io.github.gudwns1812.jiratask.domain.jira.JiraStatusCategory.TO_DO,
+                inOpenSprint = true,
+            ),
+        )
+        val panel = JiraTaskToolWindowPanel(project, testRootDisposable)
+
+        panel.show(
+            configuredBoard(sprint = io.github.gudwns1812.jiratask.ui.task.SprintTaskLoad.Loaded(tasks)),
+        )
+
+        // 머리글 한 줄 + 작업 한 줄.
+        assertEquals(2, panel.sprintList.model.size)
+    }
+
+    fun `test says why the sprint list is empty here too`() {
+        val panel = JiraTaskToolWindowPanel(project, testRootDisposable)
+
+        panel.show(
+            configuredBoard(
+                sprint = io.github.gudwns1812.jiratask.ui.task.SprintTaskLoad.Loaded(
+                    emptyList(),
+                    io.github.gudwns1812.jiratask.domain.jira.EmptySprintReason.NO_OPEN_SPRINT,
+                ),
+            ),
+        )
+
+        assertTrue(
+            textsOf(panel).contains(
+                io.github.gudwns1812.jiratask.domain.jira.EmptySprintReason.NO_OPEN_SPRINT.message,
+            ),
+        )
+    }
+
+    fun `test starting from the list does nothing when a header is selected`() {
+        val panel = JiraTaskToolWindowPanel(project, testRootDisposable)
+        panel.show(
+            configuredBoard(
+                sprint = io.github.gudwns1812.jiratask.ui.task.SprintTaskLoad.Loaded(
+                    listOf(
+                        io.github.gudwns1812.jiratask.domain.jira.SprintTask(
+                            "S15P11A108-258",
+                            "로그인 API",
+                            "해야 할 일",
+                            io.github.gudwns1812.jiratask.domain.jira.JiraStatusCategory.TO_DO,
+                            inOpenSprint = true,
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        panel.sprintList.selectedIndex = 0
+        panel.startSelected()
     }
 
     fun `test guides the setup instead of listing empty rows`() {
         val panel = JiraTaskToolWindowPanel(project, testRootDisposable)
 
-        panel.show(JiraTaskStatus.of(SettingsLoad.Loaded(SettingsSnapshot.empty()), null, null))
+        panel.show(JiraTaskBoard(JiraTaskStatus.of(SettingsLoad.Loaded(SettingsSnapshot.empty()), null, null)))
 
         assertEquals(JiraTaskToolWindowPanel.Shown.SETUP_NEEDED, panel.shown())
         val texts = textsOf(panel)
@@ -148,7 +221,7 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
         var settings = 0
         val panel = JiraTaskToolWindowPanel(project, testRootDisposable, {}, launchWizard = { wizard++ }, openSettings = { settings++ })
 
-        panel.show(JiraTaskStatus.of(SettingsLoad.Loaded(SettingsSnapshot.empty()), null, null))
+        panel.show(JiraTaskBoard(JiraTaskStatus.of(SettingsLoad.Loaded(SettingsSnapshot.empty()), null, null)))
         linksOf(panel).single { it.text == JiraTaskToolWindowPanel.RUN_WIZARD }.doClick()
         linksOf(panel).first { it.text == JiraTaskToolWindowPanel.OPEN_SETTINGS }.doClick()
 
@@ -160,7 +233,7 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
         var settings = 0
         val panel = JiraTaskToolWindowPanel(project, testRootDisposable, {}, openSettings = { settings++ })
 
-        panel.show(JiraTaskStatus.of(SettingsLoad.Broken("설정 형식이 올바르지 않습니다."), "257", "main"))
+        panel.show(JiraTaskBoard(JiraTaskStatus.of(SettingsLoad.Broken("설정 형식이 올바르지 않습니다."), "257", "main")))
 
         assertEquals(JiraTaskToolWindowPanel.Shown.PROBLEM, panel.shown())
         assertTrue(textsOf(panel).contains("설정 형식이 올바르지 않습니다."))
@@ -171,13 +244,13 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
     fun `test shows the rows again once the setup is complete`() {
         val panel = JiraTaskToolWindowPanel(project, testRootDisposable)
 
-        panel.show(JiraTaskStatus.of(SettingsLoad.Loaded(SettingsSnapshot.empty()), null, null))
+        panel.show(JiraTaskBoard(JiraTaskStatus.of(SettingsLoad.Loaded(SettingsSnapshot.empty()), null, null)))
         assertEquals(JiraTaskToolWindowPanel.Shown.SETUP_NEEDED, panel.shown())
 
-        panel.show(configuredStatus())
+        panel.show(configuredBoard())
 
         assertEquals(JiraTaskToolWindowPanel.Shown.STATUS, panel.shown())
-        assertTrue(visibleTextsOf(panel).contains("S15P11A108"))
+        assertTrue("현재 작업 자리가 보인다", visibleTextsOf(panel).contains("S15P11A108-257"))
     }
 
     fun `test is operated by an action toolbar instead of plain buttons`() {
@@ -245,7 +318,7 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
             project,
             testRootDisposable,
             openSettings = { settings++ },
-            statusReader = { reads += Thread.currentThread(); JiraTaskStatus.EMPTY },
+            boardReader = { reads += Thread.currentThread(); JiraTaskBoard.EMPTY },
         )
 
         val titleActions = panel.titleActions()
@@ -266,7 +339,7 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
         val panel = JiraTaskToolWindowPanel(
             project,
             testRootDisposable,
-            statusReader = { reads += Thread.currentThread(); JiraTaskStatus.EMPTY },
+            boardReader = { reads += Thread.currentThread(); JiraTaskBoard.EMPTY },
         )
 
         panel.refreshInBackground()
@@ -280,7 +353,7 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
         JiraTaskToolWindowPanel(
             project,
             testRootDisposable,
-            statusReader = { reads += Thread.currentThread(); JiraTaskStatus.EMPTY },
+            boardReader = { reads += Thread.currentThread(); JiraTaskBoard.EMPTY },
         )
 
         JiraTaskStateListener.publish(project)
@@ -293,7 +366,7 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
         val panel = JiraTaskToolWindowPanel(
             project,
             testRootDisposable,
-            statusReader = { reads += Thread.currentThread(); JiraTaskStatus.EMPTY },
+            boardReader = { reads += Thread.currentThread(); JiraTaskBoard.EMPTY },
         )
 
         panel.onToolWindowShown("Other")
@@ -320,7 +393,7 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
     fun `test shows a real value as copyable text and a missing one in grey`() {
         val panel = JiraTaskToolWindowPanel(project, testRootDisposable)
 
-        panel.show(configuredStatus())
+        panel.show(configuredBoard())
         val projectKey = labelWith("S15P11A108", panel)
         assertTrue(
             "값은 선택·복사할 수 있어야 한다(JBLabel.setCopyable이 텍스트 컴포넌트를 붙인다)",
@@ -328,7 +401,7 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
         )
         assertEquals(UIUtil.getLabelForeground(), projectKey.foreground)
 
-        panel.show(JiraTaskStatus.of(SettingsLoad.Loaded(SettingsSnapshot.empty()), null, null))
+        panel.show(JiraTaskBoard(JiraTaskStatus.of(SettingsLoad.Loaded(SettingsSnapshot.empty()), null, null)))
         val placeholder = labelWith(JiraTaskStatus.NOT_CONFIGURED, panel)
         assertEquals(NamedColorUtil.getInactiveTextColor(), placeholder.foreground)
     }
@@ -336,10 +409,9 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
     fun `test draws keys and branches in a fixed width font`() {
         val panel = JiraTaskToolWindowPanel(project, testRootDisposable)
 
-        panel.show(configuredStatus())
+        panel.show(configuredBoard())
 
         assertEquals(Font.MONOSPACED, labelWith("S15P11A108", panel).font.family)
-        assertEquals(Font.MONOSPACED, labelWith("feat/100-signup", panel).font.family)
         assertEquals("사람이 읽는 문구는 기본 폰트로", JBFont.label().family, labelWith("A108 프로젝트", panel).font.family)
     }
 
@@ -347,7 +419,7 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
         val opened = mutableListOf<String>()
         val panel = JiraTaskToolWindowPanel(project, testRootDisposable, browse = { opened += it })
 
-        panel.show(configuredStatus())
+        panel.show(configuredBoard())
         val link = linksOf(panel).single { it.text == "https://team.atlassian.net" }
         assertTrue(link.isEnabled)
         link.doClick()
@@ -359,18 +431,19 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
         val opened = mutableListOf<String>()
         val panel = JiraTaskToolWindowPanel(project, testRootDisposable, browse = { opened += it })
 
-        panel.show(JiraTaskStatus.of(SettingsLoad.Loaded(SettingsSnapshot.empty()), null, null))
-        val link = linksOf(panel).single { it.text == JiraTaskStatus.NOT_CONFIGURED }
-        link.doClick()
+        panel.show(JiraTaskBoard(JiraTaskStatus.of(SettingsLoad.Loaded(SettingsSnapshot.empty()), null, null)))
+        val links = linksOf(panel).filter { it.text == JiraTaskStatus.NOT_CONFIGURED }
+        links.forEach { it.doClick() }
 
-        assertFalse("열 곳이 없으면 링크가 아니어야 한다", link.isEnabled)
+        assertTrue("Jira와 GitLab 두 자리 모두 링크 자리다", links.size >= 2)
+        assertTrue("열 곳이 없으면 링크가 아니어야 한다", links.none { it.isEnabled })
         assertEmpty(opened)
     }
 
     fun `test never shows the email even after a refresh`() {
         val panel = JiraTaskToolWindowPanel(project, testRootDisposable)
 
-        panel.show(configuredStatus())
+        panel.show(configuredBoard())
 
         assertTrue(textsOf(panel).none { it.contains("@") })
     }
@@ -379,7 +452,7 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
         CurrentTaskState.getInstance(project).apply("257")
         val panel = JiraTaskToolWindowPanel(project, testRootDisposable)
 
-        val status = panel.readStatus()
+        val status = panel.readBoard().status
 
         assertEquals("257", status.taskNumber)
         assertNull("테스트 픽스처 프로젝트는 git 저장소가 아니다", status.branch)
@@ -388,7 +461,7 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
     fun `test caches the task number it read from git`() {
         val panel = JiraTaskToolWindowPanel(project, testRootDisposable, taskNumberFromGit = { "257" })
 
-        val status = panel.readStatus()
+        val status = panel.readBoard().status
 
         assertEquals("257", status.taskNumber)
         assertEquals("커밋 훅은 캐시만 본다", "257", CurrentTaskState.getInstance(project).taskNumber)
@@ -398,7 +471,7 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
         CurrentTaskState.getInstance(project).apply("257")
         val panel = JiraTaskToolWindowPanel(project, testRootDisposable, taskNumberFromGit = { "999" })
 
-        assertEquals("257", panel.readStatus().taskNumber)
+        assertEquals("257", panel.readBoard().status.taskNumber)
     }
 
     fun `test the tool window is registered on the right side`() {

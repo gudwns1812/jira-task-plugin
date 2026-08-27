@@ -87,7 +87,8 @@ class StartTaskAction @JvmOverloads constructor(
          */
         val DIALOG_MODALITY: ModalityState = ModalityState.any()
 
-        private fun start(project: Project, choice: StartTaskChoice) {
+        /** 고른 작업을 저장하고 필요하면 `진행 중`으로 옮긴다. 툴 윈도우 목록에서도 부른다. */
+        fun start(project: Project, choice: StartTaskChoice) {
             val workingDirectory = project.basePath?.let(::File) ?: return
 
             ProgressManager.getInstance().run(object : Task.Backgroundable(project, "Jira 작업 번호 저장", false) {
