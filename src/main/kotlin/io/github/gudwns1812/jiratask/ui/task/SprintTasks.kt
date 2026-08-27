@@ -31,8 +31,17 @@ sealed interface TaskAnswer {
 
 /** 스프린트 작업을 읽어 본 결과. 실패를 값으로 돌려준다 — 커밋 창은 예외를 감당할 수 없다. */
 sealed interface SprintTaskLoad {
-    /** [reason]은 [tasks]가 비었을 때만 채워진다. 왜 비었는지 화면이 그대로 보여 준다. */
-    data class Loaded(val tasks: List<SprintTask>, val reason: EmptySprintReason? = null) : SprintTaskLoad
+    /**
+     * [reason]은 [tasks]가 비었을 때만 채워진다. 왜 비었는지 화면이 그대로 보여 준다.
+     *
+     * [otherAssigneeCount]는 열린 스프린트에 있지만 **내 담당이 아니라 빠진** 작업 수다.
+     * 목록이 비지 않아도 "방금 만든 작업이 왜 없지"의 답이 되는 값이라 늘 함께 들고 다닌다.
+     */
+    data class Loaded(
+        val tasks: List<SprintTask>,
+        val reason: EmptySprintReason? = null,
+        val otherAssigneeCount: Int = 0,
+    ) : SprintTaskLoad
 
     /** 설정이 없어 물어보지도 못했다. */
     data class NotConfigured(val message: String) : SprintTaskLoad
@@ -89,7 +98,11 @@ class SprintTasks(private val project: Project) {
             val tasks = reader.currentSprintTasks(value.projectKey, value.taskIssueTypeId)
             cached.set(Snapshot(tasks, nowMillis()))
             singles.clear()
-            SprintTaskLoad.Loaded(tasks, if (tasks.isEmpty()) whyEmpty(reader, value) else null)
+            SprintTaskLoad.Loaded(
+                tasks = tasks,
+                reason = if (tasks.isEmpty()) whyEmpty(reader, value) else null,
+                otherAssigneeCount = othersInSprint(reader, value, tasks.size),
+            )
         } catch (error: Exception) {
             // 실패는 캐시하지 않는다. 다음 호출이 다시 시도한다.
             SprintTaskLoad.Failed(error.message ?: "Jira 작업 목록을 읽지 못했습니다.")
@@ -120,6 +133,16 @@ class SprintTasks(private val project: Project) {
         } catch (error: Exception) {
             TaskAnswer.Unanswered
         }
+    }
+
+    /**
+     * 열린 스프린트에 있지만 내 담당이 아니라 빠진 작업 수. 세지 못하면 0으로 둔다 —
+     * 모르는 것을 "0건 제외"라고 단정하지 않되, 없는 숫자로 화면을 어지럽히지도 않는다.
+     */
+    private fun othersInSprint(reader: SprintTaskReader, settings: TaskTransitionSettings, mine: Int): Int = try {
+        (reader.countTasks(settings.projectKey, settings.taskIssueTypeId, false, true) - mine).coerceAtLeast(0)
+    } catch (error: Exception) {
+        0
     }
 
     /**

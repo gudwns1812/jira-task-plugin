@@ -75,7 +75,7 @@ class StartTaskAction @JvmOverloads constructor(
 
         /** 받은 결과를 화면에 그대로 옮긴다. */
         fun apply(dialog: StartTaskDialog, load: SprintTaskLoad) = when (load) {
-            is SprintTaskLoad.Loaded -> dialog.show(load.tasks, load.reason)
+            is SprintTaskLoad.Loaded -> dialog.show(load.tasks, load.reason, load.otherAssigneeCount)
             is SprintTaskLoad.NotConfigured -> dialog.showProblem(load.message)
             is SprintTaskLoad.Failed -> dialog.showProblem(load.message)
         }

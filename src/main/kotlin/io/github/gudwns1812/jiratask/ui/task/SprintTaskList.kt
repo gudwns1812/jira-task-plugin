@@ -58,4 +58,16 @@ object SprintTaskList {
 
     /** 고른 작업이 끝난 것일 때 화면에 붙이는 안내. */
     const val DONE_NOTICE: String = "이미 완료된 작업입니다. 커밋에만 사용하고 상태는 그대로 둡니다."
+
+    /**
+     * 이 목록이 무엇만 보여 주는지. **늘 보이게 둔다.**
+     *
+     * 방금 만든 이슈가 목록에 없을 때, 조건이 보이지 않으면 도구가 고장 난 것처럼 보인다.
+     * 셋 중 어느 것이 어긋났는지는 사용자가 Jira를 보면 바로 안다 — 조건을 알기만 하면.
+     */
+    const val FILTER_NOTICE: String = "내 담당 · 열린 스프린트 · 작업(Task) 유형만 보입니다."
+
+    /** 내 담당이 아니라 빠진 작업이 있으면 덧붙이는 말. */
+    fun excludedNotice(otherAssigneeCount: Int): String =
+        if (otherAssigneeCount > 0) "$FILTER_NOTICE 다른 담당자 ${otherAssigneeCount}건은 빠졌습니다." else FILTER_NOTICE
 }

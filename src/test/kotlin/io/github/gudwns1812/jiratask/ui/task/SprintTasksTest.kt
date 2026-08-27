@@ -78,6 +78,36 @@ class SprintTasksTest : BasePlatformTestCase() {
 
     private fun sprintTasks() = SprintTasks.getInstance(project).also { it.invalidate() }
 
+    fun `test counts what my filter left out of the sprint`() {
+        // 목록에 뭔가 있어도 "방금 만든 작업이 왜 없지"의 답이 필요하다.
+        val reader = FakeReader(
+            tasks = listOf(task("S15P11A108-257")),
+            counts = mapOf((false to true) to 4),
+        )
+
+        val load = sprintTasks().current(settings(), { reader }) { 0 } as SprintTaskLoad.Loaded
+
+        assertEquals("스프린트 4건 중 내 것 1건", 3, load.otherAssigneeCount)
+        assertEquals(SprintTaskList.excludedNotice(3), "내 담당 · 열린 스프린트 · 작업(Task) 유형만 보입니다. 다른 담당자 3건은 빠졌습니다.")
+    }
+
+    fun `test never reports a negative exclusion`() {
+        val reader = FakeReader(tasks = listOf(task("A-1"), task("A-2")), counts = mapOf((false to true) to 1))
+
+        val load = sprintTasks().current(settings(), { reader }) { 0 } as SprintTaskLoad.Loaded
+
+        assertEquals(0, load.otherAssigneeCount)
+    }
+
+    fun `test keeps quiet about exclusions it could not count`() {
+        val reader = FakeReader(tasks = listOf(task("A-1")), countFailure = JiraNetworkError())
+
+        val load = sprintTasks().current(settings(), { reader }) { 0 } as SprintTaskLoad.Loaded
+
+        assertEquals("모르는 것을 0건이라 단정하지 않되 화면을 어지럽히지도 않는다", 0, load.otherAssigneeCount)
+        assertEquals(SprintTaskList.FILTER_NOTICE, SprintTaskList.excludedNotice(0))
+    }
+
     fun `test reads the sprint tasks and reports them`() {
         val reader = FakeReader(tasks = listOf(task("S15P11A108-257")))
 

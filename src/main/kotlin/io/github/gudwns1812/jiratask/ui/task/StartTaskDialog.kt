@@ -116,12 +116,19 @@ class StartTaskDialog(
         return StartTaskChoice(number, selected)
     }
 
-    /** 목록을 받았다. EDT에서 호출한다. [emptyReason]은 목록이 비었을 때 왜 비었는지다. */
+    /**
+     * 목록을 받았다. EDT에서 호출한다.
+     * [emptyReason]은 목록이 비었을 때 왜 비었는지, [otherAssigneeCount]는 내 담당이 아니라 빠진 수다.
+     */
     @JvmOverloads
-    fun show(tasks: List<SprintTask>, emptyReason: EmptySprintReason? = null) {
+    fun show(tasks: List<SprintTask>, emptyReason: EmptySprintReason? = null, otherAssigneeCount: Int = 0) {
         loaded = tasks
         showRows(tasks)
-        statusLabel.text = if (tasks.isEmpty()) (emptyReason ?: EmptySprintReason.UNKNOWN).message else ""
+        statusLabel.text = if (tasks.isEmpty()) {
+            (emptyReason ?: EmptySprintReason.UNKNOWN).message
+        } else {
+            SprintTaskList.excludedNotice(otherAssigneeCount)
+        }
         selectCurrent()
         refreshState()
     }

@@ -295,7 +295,12 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
             null -> SPRINT_LOADING
             is SprintTaskLoad.Loaded -> {
                 SprintTaskList.rowsOf(sprint.tasks).forEach(sprintModel::addElement)
-                if (sprint.tasks.isEmpty()) (sprint.reason ?: EmptySprintReason.UNKNOWN).message else ""
+                if (sprint.tasks.isEmpty()) {
+                    (sprint.reason ?: EmptySprintReason.UNKNOWN).message
+                } else {
+                    // 목록이 비지 않아도 무엇을 거르는지는 보여 준다. 방금 만든 이슈가 없을 때의 답이다.
+                    SprintTaskList.excludedNotice(sprint.otherAssigneeCount)
+                }
             }
             is SprintTaskLoad.NotConfigured -> sprint.message
             is SprintTaskLoad.Failed -> sprint.message

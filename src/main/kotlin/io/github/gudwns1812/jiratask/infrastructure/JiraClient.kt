@@ -108,8 +108,7 @@ class JiraClient(
             if (openSprintOnly) append(" AND sprint IN openSprints()")
         }
 
-        // 개수만 알면 되므로 한 건만 받아 본다. 있고 없고를 가리는 것이 전부다.
-        return searchIssues(jql, 1) { _, _, _ -> Unit }.size
+        return searchIssues(jql, MAX_SPRINT_TASKS) { _, _, _ -> Unit }.size
     }
 
     override fun task(issueKey: String): SprintTask? {
