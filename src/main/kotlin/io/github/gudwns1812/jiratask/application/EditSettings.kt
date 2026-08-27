@@ -15,7 +15,6 @@ data class SettingsSnapshot(
     val storyIssueType: String,
     val taskIssueType: String,
     val epicIssueType: String,
-    val storyStartStatus: String,
     val gitLabBaseUrl: String,
 ) {
     companion object
@@ -28,7 +27,6 @@ fun SettingsSnapshot.Companion.from(config: JiraTaskConfig): SettingsSnapshot = 
     storyIssueType = config.jira?.issueTypes?.story?.name.orEmpty(),
     taskIssueType = config.jira?.issueTypes?.task?.name.orEmpty(),
     epicIssueType = config.jira?.issueTypes?.epic?.name.orEmpty(),
-    storyStartStatus = config.jira?.statuses?.story?.start?.name.orEmpty(),
     gitLabBaseUrl = config.gitlab?.baseUrl.orEmpty(),
 )
 

@@ -19,7 +19,6 @@ class JiraTaskAvailabilityTest {
         projectKey = "S15P11A108",
         baseUrl = "https://team.atlassian.net",
         storyIssueType = "스토리",
-        storyStartStatus = "진행 중",
     )
 
     @Test

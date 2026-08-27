@@ -26,7 +26,6 @@ sealed interface SetupWizardResult {
     data class Completed(
         val projectKey: String,
         val storyIssueType: String,
-        val storyStartStatus: String,
     ) : SetupWizardResult
 
     data object Cancelled : SetupWizardResult
@@ -66,7 +65,7 @@ class SetupWizard(
             },
             credentials = credentials,
         ).execute()
-        SetupWizardResult.Completed(result.projectKey, result.storyIssueType, result.storyStartStatus)
+        SetupWizardResult.Completed(result.projectKey, result.storyIssueType)
     } catch (error: SetupCancelledError) {
         SetupWizardResult.Cancelled
     } catch (error: Exception) {
@@ -101,7 +100,7 @@ object SetupWizardLauncher {
         is SetupWizardResult.Completed -> notifyAndRefresh(
             project,
             NotificationType.INFORMATION,
-            "Jira Task 설정을 저장했습니다. (프로젝트 ${result.projectKey}, 스토리 ${result.storyIssueType}, 시작 상태 ${result.storyStartStatus})",
+            "Jira Task 설정을 저장했습니다. (프로젝트 ${result.projectKey}, 스토리 ${result.storyIssueType})",
         )
         is SetupWizardResult.Cancelled -> JiraTaskNotifications.info(project, "Jira Task 초기 설정을 취소했습니다.")
         is SetupWizardResult.Failed -> JiraTaskNotifications.error(project, "설정 실패: ${result.message}")

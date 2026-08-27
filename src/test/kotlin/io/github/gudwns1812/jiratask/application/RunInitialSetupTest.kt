@@ -77,7 +77,7 @@ class RunInitialSetupTest {
             credentials,
         ).execute()
 
-        assertEquals(InitialSetupResult("S15P11A108", "스토리", "진행 중"), result)
+        assertEquals(InitialSetupResult("S15P11A108", "스토리"), result)
         assertEquals("S15P11A108", savedProjectKey)
         assertEquals(
             JiraSettings(
@@ -88,9 +88,6 @@ class RunInitialSetupTest {
                     story = JiraNamedValue("10", "스토리"),
                     task = JiraNamedValue("11", "작업"),
                     epic = JiraNamedValue("12", "에픽"),
-                ),
-                statuses = JiraSettings.Statuses(
-                    story = JiraSettings.Statuses.StoryStatuses(JiraNamedValue("3", "진행 중")),
                 ),
             ),
             savedJira,

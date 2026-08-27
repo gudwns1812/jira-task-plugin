@@ -145,7 +145,6 @@ class JiraTaskSettingsTest {
                 email = "gudwns1423@gmail.com",
                 apiToken = "token",
                 taskIssueTypeId = "10002",
-                inProgressStatus = JiraNamedValue("21", "진행 중"),
             ),
             ready.value,
         )

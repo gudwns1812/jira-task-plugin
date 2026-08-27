@@ -3,29 +3,28 @@ package io.github.gudwns1812.jiratask.application
 import io.github.gudwns1812.jiratask.domain.jira.JiraAuthenticationError
 import io.github.gudwns1812.jiratask.domain.jira.JiraNetworkError
 import io.github.gudwns1812.jiratask.domain.jira.JiraRequestError
+import io.github.gudwns1812.jiratask.domain.jira.JiraStatusCategory
 import io.github.gudwns1812.jiratask.domain.jira.TaskIssueTransitioner
 
-data class AdvanceTaskCommand(
-    val taskKey: String,
-    val taskIssueTypeId: String,
-    val targetStatusId: String,
-    val targetStatusName: String,
-)
+data class AdvanceTaskCommand(val taskKey: String, val taskIssueTypeId: String)
 
 sealed class AdvanceTaskResult {
     data class Success(val taskKey: String, val statusName: String) : AdvanceTaskResult()
-    /** 이미 목표 상태다. 같은 작업에 커밋을 여러 번 하는 경우가 흔하므로 실패로 보지 않는다. */
+
+    /** 이미 진행 중이다. 같은 작업을 두 번 고르거나 automation이 먼저 옮긴 경우가 흔하다. */
     data class AlreadyThere(val taskKey: String, val statusName: String) : AdvanceTaskResult()
     data class Failure(val exitCode: Int, val message: String) : AdvanceTaskResult()
 }
 
 /**
- * 작업 이슈를 목표 상태로 옮긴다. 작업을 시작할 때는 진행 중으로, 커밋한 뒤에는 완료로 부른다.
+ * 작업 이슈를 `진행 중`으로 옮긴다. 담당자가 작업을 고른 직후에 부른다.
  *
- * 목표 상태는 ID로 먼저 찾고, 없으면 이름으로 찾는다. Jira에서 상태는 프로젝트 전체가 공유하지만
- * 이슈 유형마다 워크플로가 달라 스토리에서 쓰던 상태 ID가 작업 워크플로에는 없을 수 있다.
+ * **어느 상태가 "진행 중"인지 묻지 않는다.** Jira가 상태마다 붙여 주는 카테고리
+ * (`To Do` / `In Progress` / `Done`)가 이미 답이다. 상태 이름은 사이트 언어와 워크플로마다
+ * 다르지만 카테고리는 API가 보장하므로, 그 이슈의 워크플로에서 카테고리가 `In Progress`인
+ * 전환을 골라 쓴다. 설정에 상태 ID를 저장해 두면 이슈 유형마다 워크플로가 달라 어긋난다.
  *
- * 이 유스케이스를 부르는 시점에는 git 작업(작업 번호 저장, 커밋)이 이미 끝나 있다.
+ * 이 유스케이스를 부르는 시점에는 작업 번호 저장이 이미 끝나 있다.
  * 그래서 Jira 실패는 되돌리지 않고 그대로 알린다.
  */
 class AdvanceTaskUseCase(private val transitioner: TaskIssueTransitioner) {
@@ -44,7 +43,9 @@ class AdvanceTaskUseCase(private val transitioner: TaskIssueTransitioner) {
             )
         }
 
-        if (issue.statusId == command.targetStatusId || issue.statusName.equals(command.targetStatusName, true)) {
+        // 이미 진행 중이면 아무것도 하지 않는다. 플러그인과 automation이 같은 전환을 겹쳐
+        // 실행하므로 멱등해야 한다(RULE.md 4.3).
+        if (issue.statusCategory == JiraStatusCategory.IN_PROGRESS) {
             return AdvanceTaskResult.AlreadyThere(command.taskKey, issue.statusName)
         }
 
@@ -54,16 +55,15 @@ class AdvanceTaskUseCase(private val transitioner: TaskIssueTransitioner) {
             return toJiraFailure(error)
         }
 
-        val transition = transitions.firstOrNull { it.toStatusId == command.targetStatusId }
-            ?: transitions.firstOrNull { it.toStatusName.equals(command.targetStatusName, true) }
+        val transition = transitions.firstOrNull { it.toStatusCategory == JiraStatusCategory.IN_PROGRESS }
             ?: return AdvanceTaskResult.Failure(
                 1,
-                "'${command.targetStatusName}' 상태로 전환할 수 있는 Jira 워크플로를 찾지 못했습니다. (현재 상태: ${issue.statusName})",
+                "이 작업의 Jira 워크플로에 '진행 중' 단계로 가는 전환이 없습니다. (현재 상태: ${issue.statusName})",
             )
 
         return try {
             transitioner.transition(command.taskKey, transition.id)
-            AdvanceTaskResult.Success(command.taskKey, command.targetStatusName)
+            AdvanceTaskResult.Success(command.taskKey, transition.toStatusName)
         } catch (error: Exception) {
             toJiraFailure(error)
         }

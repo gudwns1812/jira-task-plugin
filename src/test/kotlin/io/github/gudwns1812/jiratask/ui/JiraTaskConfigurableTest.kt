@@ -85,7 +85,6 @@ class JiraTaskConfigurableTest : BasePlatformTestCase() {
         assertTrue(texts.contains("스토리"))
         assertTrue(texts.contains("작업"))
         assertTrue(texts.contains("에픽"))
-        assertTrue(texts.contains("진행 중"))
         // 완료 상태는 더 이상 설정에 없다 — MR 병합을 계기로 automation이 판단한다(RULE.md 4.2).
         assertFalse(texts.contains("완료"))
     }
@@ -118,7 +117,7 @@ class JiraTaskConfigurableTest : BasePlatformTestCase() {
 
         val texts = textsOf(configurable.createComponent())
 
-        assertTrue(texts.count { it == JiraTaskConfigurable.NOT_CONFIGURED } >= 5)
+        assertTrue(texts.count { it == JiraTaskConfigurable.NOT_CONFIGURED } >= 4)
         // 업무 정책은 이슈를 만들 때만 쓰던 값이라 더는 설정에 없다(RULE.md 전제 A).
         assertFalse(texts.any { it.contains("FE, BE, AI, QA, INFRA") })
     }

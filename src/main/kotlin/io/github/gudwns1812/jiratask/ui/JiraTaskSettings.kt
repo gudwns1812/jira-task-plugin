@@ -1,7 +1,6 @@
 package io.github.gudwns1812.jiratask.ui
 
 import io.github.gudwns1812.jiratask.application.CredentialStore
-import io.github.gudwns1812.jiratask.domain.jira.JiraNamedValue
 import io.github.gudwns1812.jiratask.domain.policy.PolicyConfigurationError
 import io.github.gudwns1812.jiratask.infrastructure.CredentialStorageError
 import io.github.gudwns1812.jiratask.infrastructure.GitLabTokenStore
@@ -24,8 +23,10 @@ data class MergeRequestSettings(
 )
 
 /**
- * 작업 이슈의 상태를 옮기는 데 필요한 값. 진행 중 상태는 스토리 브랜치 생성에 쓰는 값을 함께 쓴다 —
- * Jira에서 상태는 프로젝트가 공유하고, 이름이 같으면 AdvanceTaskUseCase가 워크플로에서 찾아낸다.
+ * 작업 이슈를 다루는 데 필요한 값.
+ *
+ * 어느 상태가 "진행 중"인지는 담지 않는다. Jira의 상태 카테고리가 이미 답이라
+ * [io.github.gudwns1812.jiratask.application.AdvanceTaskUseCase]가 그 이슈의 워크플로에서 직접 고른다.
  */
 data class TaskTransitionSettings(
     val projectKey: String,
@@ -33,7 +34,6 @@ data class TaskTransitionSettings(
     val email: String,
     val apiToken: String,
     val taskIssueTypeId: String,
-    val inProgressStatus: JiraNamedValue,
 )
 
 /**
@@ -73,7 +73,6 @@ class JiraTaskSettings(
         val baseUrl = config.jira?.baseUrl
         val email = environment("JIRA_EMAIL") ?: config.jira?.email
         val taskIssueTypeId = config.jira?.issueTypes?.task?.id
-        val inProgressStatus = config.jira?.statuses?.story?.start
         val apiToken = environment("JIRA_API_TOKEN")
             ?: if (baseUrl != null && email != null) {
                 try {
@@ -89,7 +88,6 @@ class JiraTaskSettings(
             "프로젝트 키(설정 마법사)".takeIf { config.projectKey == null },
             "Jira 주소(설정 마법사)".takeIf { baseUrl == null },
             "작업 타입(설정 마법사)".takeIf { taskIssueTypeId == null },
-            "진행 상태(설정 마법사)".takeIf { inProgressStatus == null },
             "JIRA_EMAIL 또는 초기 설정 이메일".takeIf { email == null },
             "JIRA_API_TOKEN 또는 IDE 비밀번호 저장소의 토큰".takeIf { apiToken == null },
         )
@@ -104,7 +102,6 @@ class JiraTaskSettings(
                 email = email!!,
                 apiToken = apiToken!!,
                 taskIssueTypeId = taskIssueTypeId!!,
-                inProgressStatus = inProgressStatus!!,
             ),
         )
     }

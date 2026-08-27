@@ -5,6 +5,7 @@ import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.ValidationInfo
 import com.intellij.ui.DocumentAdapter
 import com.intellij.ui.components.JBLabel
+import com.intellij.ui.ListSpeedSearch
 import com.intellij.ui.components.JBList
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextField
@@ -51,6 +52,9 @@ class StartTaskDialog(
     val taskList: JBList<SprintTaskRow> = JBList(model).apply {
         selectionMode = ListSelectionModel.SINGLE_SELECTION
         cellRenderer = RowRenderer()
+        // 목록이 길어질 때를 위한 탈출구. 그냥 타이핑하면 IDE가 겹쳐 그리는 찾기 상자다.
+        // 한 사람의 스프린트 작업은 보통 열 몇 건이라 별도 검색 칸을 두지 않는다.
+        ListSpeedSearch.installOn(this) { row -> (row as? SprintTaskRow.Task)?.task?.label() }
         addListSelectionListener {
             selectedTask()?.let { taskNumberField.text = numberOf(it.key) }
             refreshState()
@@ -66,8 +70,6 @@ class StartTaskDialog(
 
     val taskNumberField: JBTextField = JBTextField(currentTaskNumber.orEmpty())
 
-    private val filterField = JBTextField()
-
     private val statusLabel = JBLabel(LOADING)
 
     private val noticeLabel = JBLabel("")
@@ -80,21 +82,13 @@ class StartTaskDialog(
         setOKButtonText("작업 시작")
         init()
 
-        listOf(taskNumberField, filterField).forEach { field ->
-            field.document.addDocumentListener(object : DocumentAdapter() {
-                override fun textChanged(event: DocumentEvent) {
-                    if (field === filterField) {
-                        showRows(SprintTaskList.matching(loaded, filterField.text))
-                    }
-                    refreshState()
-                }
-            })
-        }
+        taskNumberField.document.addDocumentListener(object : DocumentAdapter() {
+            override fun textChanged(event: DocumentEvent) = refreshState()
+        })
         refreshState()
     }
 
     override fun createCenterPanel(): JComponent = panel {
-        row { cell(filterField).columns(COLUMNS_MEDIUM).comment("키나 제목으로 좁힙니다.") }
         row { cell(JBScrollPane(taskList)).resizableColumn() }
         row { cell(statusLabel) }
         row("작업 번호:") { cell(taskNumberField).columns(COLUMNS_MEDIUM) }
@@ -102,7 +96,7 @@ class StartTaskDialog(
         row { cell(noticeLabel) }
     }
 
-    override fun getPreferredFocusedComponent(): JComponent = filterField
+    override fun getPreferredFocusedComponent(): JComponent = taskList
 
     public override fun doValidate(): ValidationInfo? = values().problem()?.let { ValidationInfo(it) }
 
@@ -124,7 +118,7 @@ class StartTaskDialog(
     /** 목록을 받았다. EDT에서 호출한다. */
     fun show(tasks: List<SprintTask>) {
         loaded = tasks
-        showRows(SprintTaskList.matching(tasks, filterField.text))
+        showRows(tasks)
         statusLabel.text = if (tasks.isEmpty()) EMPTY else ""
         selectCurrent()
         refreshState()

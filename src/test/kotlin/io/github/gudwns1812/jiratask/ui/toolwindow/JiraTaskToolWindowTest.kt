@@ -111,7 +111,6 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
                 baseUrl = "https://team.atlassian.net",
                 projectName = "A108 프로젝트",
                 storyIssueType = "스토리",
-                storyStartStatus = "진행 중",
             ),
         ),
         "257",

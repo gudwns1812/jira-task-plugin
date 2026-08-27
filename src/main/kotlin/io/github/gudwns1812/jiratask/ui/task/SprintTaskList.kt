@@ -48,15 +48,6 @@ object SprintTaskList {
         }
     }
 
-    /** 검색어에 걸리는 작업만 남긴다. 키와 제목을 대소문자 없이 본다. */
-    fun matching(tasks: List<SprintTask>, text: String): List<SprintTask> {
-        val needle = text.trim()
-        if (needle.isEmpty()) {
-            return tasks
-        }
-        return tasks.filter { it.key.contains(needle, ignoreCase = true) || it.summary.contains(needle, ignoreCase = true) }
-    }
-
     /**
      * 이 작업을 고르면 `진행 중`으로 옮길 것인가.
      *

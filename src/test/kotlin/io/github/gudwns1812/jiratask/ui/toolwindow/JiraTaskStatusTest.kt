@@ -19,7 +19,6 @@ class JiraTaskStatusTest {
         storyIssueType = "스토리",
         taskIssueType = "작업",
         epicIssueType = "에픽",
-        storyStartStatus = "진행 중",
         gitLabBaseUrl = "https://lab.ssafy.com",
     )
 
@@ -36,7 +35,6 @@ class JiraTaskStatusTest {
         assertEquals("https://team.atlassian.net", rows["Jira 주소"])
         assertEquals("A108 프로젝트", rows["프로젝트"])
         assertEquals("스토리", rows["스토리 유형"])
-        assertEquals("진행 중", rows["작업 시작 상태"])
         assertEquals("257", rows["현재 작업 번호"])
         assertEquals("feat/100-signup", rows["현재 브랜치"])
     }
@@ -114,6 +112,6 @@ class JiraTaskStatusTest {
     @Test
     fun `draws every row it declares`() {
         assertEquals(JiraTaskStatus.ROW_NAMES, JiraTaskStatus.EMPTY.rows().map { it.first })
-        assertEquals(7, JiraTaskStatus.ROW_NAMES.size)
+        assertEquals(6, JiraTaskStatus.ROW_NAMES.size)
     }
 }

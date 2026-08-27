@@ -1,7 +1,13 @@
 package io.github.gudwns1812.jiratask.domain.jira
 
 /** 이슈에서 지금 실행할 수 있는 워크플로 전환 하나. */
-data class JiraTransition(val id: String, val toStatusId: String, val toStatusName: String)
+data class JiraTransition(
+    val id: String,
+    val toStatusId: String,
+    val toStatusName: String,
+    /** 옮겨 갈 상태의 카테고리. 어느 전환이 "시작"인지 이 값으로 고른다. */
+    val toStatusCategory: JiraStatusCategory = JiraStatusCategory.UNKNOWN,
+)
 
 /**
  * 작업 이슈의 상태를 옮기는 데 필요한 것만 모은 포트.

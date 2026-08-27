@@ -99,7 +99,7 @@ class JiraTaskScenarioTest {
 
         // 1. 설정 마법사
         val setup = SetupWizard(ScriptedPrompter(), credentials, repository, createJira = { jira }).run()
-        assertEquals(SetupWizardResult.Completed("S15P11A108", "스토리", "진행 중"), setup)
+        assertEquals(SetupWizardResult.Completed("S15P11A108", "스토리"), setup)
 
         val settings = JiraTaskSettings(repository, credentials) { null }
         val git = GitRepository(directory)

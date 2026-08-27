@@ -66,25 +66,6 @@ class SprintTaskListTest {
     }
 
     @Test
-    fun `narrows by key or by summary without minding letter case`() {
-        val tasks = listOf(
-            task("S15P11A108-257", JiraStatusCategory.TO_DO, "회원가입 화면 구현"),
-            task("S15P11A108-258", JiraStatusCategory.TO_DO, "로그인 API 연동"),
-        )
-
-        assertEquals(listOf("S15P11A108-257"), SprintTaskList.matching(tasks, "257").map { it.key })
-        assertEquals(listOf("S15P11A108-258"), SprintTaskList.matching(tasks, "로그인").map { it.key })
-        assertEquals(2, SprintTaskList.matching(tasks, "s15p11a108").size)
-    }
-
-    @Test
-    fun `keeps everything when the filter is blank`() {
-        val tasks = listOf(task("A-1", JiraStatusCategory.TO_DO))
-
-        assertEquals(1, SprintTaskList.matching(tasks, "   ").size)
-    }
-
-    @Test
     fun `moves an unfinished task to in progress but leaves a finished one alone`() {
         // 끝난 작업을 되돌리지 않는다(RULE.md 4.3).
         assertTrue(SprintTaskList.movesToInProgress(task("A-1", JiraStatusCategory.TO_DO)))

@@ -5,6 +5,7 @@ import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import io.github.gudwns1812.jiratask.application.AdvanceTaskResult
 import io.github.gudwns1812.jiratask.application.CredentialStore
 import io.github.gudwns1812.jiratask.domain.jira.JiraIssue
+import io.github.gudwns1812.jiratask.domain.jira.JiraStatusCategory
 import io.github.gudwns1812.jiratask.domain.jira.JiraTransition
 import io.github.gudwns1812.jiratask.domain.jira.TaskIssueTransitioner
 import io.github.gudwns1812.jiratask.infrastructure.JiraTaskConfigStorage
@@ -23,18 +24,19 @@ class AdvanceCurrentTaskTest : BasePlatformTestCase() {
     private class FakeTransitioner(
         private val currentStatusId: String = "11",
         private val currentStatusName: String = "해야 할 일",
+        private val currentCategory: JiraStatusCategory = JiraStatusCategory.TO_DO,
     ) : TaskIssueTransitioner {
         val requested = mutableListOf<String>()
         val executed = mutableListOf<Pair<String, String>>()
 
         override fun getIssue(issueKey: String): JiraIssue {
             requested += issueKey
-            return JiraIssue(issueKey, "10002", "작업", currentStatusId, currentStatusName)
+            return JiraIssue(issueKey, "10002", "작업", currentStatusId, currentStatusName, "제목", currentCategory)
         }
 
         override fun listTransitions(issueKey: String): List<JiraTransition> = listOf(
-            JiraTransition("3", "21", "진행 중"),
-            JiraTransition("5", "31", "완료"),
+            JiraTransition("3", "21", "진행 중", JiraStatusCategory.IN_PROGRESS),
+            JiraTransition("5", "31", "완료", JiraStatusCategory.DONE),
         )
 
         override fun transition(issueKey: String, transitionId: String) {
@@ -89,7 +91,9 @@ class AdvanceCurrentTaskTest : BasePlatformTestCase() {
 
     fun `test does nothing when the task is already in progress`() {
         // 플러그인과 automation이 같은 전환을 겹쳐 실행한다. 두 번째는 아무 일도 하지 않아야 한다.
-        val transitioner = advance(transitioner = FakeTransitioner(currentStatusId = "21", currentStatusName = "진행 중"))
+        val transitioner = advance(
+            transitioner = FakeTransitioner("21", "진행 중", JiraStatusCategory.IN_PROGRESS),
+        )
 
         assertEquals(listOf("S15P11A108-257"), transitioner.requested)
         assertEmpty("이미 진행 중이면 전환하지 않는다", transitioner.executed)
@@ -108,11 +112,12 @@ class AdvanceCurrentTaskTest : BasePlatformTestCase() {
         assertEmpty(transitioner.requested)
     }
 
-    fun `test takes the target status from the saved start status`() {
+    fun `test needs no stored status to move a task`() {
+        // 어느 상태가 진행 중인지는 Jira의 카테고리가 답한다. 설정에 담지 않는다.
         val ready = settings().forTaskTransition() as io.github.gudwns1812.jiratask.ui.SettingsLookup.Ready
         val value: TaskTransitionSettings = ready.value
 
-        assertEquals("21", value.inProgressStatus.id)
+        assertEquals("10002", value.taskIssueTypeId)
     }
 
     fun `test reports each result as one notification line`() {

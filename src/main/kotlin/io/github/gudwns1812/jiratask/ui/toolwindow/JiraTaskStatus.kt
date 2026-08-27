@@ -33,7 +33,6 @@ data class JiraTaskStatus(
     val baseUrl: String?,
     val projectName: String?,
     val storyIssueType: String?,
-    val storyStartStatus: String?,
     val taskNumber: String?,
     val branch: String?,
     val problem: StatusProblem?,
@@ -50,7 +49,6 @@ data class JiraTaskStatus(
         row("Jira 주소", baseUrl, NOT_CONFIGURED, StatusRow.Kind.LINK),
         row("프로젝트", projectName, NOT_CONFIGURED, StatusRow.Kind.TEXT),
         row("스토리 유형", storyIssueType, NOT_CONFIGURED, StatusRow.Kind.TEXT),
-        row("작업 시작 상태", storyStartStatus, NOT_CONFIGURED, StatusRow.Kind.TEXT),
         row("현재 작업 번호", taskNumber, NO_TASK, StatusRow.Kind.CODE),
         row("현재 브랜치", branch, NO_BRANCH, StatusRow.Kind.CODE),
     )
@@ -73,7 +71,7 @@ data class JiraTaskStatus(
         const val NEEDS_SETUP: String = "Jira 설정이 없습니다. 설정 마법사를 실행하세요."
 
         /** 아직 아무것도 읽지 못한 상태. */
-        val EMPTY: JiraTaskStatus = JiraTaskStatus(null, null, null, null, null, null, null, null)
+        val EMPTY: JiraTaskStatus = JiraTaskStatus(null, null, null, null, null, null, null)
 
         /** 툴 윈도우가 그릴 항목 이름. [rows]의 키와 항상 같다. */
         val ROW_NAMES: List<String> = EMPTY.rows().map { it.first }
@@ -88,7 +86,6 @@ fun JiraTaskStatus.Companion.of(load: SettingsLoad, taskNumber: String?, branch:
             baseUrl = null,
             projectName = null,
             storyIssueType = null,
-            storyStartStatus = null,
             taskNumber = taskNumber,
             branch = branch,
             problem = StatusProblem(StatusProblem.Kind.BROKEN, load.message),
@@ -101,7 +98,6 @@ private fun SettingsSnapshot.toStatus(taskNumber: String?, branch: String?): Jir
     baseUrl = baseUrl,
     projectName = projectName,
     storyIssueType = storyIssueType,
-    storyStartStatus = storyStartStatus,
     taskNumber = taskNumber,
     branch = branch,
     problem = if (projectKey.isEmpty()) {

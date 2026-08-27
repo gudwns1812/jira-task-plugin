@@ -75,7 +75,15 @@ class JiraClient(
             throw JiraRequestError("Jira 이슈 응답 형식이 올바르지 않습니다.")
         }
 
-        return JiraIssue(key, issueTypeId, issueTypeName, statusId, statusName, fields.stringOrNull("summary").orEmpty())
+        return JiraIssue(
+            key = key,
+            issueTypeId = issueTypeId,
+            issueTypeName = issueTypeName,
+            statusId = statusId,
+            statusName = statusName,
+            summary = fields.stringOrNull("summary").orEmpty(),
+            statusCategory = decodeStatus(status).category,
+        )
     }
 
     override fun currentSprintTasks(projectKey: String, taskIssueTypeId: String): List<SprintTask> {
@@ -279,7 +287,12 @@ class JiraClient(
             val target = obj.objectOrNull("to") ?: return@mapNotNull null
             val targetId = target.stringOrNull("id") ?: return@mapNotNull null
 
-            JiraTransition(id, targetId, target.stringOrNull("name").orEmpty())
+            JiraTransition(
+                id = id,
+                toStatusId = targetId,
+                toStatusName = target.stringOrNull("name").orEmpty(),
+                toStatusCategory = decodeStatus(target).category,
+            )
         }
     }
 

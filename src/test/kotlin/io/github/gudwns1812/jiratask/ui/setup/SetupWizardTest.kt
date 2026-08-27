@@ -119,7 +119,7 @@ class SetupWizardTest {
         val result = wizard(prompter, repository, credentials).run()
 
         assertEquals(
-            SetupWizardResult.Completed("S15P11A108", "스토리", "진행 중"),
+            SetupWizardResult.Completed("S15P11A108", "스토리"),
             result,
         )
         val saved = repository.loadConfig()
@@ -129,7 +129,6 @@ class SetupWizardTest {
         assertEquals(JiraNamedValue("10001", "스토리"), saved.jira?.issueTypes?.story)
         assertEquals(JiraNamedValue("10002", "작업"), saved.jira?.issueTypes?.task)
         assertEquals(JiraNamedValue("10003", "에픽"), saved.jira?.issueTypes?.epic)
-        assertEquals(JiraNamedValue("21", "진행 중"), saved.jira?.statuses?.story?.start)
         assertEquals(
             listOf(Triple("https://team.atlassian.net", "gudwns1423@gmail.com", "token")),
             credentials.saved,
