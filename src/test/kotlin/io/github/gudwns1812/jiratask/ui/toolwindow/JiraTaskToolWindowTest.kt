@@ -142,6 +142,42 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
         assertTrue(panel.currentStatus().isConfigured)
     }
 
+    fun `test refreshing skips the cache instead of redrawing the same list`() {
+        // 캐시를 그대로 쓰면 "새로 고침해도 그대로"가 되어 버튼이 거짓말을 한다.
+        val forced = mutableListOf<Boolean>()
+        val panel = JiraTaskToolWindowPanel(
+            project,
+            testRootDisposable,
+            readSprint = { force ->
+                forced += force
+                io.github.gudwns1812.jiratask.ui.task.SprintTaskLoad.Loaded(emptyList())
+            },
+        )
+        // readBoard는 설정이 갖춰졌을 때만 스프린트를 읽는다.
+        val storage = io.github.gudwns1812.jiratask.infrastructure.JiraTaskConfigStorage.getInstance()
+        val before = storage.configJson
+        storage.configJson = """{"projectKey":"S15P11A108"}"""
+        try {
+            panel.readBoard()
+            panel.readBoard(force = true)
+        } finally {
+            storage.configJson = before
+        }
+
+        assertEquals("보통은 캐시를 쓰고, 새로 고침일 때만 건너뛴다", listOf(false, true), forced)
+    }
+
+    fun `test offers a refresh where the sprint is shown`() {
+        val panel = JiraTaskToolWindowPanel(project, testRootDisposable)
+
+        panel.show(configuredBoard())
+
+        assertTrue(
+            "제목 표시줄만으로는 찾기 어렵다",
+            linksOf(panel).any { it.text == JiraTaskToolWindowPanel.REFRESH },
+        )
+    }
+
     fun `test lists the sprint so a task can be started without a dialog`() {
         val tasks = listOf(
             io.github.gudwns1812.jiratask.domain.jira.SprintTask(

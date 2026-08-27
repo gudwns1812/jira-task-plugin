@@ -69,6 +69,13 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
     },
     /** 화면에 그릴 것을 읽는 방법. 기본은 [readBoard]이고, 테스트에서 갈아 끼운다. */
     private val boardReader: (() -> JiraTaskBoard)? = null,
+    /**
+     * 스프린트를 읽는 방법. 인자는 "새로 고침을 눌렀는가"이고, true면 캐시를 건너뛴다.
+     * 그 갈림이 새로 고침 버튼의 전부라 테스트가 여기를 잡는다.
+     */
+    private val readSprint: (Boolean) -> SprintTaskLoad = { force ->
+        SprintTasks.getInstance(project).let { if (force) it.reload() else it.current() }
+    },
     /** git에서 현재 작업 번호를 읽는 방법. 기본은 로컬 git 설정이고, 테스트에서 갈아 끼운다. */
     private val taskNumberFromGit: () -> String? = {
         project.basePath?.let { runCatching { GitRepository(File(it)).getCurrentTaskNumber() }.getOrNull() }
@@ -125,8 +132,10 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
         group("현재 스프린트") {
             row { cell(JBScrollPane(sprintList)).resizableColumn() }
             row { cell(sprintNoticeLabel) }
-            row { link(START_TASK) { startSelected() } }
-                .rowComment("작업을 두 번 클릭해도 됩니다.")
+            row {
+                link(START_TASK) { startSelected() }
+                link(REFRESH) { refreshInBackground(force = true) }
+            }.rowComment("작업을 두 번 클릭해도 됩니다. Jira에서 바꾼 내용은 새로 고침해야 보입니다.")
         }
     }
 
@@ -216,10 +225,16 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
         else -> Shown.STATUS
     }
 
-    /** git과 Jira를 읽어야 하므로 백그라운드에서 만든 뒤 화면에 반영한다. */
-    fun refreshInBackground() {
+    /**
+     * git과 Jira를 읽어야 하므로 백그라운드에서 만든 뒤 화면에 반영한다.
+     *
+     * [force]는 사용자가 새로 고침을 눌렀다는 뜻이다. 이때는 스프린트 캐시를 건너뛰고 Jira에 다시 묻는다 —
+     * 캐시를 그대로 쓰면 "새로 고침해도 그대로"가 되어 버튼이 거짓말을 한다.
+     */
+    @JvmOverloads
+    fun refreshInBackground(force: Boolean = false) {
         ApplicationManager.getApplication().executeOnPooledThread {
-            val next = boardReader?.invoke() ?: readBoard()
+            val next = boardReader?.invoke() ?: readBoard(force)
             ApplicationManager.getApplication().invokeLater({ show(next) }) { project.isDisposed }
         }
     }
@@ -230,7 +245,8 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
      * Jira 조회는 설정이 갖춰졌을 때만 한다. 설정이 없으면 어차피 빈 상태 화면을 보여 주므로
      * 네트워크를 칠 이유가 없다.
      */
-    fun readBoard(): JiraTaskBoard {
+    @JvmOverloads
+    fun readBoard(force: Boolean = false): JiraTaskBoard {
         val load = EditSettingsUseCase(repository::loadConfig, repository::saveConfig).load()
         val git = project.basePath?.let { GitRepository(File(it)) }
         val state = CurrentTaskState.getInstance(project)
@@ -242,11 +258,10 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
             return JiraTaskBoard(status)
         }
 
-        val tasks = SprintTasks.getInstance(project)
-        val sprint = tasks.current()
+        val sprint = readSprint(force)
         val currentTask = status.currentIssueKey()?.let { key ->
             (sprint as? SprintTaskLoad.Loaded)?.tasks?.firstOrNull { it.key == key }
-                ?: (tasks.find(key) as? TaskAnswer.Known)?.task
+                ?: (SprintTasks.getInstance(project).find(key) as? TaskAnswer.Known)?.task
         }
 
         return JiraTaskBoard(status, currentTask, sprint)
@@ -340,10 +355,10 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
 
     private inner class RefreshStatusAction : DumbAwareAction(
         "새로 고침",
-        "저장된 설정과 Git 상태를 다시 읽습니다",
+        "설정·Git 상태와 현재 스프린트를 Jira에서 다시 읽습니다",
         AllIcons.Actions.Refresh,
     ) {
-        override fun actionPerformed(event: AnActionEvent) = refreshInBackground()
+        override fun actionPerformed(event: AnActionEvent) = refreshInBackground(force = true)
     }
 
     private inner class OpenSettingsAction : DumbAwareAction(
@@ -361,6 +376,7 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
         const val OPEN_SETTINGS: String = "설정 열기"
         const val TOOL_WINDOW_ID: String = "Jira Task"
         const val START_TASK: String = "선택한 작업 시작"
+        const val REFRESH: String = "새로 고침"
         const val START_HINT: String = "아래에서 작업을 골라 시작하세요."
         const val SPRINT_LOADING: String = "현재 스프린트를 읽는 중입니다…"
         const val BRANCH_PREFIX: String = "브랜치: "
