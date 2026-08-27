@@ -13,6 +13,42 @@ class StartTaskDialogTest : BasePlatformTestCase() {
 
     private fun dialog(current: String? = null) = StartTaskDialog(project, current).also { disposeOnTearDown(it.disposable) }
 
+    fun `test hands the loaded list to the dialog it already opened`() {
+        val dialog = dialog()
+        val edt = mutableListOf<() -> Unit>()
+
+        StartTaskAction.fill(
+            project = project,
+            dialog = dialog,
+            read = { SprintTaskLoad.Loaded(listOf(task("S15P11A108-257"))) },
+            background = { it() },
+            onEdt = { edt += it },
+        )
+
+        assertEquals("아직 EDT로 넘기기 전이면 화면은 그대로다", StartTaskDialog.LOADING, dialog.statusText())
+        edt.single()()
+        assertEquals(2, dialog.taskList.model.size)
+    }
+
+    fun `test shows the reason a background read could not answer`() {
+        val dialog = dialog()
+
+        StartTaskAction.fill(
+            project = project,
+            dialog = dialog,
+            read = { SprintTaskLoad.Failed("Jira 서버와 통신할 수 없습니다.") },
+            background = { it() },
+            onEdt = { it() },
+        )
+
+        assertEquals("Jira 서버와 통신할 수 없습니다.", dialog.statusText())
+    }
+
+    fun `test schedules the update so it runs while the modal dialog is open`() {
+        // 기본 모달리티(비모달)로 두면 창을 닫아야 도착해 화면이 "읽는 중"에서 멈춘다.
+        assertEquals(com.intellij.openapi.application.ModalityState.any(), StartTaskAction.DIALOG_MODALITY)
+    }
+
     fun `test says it is loading before the list arrives`() {
         val dialog = dialog()
 

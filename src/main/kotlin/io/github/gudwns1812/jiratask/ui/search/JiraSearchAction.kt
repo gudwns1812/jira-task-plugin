@@ -5,6 +5,7 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.project.Project
 import io.github.gudwns1812.jiratask.domain.jira.JiraIssueEditor
 import io.github.gudwns1812.jiratask.domain.jira.SprintTaskReader
@@ -117,8 +118,16 @@ class JiraSearchAction @JvmOverloads constructor(
         }
     }
 
+    /**
+     * 검색 창은 모달이다. 풀 스레드에서 예약한 `invokeLater`는 기본이 비모달이라 창이 닫힐 때까지
+     * 실행되지 않으므로, 열려 있는 창을 갱신하려면 [ModalityState.any]로 올려야 한다.
+     */
     private fun onEdt(project: Project, block: () -> Unit) {
-        ApplicationManager.getApplication().invokeLater({ if (!project.isDisposed) block() }, project.disposed)
+        ApplicationManager.getApplication().invokeLater(
+            { if (!project.isDisposed) block() },
+            ModalityState.any(),
+            project.disposed,
+        )
     }
 
     companion object {
