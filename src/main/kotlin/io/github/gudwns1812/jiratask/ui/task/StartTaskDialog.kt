@@ -62,8 +62,11 @@ class StartTaskDialog(
         }
         addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(event: MouseEvent) {
-                if (event.clickCount == 2 && selectedTask() != null) {
-                    doOKAction()
+                // 머리글은 한 번 눌러 접고 펴고, 작업은 두 번 눌러 고른다.
+                when (val row = selectedValue) {
+                    is SprintTaskRow.Header -> toggleGroup(row.group)
+                    is SprintTaskRow.Task -> if (event.clickCount == 2) doOKAction()
+                    else -> Unit
                 }
             }
         })
@@ -77,6 +80,9 @@ class StartTaskDialog(
 
     /** 마지막으로 받은 목록. 검색은 이 값을 걸러서 보여준다. */
     private var loaded: List<SprintTask> = emptyList()
+
+    /** 접어 둔 그룹. 화면에만 있는 상태다. */
+    private var collapsedGroups: Set<SprintTaskGroup> = SprintTaskList.DEFAULT_COLLAPSED
 
     init {
         title = "Start Jira Task"
@@ -143,7 +149,14 @@ class StartTaskDialog(
 
     private fun showRows(tasks: List<SprintTask>) {
         model.clear()
-        SprintTaskList.rowsOf(tasks).forEach(model::addElement)
+        SprintTaskList.rowsOf(tasks, collapsedGroups).forEach(model::addElement)
+    }
+
+    /** 머리글을 눌러 그 그룹을 접거나 편다. */
+    fun toggleGroup(group: SprintTaskGroup) {
+        collapsedGroups = SprintTaskList.toggled(collapsedGroups, group)
+        showRows(loaded)
+        selectCurrent()
     }
 
     private fun selectCurrent() {
@@ -176,7 +189,7 @@ class StartTaskDialog(
         ): Component {
             val row = value as? SprintTaskRow
             val text = when (row) {
-                is SprintTaskRow.Header -> row.group.title
+                is SprintTaskRow.Header -> row.title()
                 is SprintTaskRow.Task -> "    ${row.task.label()}"
                 null -> ""
             }

@@ -27,6 +27,7 @@ class SprintTaskListTest {
                 task("A-2", JiraStatusCategory.IN_PROGRESS),
                 task("A-1", JiraStatusCategory.TO_DO),
             ),
+            collapsed = emptySet(),
         )
 
         assertEquals(
@@ -34,6 +35,54 @@ class SprintTaskListTest {
             groupsOf(rows),
         )
         assertEquals(listOf("A-1", "A-2", "A-3"), keysOf(rows))
+    }
+
+    @Test
+    fun `folds away the finished work but keeps its header`() {
+        // 스프린트가 갈수록 길어지는 그룹이고, 후속 커밋을 붙일 때만 필요하다.
+        val rows = SprintTaskList.rowsOf(
+            listOf(task("A-1", JiraStatusCategory.TO_DO), task("A-3", JiraStatusCategory.DONE)),
+        )
+
+        assertEquals(listOf(SprintTaskGroup.TO_DO, SprintTaskGroup.DONE), groupsOf(rows))
+        assertEquals("접힌 그룹의 작업은 줄이 없다", listOf("A-1"), keysOf(rows))
+    }
+
+    @Test
+    fun `says how many are hidden behind a folded header`() {
+        val rows = SprintTaskList.rowsOf(
+            listOf(task("A-3", JiraStatusCategory.DONE), task("A-4", JiraStatusCategory.DONE)),
+        )
+
+        val header = rows.filterIsInstance<SprintTaskRow.Header>().single()
+        assertTrue(header.isCollapsed)
+        assertEquals(2, header.taskCount)
+        assertEquals("▸ 완료 (2)", header.title())
+    }
+
+    @Test
+    fun `marks an open header so it can be told apart`() {
+        val rows = SprintTaskList.rowsOf(listOf(task("A-1", JiraStatusCategory.TO_DO)))
+
+        val header = rows.filterIsInstance<SprintTaskRow.Header>().single()
+        assertFalse(header.isCollapsed)
+        assertEquals("▾ 해야 할 일 (1)", header.title())
+    }
+
+    @Test
+    fun `toggling a header folds it and toggling again opens it`() {
+        val open = SprintTaskList.toggled(SprintTaskList.DEFAULT_COLLAPSED, SprintTaskGroup.DONE)
+        val folded = SprintTaskList.toggled(open, SprintTaskGroup.DONE)
+
+        assertTrue(SprintTaskGroup.DONE !in open)
+        assertTrue(SprintTaskGroup.DONE in folded)
+    }
+
+    @Test
+    fun `folds only the group that was asked for`() {
+        val collapsed = SprintTaskList.toggled(emptySet(), SprintTaskGroup.TO_DO)
+
+        assertEquals(setOf(SprintTaskGroup.TO_DO), collapsed)
     }
 
     @Test

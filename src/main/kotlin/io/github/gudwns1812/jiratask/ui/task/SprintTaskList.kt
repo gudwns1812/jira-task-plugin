@@ -28,25 +28,62 @@ enum class SprintTaskGroup(val title: String) {
 
 /** 목록의 한 줄. 그룹 머리글이거나 작업이다. */
 sealed interface SprintTaskRow {
-    data class Header(val group: SprintTaskGroup) : SprintTaskRow
+
+    /** 그룹 머리글. 눌러서 접고 편다. [taskCount]는 접혀 있어도 몇 건인지 알려 준다. */
+    data class Header(
+        val group: SprintTaskGroup,
+        val taskCount: Int = 0,
+        val isCollapsed: Boolean = false,
+    ) : SprintTaskRow {
+        /** `▾ 해야 할 일 (3)` */
+        fun title(): String = "${if (isCollapsed) "▸" else "▾"} ${group.title} ($taskCount)"
+    }
+
     data class Task(val task: SprintTask, val group: SprintTaskGroup) : SprintTaskRow
 }
 
 object SprintTaskList {
 
-    /** 그룹 순서대로 늘어놓는다. 빈 그룹은 머리글도 만들지 않는다. */
-    fun rowsOf(tasks: List<SprintTask>): List<SprintTaskRow> {
+    /**
+     * 그룹 순서대로 늘어놓는다. 빈 그룹은 머리글도 만들지 않는다.
+     *
+     * [collapsed]에 든 그룹은 머리글만 남기고 작업을 감춘다. 머리글은 접혀 있어도 건수를 보여 주므로
+     * 접었다고 무엇이 사라졌는지 모르게 되지는 않는다.
+     */
+    @JvmOverloads
+    fun rowsOf(
+        tasks: List<SprintTask>,
+        collapsed: Set<SprintTaskGroup> = DEFAULT_COLLAPSED,
+    ): List<SprintTaskRow> {
         val grouped = tasks.groupBy(SprintTaskGroup::of)
 
         return SprintTaskGroup.entries.flatMap { group ->
             val members = grouped[group].orEmpty()
             if (members.isEmpty()) {
-                emptyList()
+                return@flatMap emptyList()
+            }
+
+            val isCollapsed = group in collapsed
+            val header = SprintTaskRow.Header(group, members.size, isCollapsed)
+            if (isCollapsed) {
+                listOf(header)
             } else {
-                listOf(SprintTaskRow.Header(group)) + members.map { SprintTaskRow.Task(it, group) }
+                listOf(header) + members.map { SprintTaskRow.Task(it, group) }
             }
         }
     }
+
+    /** 머리글을 눌렀을 때의 다음 상태. */
+    fun toggled(collapsed: Set<SprintTaskGroup>, group: SprintTaskGroup): Set<SprintTaskGroup> =
+        if (group in collapsed) collapsed - group else collapsed + group
+
+    /**
+     * 처음에 접어 두는 그룹.
+     *
+     * `완료`만 접는다 — 스프린트가 진행될수록 가장 길어지지만 후속 커밋을 붙일 때만 필요하다.
+     * 지금 할 일과 하던 일은 이 화면을 여는 이유 자체이므로 접지 않는다.
+     */
+    val DEFAULT_COLLAPSED: Set<SprintTaskGroup> = setOf(SprintTaskGroup.DONE)
 
     /**
      * 이 작업을 고르면 `진행 중`으로 옮길 것인가.
