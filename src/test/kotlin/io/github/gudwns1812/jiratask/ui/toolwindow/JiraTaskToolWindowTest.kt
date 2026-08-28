@@ -213,6 +213,30 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
         )
     }
 
+    fun `test the sprint section can be folded away`() {
+        // 스프린트를 다 훑고 나면 현재 작업만 보면 되는 때가 온다.
+        val panel = JiraTaskToolWindowPanel(project, testRootDisposable)
+        panel.show(configuredBoard())
+
+        val collapsibles = collapsibleSeparatorsOf(panel)
+        assertTrue("현재 스프린트가 접히는 자리여야 한다", collapsibles.contains("현재 스프린트"))
+        assertTrue("설정 요약도 접힌다", collapsibles.contains("설정 요약"))
+        assertEquals("작업 목록의 그룹 머리글은 접히는 자리가 아니다", 2, collapsibles.size)
+    }
+
+    /** 접을 수 있는 구역의 제목들. IntelliJ는 이것을 접이식 구분선으로 그린다. */
+    private fun collapsibleSeparatorsOf(panel: java.awt.Container): List<String> {
+        val found = mutableListOf<String>()
+        fun walk(container: java.awt.Container) {
+            if (container.javaClass.name.contains("CollapsibleTitledSeparator")) {
+                found += textsOf(container).filter { it.isNotBlank() }
+            }
+            container.components.filterIsInstance<java.awt.Container>().forEach(::walk)
+        }
+        walk(panel)
+        return found
+    }
+
     fun `test says why the sprint list is empty here too`() {
         val panel = JiraTaskToolWindowPanel(project, testRootDisposable)
 

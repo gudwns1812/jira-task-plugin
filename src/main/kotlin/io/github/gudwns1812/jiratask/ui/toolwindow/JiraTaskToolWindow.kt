@@ -132,14 +132,15 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
     }
 
     private val sprintPanel: JComponent = panel {
-        group("현재 스프린트") {
+        // 목록 전체를 접을 수 있게 둔다. 스프린트를 다 훑고 나면 현재 작업만 보면 되는 때가 온다.
+        collapsibleGroup("현재 스프린트") {
             row { cell(JBScrollPane(sprintList)).resizableColumn() }
             row { cell(sprintNoticeLabel) }
             row {
                 link(START_TASK) { startSelected() }
                 link(REFRESH) { refreshInBackground(force = true) }
             }.rowComment("작업을 두 번 클릭해도 됩니다. Jira에서 바꾼 내용은 새로 고침해야 보입니다.")
-        }
+        }.expanded = true
     }
 
     private val settingsPanel: JComponent = panel {
