@@ -138,7 +138,11 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
         assertTrue("번호가 아니라 이슈 키를 보여 준다", texts.contains("S15P11A108-257"))
         assertTrue("무슨 작업인지 제목으로 알 수 있다", texts.contains("[AUTH-001 | FE] 회원가입 화면"))
         assertTrue(texts.contains("진행 중"))
-        assertTrue(texts.contains(JiraTaskToolWindowPanel.BRANCH_PREFIX + "feat/100-signup"))
+        assertTrue(texts.contains("feat/100-signup"))
+        // 값만 떠 있으면 무엇의 값인지 알 수 없다.
+        listOf("Jira 키:", "제목:", "상태:", "브랜치:").forEach {
+            assertTrue("$it 라벨이 있어야 한다", texts.contains(it))
+        }
         assertTrue(panel.currentStatus().isConfigured)
     }
 
@@ -196,6 +200,17 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
 
         // 머리글 한 줄 + 작업 한 줄.
         assertEquals(2, panel.sprintList.model.size)
+    }
+
+    fun `test labels the value it cannot read yet`() {
+        val panel = JiraTaskToolWindowPanel(project, testRootDisposable)
+
+        panel.show(configuredBoard())
+
+        assertTrue(
+            "라벨만 남고 값이 비면 더 헷갈린다",
+            textsOf(panel).contains(JiraTaskToolWindowPanel.UNKNOWN_VALUE),
+        )
     }
 
     fun `test says why the sprint list is empty here too`() {

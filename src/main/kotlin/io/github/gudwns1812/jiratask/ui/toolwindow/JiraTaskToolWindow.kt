@@ -123,9 +123,12 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
     private var board: JiraTaskBoard = JiraTaskBoard.EMPTY
 
     private val currentTaskPanel: JComponent = panel {
-        row { cell(taskKeyLabel) }
-        row { cell(taskSummaryLabel) }
-        row { cell(taskStatusLabel); cell(branchLabel) }
+        group("현재 작업") {
+            row("Jira 키:") { cell(taskKeyLabel) }
+            row("제목:") { cell(taskSummaryLabel) }
+            row("상태:") { cell(taskStatusLabel) }
+            row("브랜치:") { cell(branchLabel) }
+        }
     }
 
     private val sprintPanel: JComponent = panel {
@@ -285,8 +288,8 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
         taskKeyLabel.text = issueKey ?: JiraTaskStatus.NO_TASK
         taskKeyLabel.isEnabled = issueKey != null && next.status.issueUrl(issueKey) != null
         taskSummaryLabel.text = if (issueKey == null) START_HINT else next.currentTaskTitle()
-        taskStatusLabel.text = next.currentTask?.statusName.orEmpty()
-        branchLabel.text = BRANCH_PREFIX + (next.status.branch ?: JiraTaskStatus.NO_BRANCH)
+        taskStatusLabel.text = next.currentTask?.statusName?.takeIf { it.isNotBlank() } ?: UNKNOWN_VALUE
+        branchLabel.text = next.status.branch ?: JiraTaskStatus.NO_BRANCH
     }
 
     private fun showSprint(sprint: SprintTaskLoad?) {
@@ -384,7 +387,8 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
         const val REFRESH: String = "새로 고침"
         const val START_HINT: String = "아래에서 작업을 골라 시작하세요."
         const val SPRINT_LOADING: String = "현재 스프린트를 읽는 중입니다…"
-        const val BRANCH_PREFIX: String = "브랜치: "
+        /** 값을 아직 못 읽었을 때 라벨 옆에 두는 자리 문구. 빈칸으로 두면 라벨만 떠 이상해진다. */
+        const val UNKNOWN_VALUE: String = "알 수 없음"
     }
 }
 
