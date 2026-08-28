@@ -19,6 +19,8 @@ data class ActionAvailability(val isEnabled: Boolean, val reason: String?) {
 enum class JiraTaskCommand {
     START_TASK,
     COMMIT,
+    SEARCH,
+    MERGE_REQUEST,
 }
 
 /**
@@ -46,8 +48,10 @@ class JiraTaskAvailability(private val repository: PolicyConfigRepository = Poli
 
     fun of(command: JiraTaskCommand, snapshot: SettingsSnapshot): ActionAvailability = when (command) {
         JiraTaskCommand.START_TASK -> ActionAvailability.ENABLED
-        JiraTaskCommand.COMMIT ->
+        JiraTaskCommand.COMMIT, JiraTaskCommand.SEARCH ->
             if (snapshot.projectKey.isEmpty()) ActionAvailability.disabled(NO_PROJECT_KEY) else ActionAvailability.ENABLED
+        // MR은 Jira 설정과 무관하다. GitLab 설정이 없으면 실행할 때 안내한다.
+        JiraTaskCommand.MERGE_REQUEST -> ActionAvailability.ENABLED
     }
 
     companion object {

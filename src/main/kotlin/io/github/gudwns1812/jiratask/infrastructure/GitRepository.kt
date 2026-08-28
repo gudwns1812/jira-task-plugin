@@ -70,6 +70,33 @@ class GitRepository(
         return result.stdout.trim().ifEmpty { null }
     }
 
+    /** `origin` remote 주소. 없으면 null. MR을 만들 프로젝트를 여기서 알아낸다. */
+    fun remoteUrl(remote: String = "origin"): String? {
+        val result = run("remote", "get-url", remote) ?: return null
+        if (result.exitCode != 0) {
+            return null
+        }
+        return result.stdout.trim().ifEmpty { null }
+    }
+
+    /**
+     * [base]에는 없고 현재 브랜치에만 있는 커밋 제목들. 오래된 것부터.
+     * base를 모르거나 관계가 없으면 빈 목록 — MR을 못 만들 이유는 아니다.
+     */
+    fun commitSubjectsSince(base: String): List<String> {
+        val result = run("log", "--format=%s", "--reverse", "$base..HEAD") ?: return emptyList()
+        if (result.exitCode != 0) {
+            return emptyList()
+        }
+        return result.stdout.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toList()
+    }
+
+    /** 현재 브랜치가 원격에 올라가 있는가. 올라가지 않은 브랜치로는 MR을 만들 수 없다. */
+    fun isPushed(branch: String, remote: String = "origin"): Boolean {
+        val result = run("ls-remote", "--heads", remote, branch) ?: return false
+        return result.exitCode == 0 && result.stdout.isNotBlank()
+    }
+
     private fun run(vararg args: String): ProcessResult? = try {
         val process = ProcessBuilder(listOf("git") + args)
             .directory(workingDirectory)

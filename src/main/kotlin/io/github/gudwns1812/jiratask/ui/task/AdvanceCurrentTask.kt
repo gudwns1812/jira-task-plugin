@@ -7,7 +7,6 @@ import com.intellij.openapi.project.Project
 import io.github.gudwns1812.jiratask.application.AdvanceTaskCommand
 import io.github.gudwns1812.jiratask.application.AdvanceTaskResult
 import io.github.gudwns1812.jiratask.application.AdvanceTaskUseCase
-import io.github.gudwns1812.jiratask.domain.jira.JiraNamedValue
 import io.github.gudwns1812.jiratask.domain.jira.TaskIssueTransitioner
 import io.github.gudwns1812.jiratask.domain.task.TaskNumberError
 import io.github.gudwns1812.jiratask.domain.task.TaskNumbers
@@ -92,15 +91,8 @@ object AdvanceCurrentTask {
         } catch (error: TaskNumberError) {
             return AdvanceTaskResult.Failure(1, error.message ?: "작업 번호가 올바르지 않습니다.")
         }
-        val status = settings.inProgressStatus
-
         return AdvanceTaskUseCase(createTransitioner(settings)).execute(
-            AdvanceTaskCommand(
-                taskKey = taskKey,
-                taskIssueTypeId = settings.taskIssueTypeId,
-                targetStatusId = status.id,
-                targetStatusName = status.name,
-            ),
+            AdvanceTaskCommand(taskKey = taskKey, taskIssueTypeId = settings.taskIssueTypeId),
         )
     }
 

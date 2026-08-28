@@ -50,7 +50,6 @@ class PolicyConfigRepositoryTest {
         assertEquals("S15P11A108", loaded.projectKey)
         assertEquals("http://127.0.0.1:8080", loaded.jira?.baseUrl)
         assertEquals(JiraNamedValue("10001", "스토리"), loaded.jira?.issueTypes?.story)
-        assertEquals(JiraNamedValue("21", "진행 중"), loaded.jira?.statuses?.story?.start)
     }
 
     @Test

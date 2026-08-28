@@ -19,13 +19,13 @@ class JiraTaskStatusTest {
         storyIssueType = "스토리",
         taskIssueType = "작업",
         epicIssueType = "에픽",
-        storyStartStatus = "진행 중",
+        gitLabBaseUrl = "https://lab.ssafy.com",
     )
 
     private fun rowsOf(status: JiraTaskStatus): Map<String, String> = status.rows().toMap()
 
     @Test
-    fun `shows the saved configuration with the task number and the branch`() {
+    fun `summarises the saved configuration, including gitlab`() {
         val status = JiraTaskStatus.of(SettingsLoad.Loaded(configuredSnapshot()), "257", "feat/100-signup")
 
         assertTrue(status.isConfigured)
@@ -33,11 +33,33 @@ class JiraTaskStatusTest {
         val rows = rowsOf(status)
         assertEquals("S15P11A108", rows["프로젝트 키"])
         assertEquals("https://team.atlassian.net", rows["Jira 주소"])
+        assertEquals("https://lab.ssafy.com", rows["GitLab 주소"])
         assertEquals("A108 프로젝트", rows["프로젝트"])
         assertEquals("스토리", rows["스토리 유형"])
-        assertEquals("진행 중", rows["작업 시작 상태"])
-        assertEquals("257", rows["현재 작업 번호"])
-        assertEquals("feat/100-signup", rows["현재 브랜치"])
+    }
+
+    @Test
+    fun `keeps the work out of the settings summary`() {
+        // 작업 번호와 브랜치는 코딩하는 동안 바뀐다. 접어 두는 설정 요약이 아니라 위에 크게 보인다.
+        val status = JiraTaskStatus.of(SettingsLoad.Loaded(configuredSnapshot()), "257", "feat/100-signup")
+
+        assertFalse(status.rows().any { (name, _) -> name.contains("작업") || name.contains("브랜치") })
+        assertEquals("257", status.taskNumber)
+        assertEquals("feat/100-signup", status.branch)
+    }
+
+    @Test
+    fun `builds the issue key and the address to open it`() {
+        val status = JiraTaskStatus.of(SettingsLoad.Loaded(configuredSnapshot()), "257", null)
+
+        assertEquals("S15P11A108-257", status.currentIssueKey())
+        assertEquals("https://team.atlassian.net/browse/S15P11A108-257", status.issueUrl("S15P11A108-257"))
+    }
+
+    @Test
+    fun `has no issue key without a task number or a project key`() {
+        assertNull(JiraTaskStatus.of(SettingsLoad.Loaded(configuredSnapshot()), null, null).currentIssueKey())
+        assertNull(JiraTaskStatus.of(SettingsLoad.Loaded(SettingsSnapshot.empty()), "257", null).currentIssueKey())
     }
 
     @Test
@@ -57,18 +79,18 @@ class JiraTaskStatusTest {
         assertFalse(status.isConfigured)
         assertEquals("설정 형식이 올바르지 않습니다.", status.problem?.message)
         assertEquals(StatusProblem.Kind.BROKEN, status.problem?.kind)
-        assertEquals("257", rowsOf(status)["현재 작업 번호"])
-        assertEquals("feat/100-signup", rowsOf(status)["현재 브랜치"])
+        assertEquals("깨진 설정에도 git에서 읽은 값은 남는다", "257", status.taskNumber)
+        assertEquals("feat/100-signup", status.branch)
         assertEquals(JiraTaskStatus.NOT_CONFIGURED, rowsOf(status)["Jira 주소"])
     }
 
     @Test
     fun `says what is missing instead of leaving a row empty`() {
-        val status = JiraTaskStatus.of(SettingsLoad.Loaded(configuredSnapshot()), null, null)
+        val status = JiraTaskStatus.of(SettingsLoad.Loaded(SettingsSnapshot.empty().copy(projectKey = "A")), null, null)
 
         val rows = rowsOf(status)
-        assertEquals(JiraTaskStatus.NO_TASK, rows["현재 작업 번호"])
-        assertEquals(JiraTaskStatus.NO_BRANCH, rows["현재 브랜치"])
+        assertEquals(JiraTaskStatus.NOT_CONFIGURED, rows["Jira 주소"])
+        assertEquals(JiraTaskStatus.NOT_CONFIGURED, rows["GitLab 주소"])
     }
 
     @Test
@@ -82,30 +104,31 @@ class JiraTaskStatusTest {
     fun `marks the placeholder rows so the view can grey them out`() {
         val configured = JiraTaskStatus.of(SettingsLoad.Loaded(configuredSnapshot()), null, null)
 
-        val byName = configured.statusRows().associateBy { it.name }
+        val byName = configured.settingsRows().associateBy { it.name }
         assertFalse(byName.getValue("프로젝트 키").isPlaceholder)
-        assertTrue(byName.getValue("현재 작업 번호").isPlaceholder)
-        assertTrue(byName.getValue("현재 브랜치").isPlaceholder)
+        assertFalse(byName.getValue("GitLab 주소").isPlaceholder)
+        assertTrue(
+            JiraTaskStatus.EMPTY.settingsRows().single { it.name == "GitLab 주소" }.isPlaceholder,
+        )
     }
 
     @Test
     fun `says how each value should be drawn`() {
         val kinds = JiraTaskStatus.of(SettingsLoad.Loaded(configuredSnapshot()), "257", "feat/100-signup")
-            .statusRows()
+            .settingsRows()
             .associate { it.name to it.kind }
 
         assertEquals(StatusRow.Kind.CODE, kinds["프로젝트 키"])
         assertEquals(StatusRow.Kind.LINK, kinds["Jira 주소"])
+        assertEquals(StatusRow.Kind.LINK, kinds["GitLab 주소"])
         assertEquals(StatusRow.Kind.TEXT, kinds["프로젝트"])
-        assertEquals(StatusRow.Kind.CODE, kinds["현재 작업 번호"])
-        assertEquals(StatusRow.Kind.CODE, kinds["현재 브랜치"])
     }
 
     @Test
     fun `keeps the kind even when the value is missing`() {
         val empty = JiraTaskStatus.of(SettingsLoad.Loaded(SettingsSnapshot.empty()), null, null)
 
-        val address = empty.statusRows().single { it.name == "Jira 주소" }
+        val address = empty.settingsRows().single { it.name == "Jira 주소" }
         assertEquals("값이 없어도 링크 자리는 링크로 그린다", StatusRow.Kind.LINK, address.kind)
         assertTrue(address.isPlaceholder)
     }
@@ -113,6 +136,6 @@ class JiraTaskStatusTest {
     @Test
     fun `draws every row it declares`() {
         assertEquals(JiraTaskStatus.ROW_NAMES, JiraTaskStatus.EMPTY.rows().map { it.first })
-        assertEquals(7, JiraTaskStatus.ROW_NAMES.size)
+        assertEquals(5, JiraTaskStatus.ROW_NAMES.size)
     }
 }

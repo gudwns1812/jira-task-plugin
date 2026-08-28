@@ -13,22 +13,21 @@ data class JiraSettings(
     val email: String? = null,
     val project: JiraProjectRef? = null,
     val issueTypes: IssueTypes? = null,
-    val statuses: Statuses? = null,
 ) {
     data class IssueTypes(
         val story: JiraNamedValue? = null,
         val task: JiraNamedValue? = null,
         val epic: JiraNamedValue? = null,
     )
-
-    data class Statuses(val story: StoryStatuses? = null) {
-        data class StoryStatuses(val start: JiraNamedValue? = null)
-    }
 }
+
+/** MR을 만들 GitLab. 토큰은 여기 두지 않고 자격 증명 저장소에 보관한다. */
+data class GitLabSettings(val baseUrl: String? = null)
 
 data class JiraTaskConfig(
     val projectKey: String? = null,
     val jira: JiraSettings? = null,
+    val gitlab: GitLabSettings? = null,
 ) {
     companion object
 }
@@ -48,16 +47,29 @@ fun JiraTaskConfig.Companion.resolve(rawConfig: Any?): JiraTaskConfig {
     val obj = asConfigObject(rawConfig, "설정")
     val errors = mutableListOf<String>()
 
-    rejectUnknownKeys(obj, LEGACY_POLICY_KEYS + setOf("projectKey", "jira"), "", errors)
+    rejectUnknownKeys(obj, LEGACY_POLICY_KEYS + setOf("projectKey", "jira", "gitlab"), "", errors)
     val projectKey = readProjectKey(obj, errors)
     val jira = readJiraSettings(obj, errors)
+    val gitlab = readGitLabSettings(obj, errors)
 
     // projectKey 오류와 jira 오류를 한 번에 모아 던진다.
     if (errors.isNotEmpty()) {
         throw PolicyConfigurationError("설정 형식이 올바르지 않습니다. ${errors.joinToString("; ")}")
     }
 
-    return JiraTaskConfig(projectKey = projectKey, jira = jira)
+    return JiraTaskConfig(projectKey = projectKey, jira = jira, gitlab = gitlab)
+}
+
+private fun readGitLabSettings(obj: Map<*, *>, errors: MutableList<String>): GitLabSettings? {
+    val raw = obj["gitlab"] as? Map<*, *> ?: return null
+    rejectUnknownKeys(raw, setOf("baseUrl"), "gitlab", errors)
+
+    val baseUrl = readOptionalText(raw, "baseUrl", "gitlab.baseUrl", errors) ?: return null
+    if (!isHttpUrl(baseUrl)) {
+        errors += "gitlab.baseUrl: http 또는 https 주소여야 합니다."
+        return null
+    }
+    return GitLabSettings(baseUrl)
 }
 
 /** [JiraTaskConfig.resolve]가 다시 읽을 수 있는 원시 구조로 되돌린다(설정 파일 저장용). */
@@ -65,6 +77,7 @@ fun JiraTaskConfig.toRawMap(): Map<String, Any?> {
     val result = mutableMapOf<String, Any?>()
     projectKey?.let { result["projectKey"] = it }
     jira?.let { result["jira"] = it.toRawMap() }
+    gitlab?.baseUrl?.let { result["gitlab"] = mapOf("baseUrl" to it) }
     return result
 }
 
@@ -75,7 +88,6 @@ fun JiraSettings.toRawMap(): Map<String, Any?> {
     email?.let { result["email"] = it }
     project?.let { result["project"] = mapOf("id" to it.id, "name" to it.name) }
     issueTypes?.toRawMap()?.let { if (it.isNotEmpty()) result["issueTypes"] = it }
-    statuses?.toRawMap()?.let { if (it.isNotEmpty()) result["statuses"] = it }
     return result
 }
 
@@ -87,15 +99,9 @@ private fun JiraSettings.IssueTypes.toRawMap(): Map<String, Any?> {
     return result
 }
 
-private fun JiraSettings.Statuses.toRawMap(): Map<String, Any?> {
-    val result = mutableMapOf<String, Any?>()
-    story?.start?.let { result["story"] = mapOf("start" to mapOf("id" to it.id, "name" to it.name)) }
-    return result
-}
-
 /**
  * 이 설정에 [update]를 얕게 병합한 뒤 다시 검증한다. `jira`는 한 단계만 병합해
- * (예: baseUrl만 갱신해도 issueTypes/statuses는 유지) CLI의 `config set` 동작과 같게 한다.
+ * (예: baseUrl만 갱신해도 issueTypes는 유지) `config set`과 같은 동작이다.
  */
 fun JiraTaskConfig.mergeWith(update: Map<String, Any?>): JiraTaskConfig {
     val merged = toRawMap().toMutableMap()
@@ -217,14 +223,16 @@ private fun readJiraSettings(obj: Map<*, *>, errors: MutableList<String>): JiraS
     val email = readOptionalText(raw, "email", "jira.email", errors)
     val project = readProjectRef(raw, errors)
     val issueTypes = readIssueTypes(raw, errors)
-    val statuses = readStatuses(raw, errors)
+    // `statuses`는 어느 상태가 "진행 중"인지 저장하던 자리다. 이제 Jira의 상태 카테고리로
+    // 그때그때 고르므로 읽지 않는다. 예전 설정 파일에 남아 있어도 오류로 막지 않는다.
+    readStatuses(raw, errors)
 
-    if (listOf(baseUrl, email, project, issueTypes, statuses).all { it == null }) {
+    if (listOf(baseUrl, email, project, issueTypes).all { it == null }) {
         errors += "jira: 하나 이상의 값이 필요합니다."
         return null
     }
 
-    return JiraSettings(baseUrl, email, project, issueTypes, statuses)
+    return JiraSettings(baseUrl, email, project, issueTypes)
 }
 
 private fun readBaseUrl(obj: Map<*, *>, errors: MutableList<String>): String? {
@@ -309,26 +317,8 @@ private fun readOptionalNamedValue(obj: Map<*, *>, key: String, path: String, er
     return readNamedValue(raw, path, errors)
 }
 
-private fun readStatuses(obj: Map<*, *>, errors: MutableList<String>): JiraSettings.Statuses? {
-    if (!obj.containsKey("statuses") || obj["statuses"] == null) {
-        return null
-    }
-    val raw = obj["statuses"] as? Map<*, *>
-    if (raw == null) {
-        errors += "jira.statuses: 값 형식이 올바르지 않습니다."
-        return null
-    }
+/** 예전 설정의 `jira.statuses` 형식만 확인하고 값은 버린다. 오류로 막지 않기 위해 남겨 둔 자리다. */
+private fun readStatuses(obj: Map<*, *>, errors: MutableList<String>) {
+    val raw = obj["statuses"] as? Map<*, *> ?: return
     rejectUnknownKeys(raw, setOf("story", "task"), "jira.statuses", errors)
-
-    val story = (raw["story"] as? Map<*, *>)?.let { storyRaw ->
-        rejectUnknownKeys(storyRaw, setOf("start"), "jira.statuses.story", errors)
-        JiraSettings.Statuses.StoryStatuses(readOptionalNamedValue(storyRaw, "start", "jira.statuses.story.start", errors))
-    }
-    // `task.done`은 커밋이 작업을 완료로 옮기던 시절의 값이다. 예전 설정 파일에 남아 있어도
-    // 오류로 막지 않고 무시한다(RULE.md 4.2).
-    (raw["task"] as? Map<*, *>)?.let { taskRaw ->
-        rejectUnknownKeys(taskRaw, setOf("done"), "jira.statuses.task", errors)
-    }
-
-    return JiraSettings.Statuses(story)
 }

@@ -14,6 +14,8 @@ import io.github.gudwns1812.jiratask.application.SettingsLoad
 import io.github.gudwns1812.jiratask.application.SettingsSnapshot
 import io.github.gudwns1812.jiratask.application.empty
 import io.github.gudwns1812.jiratask.domain.policy.PolicyConfigurationError
+import io.github.gudwns1812.jiratask.infrastructure.CredentialStorageError
+import io.github.gudwns1812.jiratask.infrastructure.GitLabTokenStore
 import io.github.gudwns1812.jiratask.infrastructure.PolicyConfigRepository
 import io.github.gudwns1812.jiratask.ui.setup.SetupWizardLauncher
 import javax.swing.JComponent
@@ -27,6 +29,7 @@ import javax.swing.JComponent
  */
 class JiraTaskConfigurable @JvmOverloads constructor(
     private val settings: EditSettingsUseCase = persistedSettings(),
+    private val gitLabTokens: GitLabTokenStore = GitLabTokenStore(),
     private val launchSetupWizard: () -> Unit = { SetupWizardLauncher.launch(null) },
 ) : Configurable {
 
@@ -36,7 +39,8 @@ class JiraTaskConfigurable @JvmOverloads constructor(
     private val storyIssueTypeLabel = JBLabel()
     private val taskIssueTypeLabel = JBLabel()
     private val epicIssueTypeLabel = JBLabel()
-    private val storyStartStatusLabel = JBLabel()
+    private val gitLabBaseUrlField = JBTextField()
+    private val gitLabTokenField = com.intellij.ui.components.JBPasswordField()
     private val problemLabel = JBLabel().apply { isVisible = false }
 
     private var saved: SettingsSnapshot = SettingsSnapshot.empty()
@@ -58,10 +62,22 @@ class JiraTaskConfigurable @JvmOverloads constructor(
                 row("스토리 유형:") { cell(storyIssueTypeLabel) }
                 row("작업 유형:") { cell(taskIssueTypeLabel) }
                 row("에픽 유형:") { cell(epicIssueTypeLabel) }
-                row("작업 시작 상태:") { cell(storyStartStatusLabel) }
                 row {
                     comment("이메일과 API 토큰은 이 화면에 표시하지 않습니다. 토큰은 IDE 비밀번호 저장소(PasswordSafe)에만 보관됩니다.")
                 }
+            }
+
+            group("GitLab (Merge Request)") {
+                row("GitLab 주소:") {
+                    cell(gitLabBaseUrlField).columns(COLUMNS_LARGE)
+                }.rowComment("예: https://lab.ssafy.com. 비워 두면 기존 값을 유지합니다.")
+
+                row("액세스 토큰:") {
+                    cell(gitLabTokenField).columns(COLUMNS_LARGE)
+                }.rowComment(
+                    "입력하면 IDE 비밀번호 저장소에만 저장하고 다시 표시하지 않습니다. " +
+                        "GITLAB_TOKEN 환경 변수가 있으면 그쪽을 먼저 씁니다.",
+                )
             }
 
             row {
@@ -75,7 +91,7 @@ class JiraTaskConfigurable @JvmOverloads constructor(
         return component
     }
 
-    override fun isModified(): Boolean = currentEdit().changes(saved)
+    override fun isModified(): Boolean = currentEdit().changes(saved) || gitLabTokenField.password.isNotEmpty()
 
     override fun apply() {
         saved = try {
@@ -83,8 +99,30 @@ class JiraTaskConfigurable @JvmOverloads constructor(
         } catch (error: PolicyConfigurationError) {
             throw ConfigurationException(error.message, "Jira Task 설정")
         }
+        saveGitLabToken()
         show(saved, problem = null)
         JiraTaskStateListener.publishToAllProjects()
+    }
+
+    /**
+     * 토큰은 설정 파일이 아니라 IDE 비밀번호 저장소에만 넣고, 입력 칸을 즉시 비운다.
+     * 저장할 GitLab 주소를 모르면 넣을 곳이 없으므로 그렇게 알린다.
+     */
+    private fun saveGitLabToken() {
+        val token = String(gitLabTokenField.password).trim()
+        if (token.isEmpty()) {
+            return
+        }
+
+        val baseUrl = saved.gitLabBaseUrl.ifBlank {
+            throw ConfigurationException("GitLab 주소를 먼저 입력하세요.", "Jira Task 설정")
+        }
+        try {
+            gitLabTokens.save(baseUrl, token)
+        } catch (error: CredentialStorageError) {
+            throw ConfigurationException(error.message, "Jira Task 설정")
+        }
+        gitLabTokenField.text = ""
     }
 
     override fun reset() {
@@ -100,7 +138,8 @@ class JiraTaskConfigurable @JvmOverloads constructor(
         }
     }
 
-    private fun currentEdit(): SettingsEdit = SettingsEdit(projectKeyField.text, baseUrlField.text)
+    private fun currentEdit(): SettingsEdit =
+        SettingsEdit(projectKeyField.text, baseUrlField.text, gitLabBaseUrlField.text)
 
     private fun show(snapshot: SettingsSnapshot, problem: String?) {
         projectKeyField.text = snapshot.projectKey
@@ -109,7 +148,8 @@ class JiraTaskConfigurable @JvmOverloads constructor(
         storyIssueTypeLabel.text = snapshot.storyIssueType.orNotConfigured()
         taskIssueTypeLabel.text = snapshot.taskIssueType.orNotConfigured()
         epicIssueTypeLabel.text = snapshot.epicIssueType.orNotConfigured()
-        storyStartStatusLabel.text = snapshot.storyStartStatus.orNotConfigured()
+        gitLabBaseUrlField.text = snapshot.gitLabBaseUrl
+        gitLabTokenField.text = ""
         problemLabel.text = problem.orEmpty()
         problemLabel.isVisible = problem != null
     }

@@ -10,6 +10,8 @@ package io.github.gudwns1812.jiratask.domain.jira
  */
 object AdfDocument {
 
+    private const val LINE_BREAK = "\n"
+
     private const val HEADING_PREFIX = "## "
     private const val TASK_PREFIX = "[] "
 
@@ -71,4 +73,43 @@ object AdfDocument {
     )
 
     private fun textNode(text: String): Map<String, Any?> = mapOf("type" to "text", "text" to text)
+
+    /**
+     * [of]가 만든 형식으로 되돌린다. Quick Search가 설명을 편집 가능한 글로 보여 줄 때 쓴다.
+     *
+     * ADF는 이보다 훨씬 넓은 형식이라 완전히 되돌릴 수는 없다. 모르는 노드는 그 안의 글만 건져
+     * 문단으로 남긴다 — 편집하다 내용을 잃는 것보다 서식을 잃는 편이 낫다.
+     */
+    fun textOf(document: Any?): String {
+        val content = (document as? Map<*, *>)?.get("content") as? List<*> ?: return ""
+
+        return content.mapNotNull(::blockToText).joinToString(LINE_BREAK)
+    }
+
+    private fun blockToText(node: Any?): String? {
+        val block = node as? Map<*, *> ?: return null
+
+        return when (block["type"]) {
+            "heading" -> HEADING_PREFIX + plainText(block)
+            "taskList" -> (block["content"] as? List<*>).orEmpty()
+                .mapNotNull { (it as? Map<*, *>)?.let { item -> TASK_PREFIX + plainText(item) } }
+                .joinToString(LINE_BREAK)
+            // 빈 문단은 ADF가 줄바꿈을 표현하는 방식이다. 그대로 빈 줄로 둔다.
+            else -> plainText(block)
+        }
+    }
+
+    /** 노드 아래 어디에 있든 `text` 값을 모은다. */
+    private fun plainText(node: Map<*, *>): String {
+        val builder = StringBuilder()
+
+        fun walk(current: Any?) {
+            val map = current as? Map<*, *> ?: return
+            (map["text"] as? String)?.let { builder.append(it) }
+            (map["content"] as? List<*>)?.forEach(::walk)
+        }
+        walk(node)
+
+        return builder.toString()
+    }
 }

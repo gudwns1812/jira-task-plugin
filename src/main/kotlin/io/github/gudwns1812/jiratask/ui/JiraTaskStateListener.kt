@@ -4,6 +4,7 @@ import com.intellij.notification.NotificationType
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.util.messages.Topic
+import io.github.gudwns1812.jiratask.ui.navigation.JiraIssueNavigation
 
 /**
  * Jira Task가 보여주는 상태(설정·작업 번호·브랜치)가 바뀌었음을 알리는 통지.
@@ -24,9 +25,15 @@ fun interface JiraTaskStateListener {
             }
         }
 
-        /** 애플리케이션 수준 변경(설정 저장 등)은 열려 있는 모든 프로젝트에 알린다. */
+        /**
+         * 애플리케이션 수준 변경(설정 저장 등)은 열려 있는 모든 프로젝트에 알린다.
+         * 프로젝트 키나 Jira 주소가 바뀌었을 수 있으므로 이슈 링크 규칙도 함께 다시 맞춘다.
+         */
         fun publishToAllProjects() {
-            ProjectManager.getInstance().openProjects.forEach(::publish)
+            ProjectManager.getInstance().openProjects.forEach { project ->
+                JiraIssueNavigation.refresh(project)
+                publish(project)
+            }
         }
     }
 }

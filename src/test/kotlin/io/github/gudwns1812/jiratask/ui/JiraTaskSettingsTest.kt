@@ -3,6 +3,7 @@ package io.github.gudwns1812.jiratask.ui
 import io.github.gudwns1812.jiratask.application.CredentialStore
 import io.github.gudwns1812.jiratask.domain.jira.JiraNamedValue
 import io.github.gudwns1812.jiratask.infrastructure.CredentialStorageError
+import io.github.gudwns1812.jiratask.infrastructure.GitLabTokenStore
 import io.github.gudwns1812.jiratask.infrastructure.JiraTaskConfigStorage
 import io.github.gudwns1812.jiratask.infrastructure.PolicyConfigRepository
 import org.junit.Assert.assertEquals
@@ -59,8 +60,9 @@ class JiraTaskSettingsTest {
     private fun settings(
         repository: PolicyConfigRepository,
         credentials: CredentialStore = FakeCredentials("token"),
+        gitLabTokens: GitLabTokenStore = GitLabTokenStore { error("이 테스트는 GitLab 토큰을 읽지 않는다") },
         environment: (String) -> String? = { null },
-    ) = JiraTaskSettings(repository, credentials, environment)
+    ) = JiraTaskSettings(repository, credentials, gitLabTokens, environment)
 
     @Test
     fun `asks for setup when no project key is configured`() {
@@ -143,7 +145,6 @@ class JiraTaskSettingsTest {
                 email = "gudwns1423@gmail.com",
                 apiToken = "token",
                 taskIssueTypeId = "10002",
-                inProgressStatus = JiraNamedValue("21", "진행 중"),
             ),
             ready.value,
         )

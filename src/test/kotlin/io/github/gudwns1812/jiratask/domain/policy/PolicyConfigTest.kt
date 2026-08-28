@@ -69,7 +69,7 @@ class PolicyConfigTest {
         )
 
         assertEquals(JiraNamedValue("10", "스토리"), config.jira?.issueTypes?.story)
-        assertEquals(JiraNamedValue("3", "진행 중"), config.jira?.statuses?.story?.start)
+        assertNull("statuses는 더 이상 읽지 않는다", config.toRawMap()["jira"]?.let { (it as Map<*, *>)["statuses"] })
     }
 
     @Test
@@ -155,6 +155,6 @@ class PolicyConfigTest {
 
         assertEquals("http://127.0.0.1:8080", afterIssueTypes.jira?.baseUrl)
         assertEquals(JiraNamedValue("10001", "스토리"), afterIssueTypes.jira?.issueTypes?.story)
-        assertEquals(JiraNamedValue("21", "진행 중"), afterIssueTypes.jira?.statuses?.story?.start)
+        assertEquals(JiraNamedValue("10001", "스토리"), afterIssueTypes.jira?.issueTypes?.story)
     }
 }

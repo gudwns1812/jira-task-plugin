@@ -6,6 +6,7 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.ProjectActivity
 import io.github.gudwns1812.jiratask.infrastructure.PolicyConfigRepository
+import io.github.gudwns1812.jiratask.ui.navigation.JiraIssueNavigation
 import io.github.gudwns1812.jiratask.ui.setup.SetupWizardLauncher
 import io.github.gudwns1812.jiratask.ui.task.CurrentTaskState
 
@@ -28,10 +29,13 @@ class RunSetupWizardAction : AnAction() {
  */
 class JiraTaskSetupStartupActivity(
     private val refreshCurrentTask: (Project) -> Unit = { CurrentTaskState.getInstance(it).refreshInBackground() },
+    private val refreshIssueLinks: (Project) -> Unit = { JiraIssueNavigation.refresh(it) },
 ) : ProjectActivity {
 
     override suspend fun execute(project: Project) {
         refreshCurrentTask(project)
+        // 코드·커밋 로그의 이슈 키를 Jira로 잇는 규칙을 IDE 설정에 채워 둔다.
+        refreshIssueLinks(project)
 
         if (!setupNeeded(PolicyConfigRepository())) {
             return

@@ -30,7 +30,6 @@ data class SetupSummary(
     val storyIssueType: JiraNamedValue,
     val taskIssueType: JiraNamedValue,
     val epicIssueType: JiraNamedValue,
-    val storyStartStatus: JiraNamedValue,
 )
 
 /** API 토큰을 설정 파일과 분리해 보관하는 저장소의 경계다. 실제 구현은 인프라 계층이 제공한다. */
@@ -39,7 +38,7 @@ interface CredentialStore {
     fun get(baseUrl: String, email: String): String?
 }
 
-data class InitialSetupResult(val projectKey: String, val storyIssueType: String, val storyStartStatus: String)
+data class InitialSetupResult(val projectKey: String, val storyIssueType: String)
 
 class SetupCancelledError : Exception("초기 설정을 취소했습니다.")
 
@@ -73,17 +72,12 @@ class RunInitialSetupUseCase(
             throw SetupSelectionError("서로 다른 스토리, 작업, 에픽 이슈 유형을 찾을 수 없습니다.")
         }
 
-        // 작업을 시작할 때 옮겨 갈 상태다. 완료 상태는 묻지 않는다 — MR 병합을 계기로
-        // Jira automation이 판단한다(RULE.md 4.2).
-        val storyStartStatus = selectStatus("작업을 시작할 때 이동할 상태를 선택하세요.", storyIssueType, "start")
-
         val summary = SetupSummary(
             baseUrl = connection.baseUrl,
             project = project,
             storyIssueType = toNamedValue(storyIssueType),
             taskIssueType = toNamedValue(taskIssueType),
             epicIssueType = toNamedValue(epicIssueType),
-            storyStartStatus = storyStartStatus,
         )
         if (!prompter.confirm(summary)) {
             throw SetupCancelledError()
@@ -98,15 +92,12 @@ class RunInitialSetupUseCase(
                 task = toNamedValue(taskIssueType),
                 epic = toNamedValue(epicIssueType),
             ),
-            statuses = JiraSettings.Statuses(
-                story = JiraSettings.Statuses.StoryStatuses(start = storyStartStatus),
-            ),
         )
 
         credentials.save(connection.baseUrl, connection.email, connection.apiToken)
         saveConfig(project.key, jiraSettings)
 
-        return InitialSetupResult(project.key, storyIssueType.name, storyStartStatus.name)
+        return InitialSetupResult(project.key, storyIssueType.name)
     }
 
     private fun verifiedConnection(): Pair<SetupConnection, JiraSetupReader> {
@@ -186,7 +177,6 @@ fun SetupSummary.toDisplayLines(): List<Pair<String, String>> = listOf(
     "스토리 유형" to storyIssueType.name,
     "작업 유형" to taskIssueType.name,
     "에픽 유형" to epicIssueType.name,
-    "작업 시작 상태" to storyStartStatus.name,
 )
 
 private fun isHttpUrl(value: String): Boolean = try {

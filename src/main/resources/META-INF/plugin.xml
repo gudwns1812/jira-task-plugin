@@ -5,8 +5,9 @@
 
     <description><![CDATA[
         Fits the RULE.md based Jira workflow into the IDE's Git flow.
-        Provides a first-run setup wizard, current task tracking in the status bar,
-        and automatic Jira issue keys in Git commit messages.
+        Provides a first-run setup wizard, a picker for the tasks in the current sprint,
+        automatic Jira issue keys in Git commit messages with a pre-commit check,
+        and a search that reads and edits an issue without leaving the IDE.
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
@@ -47,6 +48,16 @@
                     text="Commit with Jira Task"
                     description="현재 작업 번호로 이슈 키를 붙여 스테이지된 변경 사항을 커밋합니다"
                     icon="AllIcons.Actions.Commit"/>
+            <action id="JiraTask.CreateMergeRequest"
+                    class="io.github.gudwns1812.jiratask.ui.mr.CreateMergeRequestAction"
+                    text="Create Merge Request"
+                    description="현재 브랜치의 커밋에서 Jira 작업 키를 모아 GitLab MR을 만듭니다"
+                    icon="AllIcons.Vcs.Merge"/>
+            <action id="JiraTask.Search"
+                    class="io.github.gudwns1812.jiratask.ui.search.JiraSearchAction"
+                    text="Search Jira Issues"
+                    description="이슈를 찾아 제목과 설명을 확인하고 고칩니다"
+                    icon="AllIcons.Actions.Search"/>
             <separator/>
             <action id="JiraTask.RunSetupWizard"
                     class="io.github.gudwns1812.jiratask.ui.RunSetupWizardAction"
@@ -59,6 +70,8 @@
         <group id="JiraTask.ToolWindowToolbar">
             <reference id="JiraTask.StartTask"/>
             <reference id="JiraTask.Commit"/>
+            <reference id="JiraTask.CreateMergeRequest"/>
+            <reference id="JiraTask.Search"/>
             <separator/>
             <reference id="JiraTask.RunSetupWizard"/>
         </group>

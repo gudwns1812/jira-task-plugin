@@ -170,22 +170,16 @@ class CommitIssueKeyTest : BasePlatformTestCase() {
         assertSize(2, announced)
     }
 
-    fun `test moves the task on a successful commit`() {
+    fun `test calls the after-commit hook only once the commit succeeded`() {
         val checkedIn = mutableListOf<Project>()
-        val handler = JiraTaskCheckinHandlerFactory(issueKey()) { checkedIn += it }.handlerFor(project)
-
-        handler.checkinSuccessful()
-
-        assertEquals("커밋이 성공하면 작업 이슈를 옮겨야 한다", listOf(project), checkedIn)
-    }
-
-    fun `test does not move the task before the commit happens`() {
-        val checkedIn = mutableListOf<Project>()
-        val handler = JiraTaskCheckinHandlerFactory(issueKey()) { checkedIn += it }.handlerFor(project)
+        val handler = JiraTaskCheckinHandlerFactory(issueKey(), onCheckedIn = { checkedIn += it })
+            .handlerFor(project) { "S15P11A108-257 구현" }
 
         handler.beforeCheckin()
+        assertEmpty("커밋 전에는 부르지 않는다", checkedIn)
 
-        assertEmpty(checkedIn)
+        handler.checkinSuccessful()
+        assertEquals(listOf(project), checkedIn)
     }
 
     fun `test reports an invalid task number as unavailable`() {

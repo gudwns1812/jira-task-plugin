@@ -67,7 +67,6 @@ class EditSettingsTest {
         assertEquals("", snapshot.baseUrl)
         assertEquals("", snapshot.projectName)
         assertEquals("", snapshot.storyIssueType)
-        assertEquals("", snapshot.storyStartStatus)
     }
 
     @Test
@@ -80,7 +79,6 @@ class EditSettingsTest {
         assertEquals("스토리", snapshot.storyIssueType)
         assertEquals("작업", snapshot.taskIssueType)
         assertEquals("에픽", snapshot.epicIssueType)
-        assertEquals("진행 중", snapshot.storyStartStatus)
     }
 
     @Test
@@ -96,7 +94,6 @@ class EditSettingsTest {
             snapshot.storyIssueType,
             snapshot.taskIssueType,
             snapshot.epicIssueType,
-            snapshot.storyStartStatus,
         )
         assertTrue(shownValues.none { it.contains("gudwns1423") })
     }
@@ -122,7 +119,6 @@ class EditSettingsTest {
         assertEquals("https://another.atlassian.net", saved.baseUrl)
         assertEquals("S15P11A108", saved.projectKey)
         assertEquals("스토리", saved.storyIssueType)
-        assertEquals("진행 중", saved.storyStartStatus)
         assertEquals("gudwns1423@gmail.com", store.config.jira?.email)
     }
 
@@ -200,7 +196,6 @@ class EditSettingsTest {
 
         assertEquals("", snapshot.projectKey)
         assertEquals("", snapshot.baseUrl)
-        assertEquals("", snapshot.storyStartStatus)
     }
 
     @Test

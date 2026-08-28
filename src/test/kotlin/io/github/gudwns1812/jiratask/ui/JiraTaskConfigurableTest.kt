@@ -85,19 +85,22 @@ class JiraTaskConfigurableTest : BasePlatformTestCase() {
         assertTrue(texts.contains("스토리"))
         assertTrue(texts.contains("작업"))
         assertTrue(texts.contains("에픽"))
-        assertTrue(texts.contains("진행 중"))
         // 완료 상태는 더 이상 설정에 없다 — MR 병합을 계기로 automation이 판단한다(RULE.md 4.2).
         assertFalse(texts.contains("완료"))
     }
 
-    fun `test never shows the configured email or a password field`() {
+    fun `test never shows a stored secret, only takes a new one`() {
         val configurable = configurableOf(configuredRepository())
 
         val component = configurable.createComponent()
 
         val texts = textsOf(component)
         assertTrue("이메일이 화면에 노출되면 안 된다", texts.none { it.contains("gudwns1423") })
-        assertEmpty(collectPasswordFields(component))
+
+        // GitLab 토큰 칸은 입력 전용이다. 저장된 값을 되읽어 채우지 않는다.
+        val secrets = collectPasswordFields(component)
+        assertSize(1, secrets)
+        assertEmpty((secrets.single() as javax.swing.JPasswordField).password.toList())
     }
 
     private fun collectPasswordFields(container: Container): List<Container> {
@@ -114,7 +117,7 @@ class JiraTaskConfigurableTest : BasePlatformTestCase() {
 
         val texts = textsOf(configurable.createComponent())
 
-        assertTrue(texts.count { it == JiraTaskConfigurable.NOT_CONFIGURED } >= 5)
+        assertTrue(texts.count { it == JiraTaskConfigurable.NOT_CONFIGURED } >= 4)
         // 업무 정책은 이슈를 만들 때만 쓰던 값이라 더는 설정에 없다(RULE.md 전제 A).
         assertFalse(texts.any { it.contains("FE, BE, AI, QA, INFRA") })
     }
@@ -262,11 +265,12 @@ class JiraTaskConfigurableTest : BasePlatformTestCase() {
         return fields
     }
 
-    fun `test lists exactly the two editable fields`() {
+    fun `test lists exactly the editable fields`() {
         val configurable = configurableOf(configuredRepository())
 
         val values = textFieldValues(configurable.createComponent())
 
-        assertEquals(listOf("S15P11A108", "https://team.atlassian.net"), values)
+        // 프로젝트 키, Jira 주소, GitLab 주소, 그리고 비어 있는 GitLab 토큰 칸.
+        assertEquals(listOf("S15P11A108", "https://team.atlassian.net", "", ""), values)
     }
 }
