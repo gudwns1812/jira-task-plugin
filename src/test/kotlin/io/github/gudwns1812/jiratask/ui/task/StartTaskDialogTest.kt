@@ -62,21 +62,9 @@ class StartTaskDialogTest : BasePlatformTestCase() {
         dialog.show(listOf(task("S15P11A108-257"), task("S15P11A108-258", JiraStatusCategory.DONE)))
 
         val rows = (0 until dialog.taskList.model.size).map { dialog.taskList.model.getElementAt(it) }
-        // 해야 할 일 머리글 + 그 작업 + 완료 머리글(접힘).
-        assertEquals(3, rows.size)
+        assertEquals(4, rows.size)
         assertTrue(rows[0] is SprintTaskRow.Header)
         assertTrue(rows[2] is SprintTaskRow.Header)
-        assertTrue("완료는 처음에 접혀 있다", (rows[2] as SprintTaskRow.Header).isCollapsed)
-    }
-
-    fun `test opening the finished group shows what it was hiding`() {
-        val dialog = dialog()
-        dialog.show(listOf(task("S15P11A108-9", JiraStatusCategory.DONE)))
-        assertEquals(1, dialog.taskList.model.size)
-
-        dialog.toggleGroup(SprintTaskGroup.DONE)
-
-        assertEquals(2, dialog.taskList.model.size)
     }
 
     fun `test tells the user why the list is empty, not just that it is`() {
@@ -123,7 +111,6 @@ class StartTaskDialogTest : BasePlatformTestCase() {
     fun `test warns instead of moving a finished task back`() {
         val dialog = dialog()
         dialog.show(listOf(task("S15P11A108-9", JiraStatusCategory.DONE)))
-        dialog.toggleGroup(SprintTaskGroup.DONE)
 
         dialog.taskList.selectedIndex = 1
 

@@ -111,11 +111,8 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
         ListSpeedSearch.installOn(this) { row -> (row as? SprintTaskRow.Task)?.task?.label() }
         addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(event: MouseEvent) {
-                // 머리글은 한 번 눌러 접고 펴고, 작업은 두 번 눌러 시작한다.
-                when (val row = selectedValue) {
-                    is SprintTaskRow.Header -> toggleGroup(row.group)
-                    is SprintTaskRow.Task -> if (event.clickCount == 2) startSelected()
-                    else -> Unit
+                if (event.clickCount == 2) {
+                    startSelected()
                 }
             }
         })
@@ -124,9 +121,6 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
     private val sprintNoticeLabel = JBLabel()
 
     private var board: JiraTaskBoard = JiraTaskBoard.EMPTY
-
-    /** 접어 둔 그룹. 화면에만 있는 상태라 다시 읽어도 그대로 둔다. */
-    private var collapsedGroups: Set<SprintTaskGroup> = SprintTaskList.DEFAULT_COLLAPSED
 
     private val currentTaskPanel: JComponent = panel {
         group("현재 작업") {
@@ -303,7 +297,7 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
         sprintNoticeLabel.text = when (sprint) {
             null -> SPRINT_LOADING
             is SprintTaskLoad.Loaded -> {
-                SprintTaskList.rowsOf(sprint.tasks, collapsedGroups).forEach(sprintModel::addElement)
+                SprintTaskList.rowsOf(sprint.tasks).forEach(sprintModel::addElement)
                 if (sprint.tasks.isEmpty()) {
                     (sprint.reason ?: EmptySprintReason.UNKNOWN).message
                 } else {
@@ -314,12 +308,6 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
             is SprintTaskLoad.NotConfigured -> sprint.message
             is SprintTaskLoad.Failed -> sprint.message
         }
-    }
-
-    /** 머리글을 눌러 그 그룹을 접거나 편다. 목록 자체는 다시 읽지 않는다. */
-    fun toggleGroup(group: SprintTaskGroup) {
-        collapsedGroups = SprintTaskList.toggled(collapsedGroups, group)
-        showSprint(board.sprint)
     }
 
     /** 목록에서 고른 작업을 시작한다. 머리글을 고른 경우에는 아무 일도 하지 않는다. */
@@ -344,7 +332,7 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
         ): Component {
             val row = value as? SprintTaskRow
             val text = when (row) {
-                is SprintTaskRow.Header -> row.title()
+                is SprintTaskRow.Header -> row.group.title
                 is SprintTaskRow.Task -> "    " + row.task.label()
                 null -> ""
             }
