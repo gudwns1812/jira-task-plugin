@@ -7,10 +7,12 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.ui.DocumentAdapter
 import com.intellij.ui.components.JBLabel
@@ -37,8 +39,11 @@ import io.github.gudwns1812.jiratask.ui.applyAvailability
 import io.github.gudwns1812.jiratask.ui.commit.CommitIssueKeys
 import io.github.gudwns1812.jiratask.ui.task.SprintTasks
 import io.github.gudwns1812.jiratask.ui.task.TaskAnswer
+import java.awt.event.FocusAdapter
+import java.awt.event.FocusEvent
 import java.io.File
 import javax.swing.JComponent
+import javax.swing.JTextField
 
 /**
  * 만들 MR을 확인하는 창. 제목·본문·대상 브랜치를 여기서 고칠 수 있다.
@@ -47,56 +52,138 @@ import javax.swing.JComponent
  */
 class MergeRequestDialog(
     project: Project?,
-    private val proposal: MergeRequestProposal,
+    proposal: MergeRequestProposal,
+    /** 대상 브랜치를 바꿨을 때 그 기준으로 다시 만든 초안. git을 읽으므로 EDT에서 부르지 않는다. */
+    private val redraft: (String) -> MergeRequestProposal = { proposal },
+    private val background: (() -> Unit) -> Unit = {
+        ApplicationManager.getApplication().executeOnPooledThread(Runnable(it))
+    },
+    /**
+     * 모달리티를 반드시 [ModalityState.any]로 준다.
+     *
+     * 이 창은 모달이다. 모달리티를 지정하지 않으면 풀 스레드에서 넣은 작업이 `NON_MODAL`로 큐에 들어가
+     * **창이 닫힌 뒤에야** 실행된다 — 다시 만든 초안이 화면에 영영 반영되지 않는다.
+     */
+    private val onEdt: (() -> Unit) -> Unit = {
+        ApplicationManager.getApplication().invokeLater(Runnable(it), ModalityState.any())
+    },
 ) : DialogWrapper(project, false) {
+
+    private var proposal: MergeRequestProposal = proposal
 
     val titleField: JBTextField = JBTextField(proposal.title)
 
-    val targetField: JBTextField = JBTextField(proposal.targetBranch)
+    /**
+     * 대상 브랜치. 추측하지 않고 고르게 한다 — 통합 브랜치를 쓰는 팀에서는 저장소 기본 브랜치가
+     * 대상인 경우가 오히려 드물다. 목록에 없는 브랜치도 적을 수 있도록 편집을 열어 둔다.
+     */
+    val targetBox: ComboBox<String> = ComboBox(proposal.targetCandidates.toTypedArray()).apply {
+        isEditable = true
+        selectedItem = proposal.targetBranch
+    }
 
     val descriptionArea: JBTextArea = JBTextArea(proposal.description, 10, 60)
 
+    private val issueKeysLabel = JBLabel()
+
     private val warningLabel = JBLabel(proposal.existingUrl?.let { "이미 열린 MR이 있습니다: $it" }.orEmpty())
+
+    /** 마지막으로 우리가 만든 초안. 사용자가 직접 고친 글을 덮어쓰지 않으려고 기억해 둔다. */
+    private var draftedTitle = proposal.title
+    private var draftedDescription = proposal.description
 
     init {
         title = "Create Merge Request"
         setOKButtonText("MR 만들기")
         init()
 
-        listOf(titleField, targetField).forEach { field ->
-            field.document.addDocumentListener(object : DocumentAdapter() {
-                override fun textChanged(event: javax.swing.event.DocumentEvent) = refreshState()
-            })
-        }
+        titleField.document.addDocumentListener(object : DocumentAdapter() {
+            override fun textChanged(event: javax.swing.event.DocumentEvent) = refreshState()
+        })
+        targetBox.addActionListener { onTargetChanged() }
+        // 목록에서 고르는 것 말고 직접 타이핑하는 경로도 있다. 그쪽은 포커스를 옮길 때 확인한다 —
+        // 글자마다 다시 만들면 git을 수십 번 부른다.
+        (targetBox.editor.editorComponent as? JTextField)?.addFocusListener(object : FocusAdapter() {
+            override fun focusLost(event: FocusEvent) = onTargetChanged()
+        })
+        showKeys()
         refreshState()
+    }
+
+    /**
+     * 대상이 바뀌면 그 기준으로 초안을 다시 만든다.
+     *
+     * 사용자가 손댄 제목·본문은 그대로 둔다 — 브랜치를 잘못 골랐다가 되돌리는 동안 쓰던 글이
+     * 사라지면 안 된다. 우리가 만든 글 그대로일 때만 갈아 끼운다.
+     */
+    private fun onTargetChanged() {
+        val target = target()
+        if (target.isBlank() || target == proposal.targetBranch) {
+            refreshState()
+            return
+        }
+
+        background {
+            val next = runCatching { redraft(target) }.getOrNull() ?: return@background
+            onEdt {
+                if (target != target()) {
+                    // 그새 또 바꿨다. 지금 화면과 맞지 않는 결과는 버린다.
+                    return@onEdt
+                }
+                apply(next)
+            }
+        }
+    }
+
+    private fun apply(next: MergeRequestProposal) {
+        if (titleField.text == draftedTitle) {
+            titleField.text = next.title
+        }
+        if (descriptionArea.text == draftedDescription) {
+            descriptionArea.text = next.description
+        }
+        draftedTitle = next.title
+        draftedDescription = next.description
+        proposal = next
+        showKeys()
+        refreshState()
+    }
+
+    private fun showKeys() {
+        issueKeysLabel.text = if (proposal.issueKeys.isEmpty()) {
+            NO_ISSUE_KEYS
+        } else {
+            "연결된 작업: ${proposal.issueKeys.joinToString(", ")}"
+        }
     }
 
     override fun createCenterPanel(): JComponent = panel {
         row("원본 브랜치:") { cell(JBLabel(proposal.sourceBranch)) }
-        row("대상 브랜치:") { cell(targetField).columns(COLUMNS_LARGE) }
+        row("대상 브랜치:") {
+            cell(targetBox).columns(COLUMNS_LARGE)
+        }.rowComment("이 브랜치가 대상 브랜치에 더한 커밋만 본문에 담깁니다. 바꾸면 본문을 다시 만듭니다.")
         row("제목:") { cell(titleField).columns(COLUMNS_LARGE) }
         row("본문:") { cell(JBScrollPane(descriptionArea)).resizableColumn() }
         row {
-            cell(JBLabel(issueKeysText()))
+            cell(issueKeysLabel)
         }.rowComment("연결된 작업 키는 본문에 적혀 Jira가 이 MR을 작업에 붙일 수 있게 합니다.")
         row { cell(warningLabel) }
     }
 
     override fun getPreferredFocusedComponent(): JComponent = titleField
 
+    fun target(): String = (targetBox.editor.item ?: targetBox.selectedItem)?.toString()?.trim().orEmpty()
+
     fun problem(): String? = when {
         titleField.text.isBlank() -> "MR 제목은 비울 수 없습니다."
-        targetField.text.isBlank() -> "대상 브랜치를 입력하세요."
-        targetField.text.trim() == proposal.sourceBranch -> "원본 브랜치와 대상 브랜치가 같습니다."
+        target().isBlank() -> "대상 브랜치를 고르세요."
+        target() == proposal.sourceBranch -> "원본 브랜치와 대상 브랜치가 같습니다."
         else -> null
     }
 
-    fun values(): MergeRequestProposal = proposal.copy(targetBranch = targetField.text.trim())
+    fun values(): MergeRequestProposal = proposal.copy(targetBranch = target())
 
     fun warningText(): String = warningLabel.text.orEmpty()
-
-    private fun issueKeysText(): String =
-        if (proposal.issueKeys.isEmpty()) NO_ISSUE_KEYS else "연결된 작업: ${proposal.issueKeys.joinToString(", ")}"
 
     private fun refreshState() {
         isOKActionEnabled = problem() == null
@@ -133,7 +220,9 @@ class CreateMergeRequestAction @JvmOverloads constructor(
         ProgressManager.getInstance().run(object : Task.Backgroundable(project, "MR 초안 준비", true) {
             override fun run(indicator: ProgressIndicator) {
                 val useCase = useCaseFor(project, mr)
-                val prepared = useCase.prepare(readBranch(workingDirectory, useCase))
+                // 상태는 한 번만 읽는다. 대상 브랜치를 바꿔 다시 계산할 때도 같은 것을 쓴다.
+                val state = readBranch(workingDirectory)
+                val prepared = useCase.prepare(state)
 
                 ApplicationManager.getApplication().invokeLater({
                     if (project.isDisposed) {
@@ -141,15 +230,23 @@ class CreateMergeRequestAction @JvmOverloads constructor(
                     }
                     when (prepared) {
                         is MergeRequestPrepare.Blocked -> JiraTaskNotifications.warning(project, prepared.message)
-                        is MergeRequestPrepare.Ready -> confirm(project, mr, prepared.proposal)
+                        is MergeRequestPrepare.Ready ->
+                            confirm(project, mr, prepared.proposal) { target ->
+                                useCase.redraft(state, prepared.proposal, target)
+                            }
                     }
                 }, project.disposed)
             }
         })
     }
 
-    private fun confirm(project: Project, mr: MergeRequestSettings, proposal: MergeRequestProposal) {
-        val dialog = MergeRequestDialog(project, proposal)
+    private fun confirm(
+        project: Project,
+        mr: MergeRequestSettings,
+        proposal: MergeRequestProposal,
+        redraft: (String) -> MergeRequestProposal,
+    ) {
+        val dialog = MergeRequestDialog(project, proposal, redraft)
         if (!dialog.showAndGet()) {
             return
         }
@@ -179,13 +276,26 @@ class CreateMergeRequestAction @JvmOverloads constructor(
     private fun useCaseFor(project: Project, mr: MergeRequestSettings): CreateMergeRequestUseCase =
         CreateMergeRequestUseCase(
             gitlab = GitLabClient(mr.gitLabBaseUrl, mr.gitLabToken),
-            issueKeysOf = { subjects -> subjects.flatMap(CommitIssueKeys::all).distinct() },
+            issueKeysOf = { subjects -> issueKeysIn(subjects) },
             // 이슈 하나짜리 MR의 제목에 쓴다. 캐시가 모르면 브랜치 이름으로 돌아간다.
             summaryOf = { key -> (SprintTasks.getInstance(project).findCached(key) as? TaskAnswer.Known)?.task?.summary },
-            jiraBaseUrl = mr.jiraBaseUrl,
         )
 
-    private fun readBranch(workingDirectory: File, useCase: CreateMergeRequestUseCase): BranchState {
+    /**
+     * 커밋 제목에서 **이 프로젝트의** 이슈 키만 모은다.
+     *
+     * `대문자-숫자`는 Jira 키 말고도 흔하다 — 팀이 쓰는 명세 번호(`API-04`, `GAME-05`)가 그대로 걸린다.
+     * 그런 키는 Jira에 없으므로 설정된 프로젝트 키로 거른다.
+     * 프로젝트 키를 모를 때만 거르지 않는다 — 아는 게 없으면 덜어내는 것도 추측이다.
+     */
+    private fun issueKeysIn(subjects: List<String>): List<String> {
+        val found = subjects.flatMap(CommitIssueKeys::all).distinct()
+        val projectKey = (settings.forCommit() as? SettingsLookup.Ready)?.value?.projectKey ?: return found
+
+        return found.filter { it.startsWith("$projectKey-") }
+    }
+
+    private fun readBranch(workingDirectory: File): BranchState {
         val git = GitRepository(workingDirectory)
         val branch = git.currentBranch()
 
@@ -193,7 +303,9 @@ class CreateMergeRequestAction @JvmOverloads constructor(
             branch = branch,
             remoteUrl = git.remoteUrl(),
             isPushed = branch?.let(git::isPushed) ?: false,
-            commitSubjects = git.commitSubjectsSince("origin/${CreateMergeRequestUseCase.DEFAULT_TARGET}"),
+            // 대상 브랜치가 정해진 뒤에 불린다. 그 브랜치의 원격 ref가 없으면 있는 기본 브랜치를 찾아 쓴다.
+            commitSubjectsSince = { target -> git.baseRef(target)?.let(git::commitSubjectsSince) ?: emptyList() },
+            remoteBranches = git.remoteBranches(),
         )
     }
 }

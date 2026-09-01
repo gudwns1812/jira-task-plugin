@@ -1,6 +1,5 @@
 package io.github.gudwns1812.jiratask.application
 
-import io.github.gudwns1812.jiratask.domain.mr.BranchCommit
 import io.github.gudwns1812.jiratask.domain.mr.GitLabAuthenticationError
 import io.github.gudwns1812.jiratask.domain.mr.GitLabError
 import io.github.gudwns1812.jiratask.domain.mr.GitLabNetworkError
@@ -14,7 +13,15 @@ data class BranchState(
     val branch: String?,
     val remoteUrl: String?,
     val isPushed: Boolean,
-    val commitSubjects: List<String>,
+    /**
+     * 대상 브랜치에는 없고 이 브랜치에만 있는 커밋 제목들.
+     *
+     * 값이 아니라 함수다 — 어디서부터 셀지는 대상 브랜치를 정한 뒤에야 알 수 있고,
+     * 그 범위를 잘못 잡으면 커밋이 통째로 비어 이슈 키까지 사라진다.
+     */
+    val commitSubjectsSince: (String) -> List<String>,
+    /** MR 대상으로 고를 수 있는 원격 브랜치들. 비어 있으면 사용자가 직접 적는다. */
+    val remoteBranches: List<String> = emptyList(),
 )
 
 /** 화면에 채워 넣을 초안. 사용자가 여기서 제목·본문·대상 브랜치를 고칠 수 있다. */
@@ -27,6 +34,13 @@ data class MergeRequestProposal(
     val issueKeys: List<String>,
     /** 이미 열린 MR이 있으면 그 주소. 새로 만들지 말라는 뜻이다. */
     val existingUrl: String? = null,
+    /**
+     * 대상으로 고를 수 있는 브랜치들. 첫 번째가 기본값이다.
+     *
+     * 기본값을 추측으로 정하지 않는 이유는 그 추측이 자주 틀리기 때문이다 — 통합 브랜치(`develop`,
+     * `backend-dev`)를 쓰는 팀에서 저장소 기본 브랜치를 기준으로 삼으면 남의 커밋 수백 개가 딸려 온다.
+     */
+    val targetCandidates: List<String> = emptyList(),
 )
 
 sealed interface MergeRequestPrepare {
@@ -48,7 +62,6 @@ class CreateMergeRequestUseCase(
     private val gitlab: MergeRequestPort,
     private val issueKeysOf: (List<String>) -> List<String>,
     private val summaryOf: (String) -> String? = { null },
-    private val jiraBaseUrl: String? = null,
 ) {
 
     fun prepare(state: BranchState, fallbackTarget: String = DEFAULT_TARGET): MergeRequestPrepare {
@@ -67,24 +80,42 @@ class CreateMergeRequestUseCase(
 
         val existing = runCatching { gitlab.openMergeRequest(remote.projectPath, branch) }.getOrNull()
         val target = runCatching { gitlab.defaultBranch(remote.projectPath) }.getOrNull() ?: fallbackTarget
-        val keys = issueKeysOf(state.commitSubjects)
 
-        return MergeRequestPrepare.Ready(
-            MergeRequestProposal(
-                projectPath = remote.projectPath,
-                sourceBranch = branch,
-                targetBranch = target,
-                title = MergeRequestDraft.titleOf(branch, keys, summaryOf),
-                description = MergeRequestDraft.descriptionOf(
-                    keys,
-                    state.commitSubjects.map(::BranchCommit),
-                    jiraBaseUrl,
-                ),
-                issueKeys = keys,
-                existingUrl = existing?.webUrl,
-            ),
+        val skeleton = MergeRequestProposal(
+            projectPath = remote.projectPath,
+            sourceBranch = branch,
+            targetBranch = target,
+            title = "",
+            description = "",
+            issueKeys = emptyList(),
+            existingUrl = existing?.webUrl,
+            targetCandidates = candidatesOf(state.remoteBranches, target, branch),
+        )
+
+        return MergeRequestPrepare.Ready(redraft(state, skeleton, target))
+    }
+
+    /**
+     * [target]을 기준으로 제목·본문·이슈 키를 다시 만든다.
+     *
+     * 사용자가 대상 브랜치를 고칠 때마다 불린다 — 기준이 바뀌면 이 브랜치가 추가한 커밋도 바뀌고,
+     * 그러면 본문에 적을 이슈 키도 함께 바뀌어야 한다.
+     */
+    fun redraft(state: BranchState, proposal: MergeRequestProposal, target: String): MergeRequestProposal {
+        val subjects = runCatching { state.commitSubjectsSince(target) }.getOrDefault(emptyList())
+        val keys = issueKeysOf(subjects)
+
+        return proposal.copy(
+            targetBranch = target,
+            title = MergeRequestDraft.titleOf(proposal.sourceBranch, keys, summaryOf),
+            description = MergeRequestDraft.descriptionOf(keys),
+            issueKeys = keys,
         )
     }
+
+    /** 고를 수 있는 대상들. 기본값이 맨 앞에 오고, 자기 자신으로는 MR을 만들 수 없으니 뺀다. */
+    private fun candidatesOf(remoteBranches: List<String>, target: String, sourceBranch: String): List<String> =
+        (listOf(target) + remoteBranches).distinct().filter { it != sourceBranch }
 
     fun create(proposal: MergeRequestProposal, title: String, description: String): MergeRequestResult {
         if (title.isBlank()) {

@@ -108,34 +108,38 @@ class MergeRequestDraftTest {
     }
 
     @Test
-    fun `lists the linked issues and the commits in the description`() {
-        val description = MergeRequestDraft.descriptionOf(
-            listOf("S15P11A108-257"),
-            listOf(BranchCommit("S15P11A108-257 회원가입 화면"), BranchCommit("S15P11A108-257 검증 추가")),
-            "https://team.atlassian.net",
-        )
+    fun `lists the issue keys under one section`() {
+        val description = MergeRequestDraft.descriptionOf(listOf("S15P11A108-257", "S15P11A108-258"))
 
-        assertTrue(description.contains("### 연결된 작업"))
-        assertTrue(
-            "Jira가 MR을 작업에 붙일 수 있도록 링크로 적는다",
-            description.contains("[S15P11A108-257](https://team.atlassian.net/browse/S15P11A108-257)"),
+        assertEquals(
+            """
+            ### 연결된 작업
+            - S15P11A108-257
+            - S15P11A108-258
+            """.trimIndent(),
+            description,
         )
-        assertTrue(description.contains("### 커밋"))
-        assertTrue(description.contains("- S15P11A108-257 검증 추가"))
     }
 
     @Test
-    fun `writes the bare key when no jira address is configured`() {
-        val description = MergeRequestDraft.descriptionOf(listOf("A-1"), emptyList(), null)
+    fun `writes the key alone, without the commit that carried it`() {
+        // 읽는 사람이 여기서 찾는 것은 "어느 작업인가" 하나뿐이다. 무슨 일을 했는지는 커밋 목록이 보여 준다.
+        val description = MergeRequestDraft.descriptionOf(listOf("A-1"))
 
-        assertTrue(description.contains("- A-1"))
-        assertTrue(!description.contains("]("))
+        assertEquals(listOf("### 연결된 작업", "- A-1"), description.lines())
+        assertTrue("주소를 붙이지 않는다", !description.contains("](") && !description.contains("http"))
     }
 
     @Test
-    fun `leaves out a section that would be empty`() {
-        assertEquals("", MergeRequestDraft.descriptionOf(emptyList(), emptyList(), null))
-        assertTrue(!MergeRequestDraft.descriptionOf(emptyList(), listOf(BranchCommit("첫 커밋")), null).contains("연결된 작업"))
-        assertTrue(!MergeRequestDraft.descriptionOf(listOf("A-1"), emptyList(), null).contains("커밋"))
+    fun `says the same key only once`() {
+        val description = MergeRequestDraft.descriptionOf(listOf("A-1", "A-1"))
+
+        assertEquals(1, description.lines().count { it == "- A-1" })
+    }
+
+    @Test
+    fun `has nothing to write when no commit named a task`() {
+        assertEquals("", MergeRequestDraft.descriptionOf(emptyList()))
+        assertEquals("", MergeRequestDraft.descriptionOf(listOf("   ")))
     }
 }

@@ -80,11 +80,65 @@ class GitRepository(
     }
 
     /**
+     * [target] 브랜치를 원격에서 가리키는 ref. MR 본문에 넣을 커밋을 어디서부터 셀지 정하는 값이다.
+     *
+     * `origin/main`을 가정하면 기본 브랜치가 `master`나 `develop`인 저장소에서 `git log`가 실패해
+     * 커밋이 하나도 없는 것처럼 보이고, 커밋에서 뽑는 이슈 키도 함께 사라진다.
+     * 그래서 실제로 있는 ref만 고른다 — 요청받은 브랜치, `origin/HEAD`가 가리키는 곳, 흔한 이름 순.
+     */
+    fun baseRef(target: String?, remote: String = "origin"): String? {
+        val requested = target?.trim()?.ifEmpty { null }?.let { "$remote/${it.removePrefix("$remote/")}" }
+        val candidates = listOfNotNull(requested, remoteHead(remote)) + FALLBACK_BRANCHES.map { "$remote/$it" }
+
+        return candidates.firstOrNull(::hasRef)
+    }
+
+    /** `origin/HEAD`가 가리키는 브랜치. 클론이 아니라 `git init`으로 시작한 저장소에는 없다. */
+    private fun remoteHead(remote: String): String? {
+        val result = run("symbolic-ref", "--short", "refs/remotes/$remote/HEAD") ?: return null
+        if (result.exitCode != 0) {
+            return null
+        }
+        return result.stdout.trim().ifEmpty { null }
+    }
+
+    private fun hasRef(ref: String): Boolean {
+        val result = run("rev-parse", "--verify", "--quiet", "$ref^{commit}") ?: return false
+        return result.exitCode == 0
+    }
+
+    /**
+     * 원격에 있는 브랜치 이름들(`origin/` 접두 없이). MR 대상으로 고를 수 있는 후보다.
+     *
+     * `origin/HEAD`는 브랜치가 아니라 다른 브랜치를 가리키는 표지라 뺀다.
+     */
+    fun remoteBranches(remote: String = "origin"): List<String> {
+        val prefix = "refs/remotes/$remote/"
+        // 짧은 이름이 아니라 전체 refname으로 거른다 — `origin/HEAD`의 짧은 이름은 `origin`이라
+        // 이름만 보고는 브랜치와 구분되지 않는다.
+        val result = run("for-each-ref", "--format=%(refname)", "refs/remotes/$remote") ?: return emptyList()
+        if (result.exitCode != 0) {
+            return emptyList()
+        }
+
+        return result.stdout.lineSequence()
+            .map { it.trim() }
+            .filter { it.startsWith(prefix) }
+            .map { it.removePrefix(prefix) }
+            .filter { it.isNotEmpty() && it != "HEAD" }
+            .distinct()
+            .toList()
+    }
+
+    /**
      * [base]에는 없고 현재 브랜치에만 있는 커밋 제목들. 오래된 것부터.
      * base를 모르거나 관계가 없으면 빈 목록 — MR을 못 만들 이유는 아니다.
+     *
+     * 머지 커밋은 뺀다. `Merge branch ... into ...`는 이 브랜치가 한 일이 아니라
+     * 기준 브랜치가 지나온 자국이라, MR 본문에 적으면 읽는 사람을 방해한다.
      */
     fun commitSubjectsSince(base: String): List<String> {
-        val result = run("log", "--format=%s", "--reverse", "$base..HEAD") ?: return emptyList()
+        val result = run("log", "--format=%s", "--reverse", "--no-merges", "$base..HEAD") ?: return emptyList()
         if (result.exitCode != 0) {
             return emptyList()
         }
@@ -110,4 +164,9 @@ class GitRepository(
     }
 
     private data class ProcessResult(val exitCode: Int, val stdout: String)
+
+    private companion object {
+        /** `origin/HEAD`가 없을 때 기본 브랜치일 법한 이름들. 앞에서부터 실제로 있는 것을 쓴다. */
+        val FALLBACK_BRANCHES = listOf("main", "master", "develop")
+    }
 }
