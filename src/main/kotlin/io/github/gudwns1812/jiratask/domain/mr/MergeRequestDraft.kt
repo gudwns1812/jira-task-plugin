@@ -29,8 +29,13 @@ object MergeRequestDraft {
      * 때문이다. 무슨 일을 했는지는 MR의 커밋 목록이 이미 보여 준다. 본문에 적힌 키 문자열이
      * Jira가 이 MR을 작업에 붙이는 근거다(RULE.md 5.3).
      */
-    fun descriptionOf(issueKeys: List<String>): String {
+    fun descriptionOf(issueKeys: List<String>, template: String? = null): String {
         val keys = issueKeys.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        val body = template?.trim().orEmpty()
+
+        if (body.isNotEmpty()) {
+            return MergeRequestTemplate.fill(body, keys)
+        }
         if (keys.isEmpty()) {
             return ""
         }

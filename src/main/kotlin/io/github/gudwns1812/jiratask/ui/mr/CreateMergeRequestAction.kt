@@ -58,8 +58,8 @@ import javax.swing.JTextField
 class MergeRequestDialog(
     project: Project?,
     proposal: MergeRequestProposal,
-    /** 대상 브랜치를 바꿨을 때 그 기준으로 다시 만든 초안. git을 읽으므로 EDT에서 부르지 않는다. */
-    private val redraft: (String) -> MergeRequestProposal = { proposal },
+    /** 대상 브랜치·템플릿을 바꿨을 때 그 기준으로 다시 만든 초안. git을 읽으므로 EDT에서 부르지 않는다. */
+    private val redraft: (String, String?) -> MergeRequestProposal = { _, _ -> proposal },
     private val background: (() -> Unit) -> Unit = {
         ApplicationManager.getApplication().executeOnPooledThread(Runnable(it))
     },
@@ -96,6 +96,13 @@ class MergeRequestDialog(
         selectedItem = proposal.targetBranch
     }
 
+    /**
+     * 쓸 템플릿. 팀이 `.gitlab` 아래에 여러 개를 두는 일이 흔해 고르게 한다 — GitLab 웹과 같다.
+     * 목록이 비어 있으면(템플릿이 없으면) 이 줄은 화면에 만들지 않는다.
+     */
+    val templateBox: ComboBox<String> = ComboBox((listOf(NO_TEMPLATE) + proposal.templates.keys).toTypedArray())
+        .apply { selectedItem = proposal.templateName ?: NO_TEMPLATE }
+
     val descriptionArea: JBTextArea = JBTextArea(proposal.description, 10, 60)
 
     private val issueKeysLabel = JBLabel()
@@ -124,6 +131,7 @@ class MergeRequestDialog(
         (targetBox.editor.editorComponent as? JTextField)?.addFocusListener(object : FocusAdapter() {
             override fun focusLost(event: FocusEvent) = onTargetChanged()
         })
+        templateBox.addActionListener { onTemplateChanged() }
         rewriteButton.addActionListener { onRewrite() }
         showKeys()
         refreshState()
@@ -133,7 +141,8 @@ class MergeRequestDialog(
      * 제목·본문을 AI에게 다시 쓰게 한다.
      *
      * 대상 브랜치를 바꿀 때와 같은 배선을 탄다 — 백그라운드에서 부르고 [onEdt]로 돌아온다.
-     * [onEdt]가 `ModalityState.any()`를 쓰는 것이 여기서도 반드시 필요하다.
+     * [onEdt]가 `ModalityState.any()`를 쓰는 것이 여기서도 반드시 필요하다. 이 창은 모달이라
+     * 모달리티를 주지 않으면 결과 반영이 창 닫힌 뒤로 밀린다.
      *
      * **사용자가 손댄 글은 덮지 않는다** — [apply]가 그 규칙을 들고 있다.
      */
@@ -163,58 +172,16 @@ class MergeRequestDialog(
     /** AI가 지금 무엇을 말하고 있는지. 화면을 뒤지지 않고 확인하려고 열어 둔다. */
     fun rewriteText(): String = rewriteLabel.text.orEmpty()
 
-    /**
-     * 대상이 바뀌면 그 기준으로 초안을 다시 만든다.
-     *
-     * 사용자가 손댄 제목·본문은 그대로 둔다 — 브랜치를 잘못 골랐다가 되돌리는 동안 쓰던 글이
-     * 사라지면 안 된다. 우리가 만든 글 그대로일 때만 갈아 끼운다.
-     */
-    private fun onTargetChanged() {
-        val target = target()
-        if (target.isBlank() || target == proposal.targetBranch) {
-            refreshState()
-            return
-        }
-
-        background {
-            val next = runCatching { redraft(target) }.getOrNull() ?: return@background
-            onEdt {
-                if (target != target()) {
-                    // 그새 또 바꿨다. 지금 화면과 맞지 않는 결과는 버린다.
-                    return@onEdt
-                }
-                apply(next)
-            }
-        }
-    }
-
-    private fun apply(next: MergeRequestProposal) {
-        if (titleField.text == draftedTitle) {
-            titleField.text = next.title
-        }
-        if (descriptionArea.text == draftedDescription) {
-            descriptionArea.text = next.description
-        }
-        draftedTitle = next.title
-        draftedDescription = next.description
-        proposal = next
-        showKeys()
-        refreshState()
-    }
-
-    private fun showKeys() {
-        issueKeysLabel.text = if (proposal.issueKeys.isEmpty()) {
-            NO_ISSUE_KEYS
-        } else {
-            "연결된 작업: ${proposal.issueKeys.joinToString(", ")}"
-        }
-    }
-
     override fun createCenterPanel(): JComponent = panel {
         row("원본 브랜치:") { cell(JBLabel(proposal.sourceBranch)) }
         row("대상 브랜치:") {
             cell(targetBox).columns(COLUMNS_LARGE)
         }.rowComment("이 브랜치가 대상 브랜치에 더한 커밋만 본문에 담깁니다. 바꾸면 본문을 다시 만듭니다.")
+        if (proposal.templates.isNotEmpty()) {
+            row("템플릿:") {
+                cell(templateBox).columns(COLUMNS_LARGE)
+            }.rowComment("팀 템플릿을 그대로 두고 관련 이슈 절에만 작업을 채웁니다. 그 절이 없으면 뒤에 붙입니다.")
+        }
         row("제목:") { cell(titleField).columns(COLUMNS_LARGE) }
         row("본문:") { cell(JBScrollPane(descriptionArea)).resizableColumn() }
         row {
@@ -250,6 +217,66 @@ class MergeRequestDialog(
 
     fun warningText(): String = warningLabel.text.orEmpty()
 
+    /** 템플릿을 바꾸면 그 템플릿으로 본문을 다시 만든다. 대상 브랜치를 바꿀 때와 같은 배선이다. */
+    private fun onTemplateChanged() {
+        val chosen = templateBox.selectedItem?.toString()?.takeIf { it != NO_TEMPLATE }
+        if (chosen == proposal.templateName) {
+            return
+        }
+        redraftWith(target(), chosen)
+    }
+
+    /**
+     * 대상이 바뀌면 그 기준으로 초안을 다시 만든다.
+     *
+     * 사용자가 손댄 제목·본문은 그대로 둔다 — 브랜치를 잘못 골랐다가 되돌리는 동안 쓰던 글이
+     * 사라지면 안 된다. 우리가 만든 글 그대로일 때만 갈아 끼운다.
+     */
+    private fun onTargetChanged() {
+        val target = target()
+        if (target.isBlank() || target == proposal.targetBranch) {
+            refreshState()
+            return
+        }
+        redraftWith(target, proposal.templateName)
+    }
+
+    /** 대상 브랜치나 템플릿이 바뀌면 그 조합으로 초안을 다시 만든다. */
+    private fun redraftWith(target: String, templateName: String?) {
+        background {
+            val next = runCatching { redraft(target, templateName) }.getOrNull() ?: return@background
+            onEdt {
+                if (target != target()) {
+                    // 그새 또 바꿨다. 지금 화면과 맞지 않는 결과는 버린다.
+                    return@onEdt
+                }
+                apply(next)
+            }
+        }
+    }
+
+    private fun apply(next: MergeRequestProposal) {
+        if (titleField.text == draftedTitle) {
+            titleField.text = next.title
+        }
+        if (descriptionArea.text == draftedDescription) {
+            descriptionArea.text = next.description
+        }
+        draftedTitle = next.title
+        draftedDescription = next.description
+        proposal = next
+        showKeys()
+        refreshState()
+    }
+
+    private fun showKeys() {
+        issueKeysLabel.text = if (proposal.issueKeys.isEmpty()) {
+            NO_ISSUE_KEYS
+        } else {
+            "연결된 작업: ${proposal.issueKeys.joinToString(", ")}"
+        }
+    }
+
     private fun refreshState() {
         isOKActionEnabled = problem() == null
     }
@@ -257,6 +284,7 @@ class MergeRequestDialog(
     companion object {
         const val NO_ISSUE_KEYS: String = "커밋에서 Jira 작업 키를 찾지 못했습니다. 본문에 직접 적어 두세요."
         const val REWRITE_BUTTON: String = "AI로 다시 쓰기"
+        const val NO_TEMPLATE: String = "템플릿 없음"
         const val REWRITING: String = "AI가 쓰는 중…"
     }
 }
@@ -311,7 +339,9 @@ class CreateMergeRequestAction @JvmOverloads constructor(
                                 mr = mr,
                                 workingDirectory = workingDirectory,
                                 proposal = prepared.proposal,
-                                redraft = { target -> useCase.redraft(state, prepared.proposal, target) },
+                                redraft = { target, templateName ->
+                                    useCase.redraft(state, prepared.proposal, target, templateName)
+                                },
                                 rewrite = { current -> useCase.rewrite(state, current) },
                             )
                     }
@@ -325,7 +355,7 @@ class CreateMergeRequestAction @JvmOverloads constructor(
         mr: MergeRequestSettings,
         workingDirectory: File,
         proposal: MergeRequestProposal,
-        redraft: (String) -> MergeRequestProposal,
+        redraft: (String, String?) -> MergeRequestProposal,
         rewrite: (MergeRequestProposal) -> DraftRewrite,
     ) {
         val dialog = MergeRequestDialog(project, proposal, redraft, rewrite = rewrite)
@@ -378,7 +408,7 @@ class CreateMergeRequestAction @JvmOverloads constructor(
             summaryOf = { key -> (SprintTasks.getInstance(project).findCached(key) as? TaskAnswer.Known)?.task?.summary },
             gitLabBaseUrl = mr.gitLabBaseUrl,
             tokenOrigin = mr.tokenSource.describe(),
-            // 꺼져 있으면 아예 만들지 않는다 — 그러면 use case가 "설정에서 켜세요"라고 답한다.
+            // 꺼져 있으면 아예 만들지 않는다 — 그래야 다이얼로그에 버튼도 나오지 않는다.
             draftWriter = draftWriterFor(workingDirectory),
         )
 
@@ -397,7 +427,7 @@ class CreateMergeRequestAction @JvmOverloads constructor(
      * 커밋 제목에서 **이 프로젝트의** 이슈 키만 모은다.
      *
      * `대문자-숫자`는 Jira 키 말고도 흔하다 — 팀이 쓰는 명세 번호(`API-04`, `GAME-05`)가 그대로 걸린다.
-     * 그런 키는 Jira에 없으므로 설정된 프로젝트 키로 거른다.
+     * 그런 키로 만든 Jira 링크는 열리지 않으므로 설정된 프로젝트 키로 거른다.
      * 프로젝트 키를 모를 때만 거르지 않는다 — 아는 게 없으면 덜어내는 것도 추측이다.
      */
     private fun issueKeysIn(subjects: List<String>): List<String> {
@@ -419,6 +449,7 @@ class CreateMergeRequestAction @JvmOverloads constructor(
             commitSubjectsSince = { target -> git.baseRef(target)?.let(git::commitSubjectsSince) ?: emptyList() },
             remoteBranches = git.remoteBranches(),
             changedFilesSince = { target -> git.baseRef(target)?.let(git::changedFilesSince) ?: emptyList() },
+            templates = git.mergeRequestTemplates(),
         )
     }
 }

@@ -146,6 +146,26 @@ class GitRepository(
     }
 
     /**
+     * 저장소가 들고 있는 MR 템플릿들. 이름 → 내용.
+     *
+     * GitLab이 정한 자리는 [TEMPLATE_DIRECTORY] 아래의 `.md` 파일들이다. 작업 트리에서 읽는다 —
+     * 엄밀히는 기본 브랜치의 것이지만, 작업 브랜치는 거기서 갈라져 나왔으니 대개 같고,
+     * 이번 브랜치에서 템플릿을 손봤다면 그 손본 것을 쓰는 편이 덜 놀랍다.
+     */
+    fun mergeRequestTemplates(): Map<String, String> {
+        val directory = File(workingDirectory, TEMPLATE_DIRECTORY)
+        val files = directory.listFiles { file -> file.isFile && file.extension.equals("md", ignoreCase = true) }
+            ?: return emptyMap()
+
+        return files.sortedBy { it.name.lowercase() }
+            .mapNotNull { file ->
+                val text = runCatching { file.readText(Charsets.UTF_8) }.getOrNull()?.takeIf { it.isNotBlank() }
+                text?.let { file.nameWithoutExtension to it }
+            }
+            .toMap()
+    }
+
+    /**
      * [base] 이후 이 브랜치가 건드린 파일들. **경로만 읽는다 — 내용은 읽지 않는다.**
      *
      * AI에게 무엇을 보낼지가 이 메서드에 걸려 있다. `--name-only`를 `-p`로 바꾸는 순간
@@ -190,5 +210,8 @@ class GitRepository(
     private companion object {
         /** `origin/HEAD`가 없을 때 기본 브랜치일 법한 이름들. 앞에서부터 실제로 있는 것을 쓴다. */
         val FALLBACK_BRANCHES = listOf("main", "master", "develop")
+
+        /** GitLab이 MR 템플릿을 찾는 자리. */
+        const val TEMPLATE_DIRECTORY = ".gitlab/merge_request_templates"
     }
 }

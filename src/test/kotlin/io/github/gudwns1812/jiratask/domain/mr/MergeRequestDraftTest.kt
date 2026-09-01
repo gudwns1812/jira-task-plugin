@@ -131,6 +131,14 @@ class MergeRequestDraftTest {
     }
 
     @Test
+    fun `keeps no separate commit section`() {
+        val description = MergeRequestDraft.descriptionOf(listOf("A-1"))
+
+        assertTrue(!description.contains("### 커밋"))
+        assertEquals(1, description.lines().count { it.startsWith("###") })
+    }
+
+    @Test
     fun `says the same key only once`() {
         val description = MergeRequestDraft.descriptionOf(listOf("A-1", "A-1"))
 
@@ -141,5 +149,23 @@ class MergeRequestDraftTest {
     fun `has nothing to write when no commit named a task`() {
         assertEquals("", MergeRequestDraft.descriptionOf(emptyList()))
         assertEquals("", MergeRequestDraft.descriptionOf(listOf("   ")))
+    }
+
+    @Test
+    fun `fills a template with the keys instead of writing its own section`() {
+        val description = MergeRequestDraft.descriptionOf(
+            listOf("A-1"),
+            template = """
+                ## 개요
+
+                ## 관련 이슈
+
+                ## 테스트
+            """.trimIndent(),
+        )
+
+        assertTrue(description.contains("## 개요"))
+        assertTrue(description.lines()[3] == "- A-1")
+        assertTrue("템플릿을 쓰면 우리 절 제목은 만들지 않는다", !description.contains("### 연결된 작업"))
     }
 }

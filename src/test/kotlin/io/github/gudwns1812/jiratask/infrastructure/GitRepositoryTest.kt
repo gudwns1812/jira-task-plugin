@@ -81,6 +81,18 @@ class GitRepositoryTest {
     }
 
     @Test
+    fun `accepts a target that already names the remote`() {
+        val directory = createRepository()
+        try {
+            runGit(directory, "update-ref", "refs/remotes/origin/develop", "HEAD")
+
+            assertEquals("origin/develop", GitRepository(directory).baseRef("origin/develop"))
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `follows origin HEAD when the requested branch is not on the remote`() {
         val directory = createRepository()
         try {
@@ -118,6 +130,26 @@ class GitRepositoryTest {
     }
 
     @Test
+    fun `lists only the commits this branch added on top of the base`() {
+        val directory = createRepository()
+        try {
+            runGit(directory, "update-ref", "refs/remotes/origin/main", "HEAD")
+            runGit(directory, "checkout", "-b", "feat/signup")
+            File(directory, "signup.txt").writeText("signup")
+            runGit(directory, "add", "signup.txt")
+            runGit(directory, "commit", "-m", "S15P11A108-257 회원가입")
+
+            val repository = GitRepository(directory)
+            val base = repository.baseRef("main")
+
+            assertEquals("origin/main", base)
+            assertEquals(listOf("S15P11A108-257 회원가입"), repository.commitSubjectsSince(base!!))
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `lists the remote branches that can be merge targets`() {
         val directory = createRepository()
         try {
@@ -125,9 +157,18 @@ class GitRepositoryTest {
             runGit(directory, "update-ref", "refs/remotes/origin/backend-dev", "HEAD")
             runGit(directory, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
 
-            // origin/HEAD는 브랜치가 아니라 다른 브랜치를 가리키는 표지다. 짧은 이름이 `origin`이라
-            // 이름만 보고 거르면 목록에 섞여 들어온다.
+            // origin/HEAD는 브랜치가 아니라 다른 브랜치를 가리키는 표지다.
             assertEquals(listOf("backend-dev", "main"), GitRepository(directory).remoteBranches().sorted())
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `lists no remote branches when the repository has none`() {
+        val directory = createRepository()
+        try {
+            assertEquals(emptyList<String>(), GitRepository(directory).remoteBranches())
         } finally {
             directory.deleteRecursively()
         }
@@ -158,6 +199,37 @@ class GitRepositoryTest {
     }
 
     @Test
+    fun `lists the paths this branch touched, never their contents`() {
+        val directory = createRepository()
+        try {
+            runGit(directory, "update-ref", "refs/remotes/origin/main", "HEAD")
+            runGit(directory, "checkout", "-b", "feat/signup")
+            File(directory, "signup.txt").writeText("비밀번호 = 1234")
+            File(directory, "README.md").writeText("고침\n")
+            runGit(directory, "add", ".")
+            runGit(directory, "commit", "-m", "S15P11A108-257 회원가입")
+
+            val changed = GitRepository(directory).changedFilesSince("origin/main")
+
+            assertEquals(listOf("README.md", "signup.txt"), changed.sorted())
+            // 경로만 읽는다. 이 단언이 깨지면 파일 내용을 읽기 시작했다는 뜻이다.
+            assertTrue("내용은 읽지 않는다", changed.none { it.contains("비밀번호") })
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `returns no changed files for a base that does not exist`() {
+        val directory = createRepository()
+        try {
+            assertEquals(emptyList<String>(), GitRepository(directory).changedFilesSince("origin/nope"))
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `returns no commits for a base that does not exist`() {
         val directory = createRepository()
         try {
@@ -179,20 +251,31 @@ class GitRepositoryTest {
     }
 
     @Test
-    fun `lists the paths this branch touched, never their contents`() {
+    fun `reads the merge request templates the repository keeps`() {
         val directory = createRepository()
         try {
-            runGit(directory, "update-ref", "refs/remotes/origin/main", "HEAD")
-            runGit(directory, "checkout", "-b", "feat/signup")
-            File(directory, "signup.txt").writeText("비밀번호 = 1234")
-            runGit(directory, "add", ".")
-            runGit(directory, "commit", "-m", "S15P11A108-257 회원가입")
+            // GitLab이 정한 자리다. 경로를 바꾸면 팀 템플릿을 못 찾는다.
+            val templates = File(directory, ".gitlab/merge_request_templates").apply { mkdirs() }
+            File(templates, "Default.md").writeText("## 관련 이슈")
+            File(templates, "Bugfix.md").writeText("## 재현 방법")
+            File(templates, "README.txt").writeText("템플릿이 아니다")
+            File(templates, "Empty.md").writeText("   ")
 
-            val changed = GitRepository(directory).changedFilesSince("origin/main")
+            val read = GitRepository(directory).mergeRequestTemplates()
 
-            assertEquals(listOf("signup.txt"), changed)
-            // 경로만 읽는다. 이 단언이 깨지면 파일 내용을 읽기 시작했다는 뜻이다.
-            assertTrue("내용은 읽지 않는다", changed.none { it.contains("비밀번호") })
+            // 이름은 확장자를 뗀 것이고, .md가 아니거나 빈 파일은 담지 않는다.
+            assertEquals(listOf("Bugfix", "Default"), read.keys.toList().sorted())
+            assertTrue(read.getValue("Default").contains("관련 이슈"))
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `has no templates when the repository keeps none`() {
+        val directory = createRepository()
+        try {
+            assertEquals(emptyMap<String, String>(), GitRepository(directory).mergeRequestTemplates())
         } finally {
             directory.deleteRecursively()
         }

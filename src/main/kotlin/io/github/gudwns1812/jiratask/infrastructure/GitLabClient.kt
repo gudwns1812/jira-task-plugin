@@ -10,6 +10,7 @@ import io.github.gudwns1812.jiratask.domain.mr.GitLabError
 import io.github.gudwns1812.jiratask.domain.mr.GitLabIdentity
 import io.github.gudwns1812.jiratask.domain.mr.GitLabNetworkError
 import io.github.gudwns1812.jiratask.domain.mr.GitLabPermissionError
+import io.github.gudwns1812.jiratask.domain.mr.GitLabProjectInfo
 import io.github.gudwns1812.jiratask.domain.mr.MergeRequestCommand
 import io.github.gudwns1812.jiratask.domain.mr.MergeRequestPort
 import io.github.gudwns1812.jiratask.domain.mr.OpenMergeRequest
@@ -74,11 +75,16 @@ class GitLabClient(
         )
     }
 
-    override fun defaultBranch(projectPath: String): String? = try {
-        parseObject(request("/projects/${encode(projectPath)}")).text("default_branch")
+    override fun projectInfo(projectPath: String): GitLabProjectInfo = try {
+        val project = parseObject(request("/projects/${encode(projectPath)}"))
+        GitLabProjectInfo(
+            defaultBranch = project.text("default_branch"),
+            // 프로젝트 설정의 기본 MR 템플릿. Premium 이상에서만 채워지므로 대개 비어 있다.
+            mergeRequestTemplate = project.text("merge_requests_template"),
+        )
     } catch (error: Exception) {
-        // 기본 브랜치를 못 읽어도 사용자가 대상 브랜치를 고를 수 있다. 여기서 실패시키지 않는다.
-        null
+        // 못 읽어도 사용자가 대상 브랜치와 템플릿을 고를 수 있다. 여기서 실패시키지 않는다.
+        GitLabProjectInfo()
     }
 
     override fun create(command: MergeRequestCommand): CreatedMergeRequest {

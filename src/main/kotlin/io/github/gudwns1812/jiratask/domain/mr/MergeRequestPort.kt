@@ -41,6 +41,14 @@ data class GitLabIdentity(
     val lacksApiScope: Boolean get() = scopesKnown && !canCreateMergeRequest
 }
 
+/**
+ * GitLab이 프로젝트에 대해 알려 주는 것 중 우리가 쓰는 것.
+ *
+ * 둘 다 한 번의 `GET /projects/:id`에서 나온다 — 템플릿을 위해 호출을 늘리지 않는다.
+ * [mergeRequestTemplate]은 프로젝트 설정의 기본 템플릿이고, 저장소의 `Default.md`보다 우선한다.
+ */
+data class GitLabProjectInfo(val defaultBranch: String? = null, val mergeRequestTemplate: String? = null)
+
 /** 이미 열려 있는 MR. 같은 브랜치로 두 번 만들지 않기 위해 먼저 본다. */
 data class OpenMergeRequest(val webUrl: String, val title: String)
 
@@ -73,8 +81,8 @@ interface MergeRequestPort {
     /** [sourceBranch]에서 이미 열린 MR. 없으면 null. */
     fun openMergeRequest(projectPath: String, sourceBranch: String): OpenMergeRequest?
 
-    /** 이 프로젝트의 기본 브랜치. 못 읽으면 null. */
-    fun defaultBranch(projectPath: String): String?
+    /** 이 프로젝트에 대해 GitLab이 아는 것. 못 읽으면 빈 값 — 그것 때문에 MR을 못 만들지는 않는다. */
+    fun projectInfo(projectPath: String): GitLabProjectInfo
 
     fun create(command: MergeRequestCommand): CreatedMergeRequest
 }

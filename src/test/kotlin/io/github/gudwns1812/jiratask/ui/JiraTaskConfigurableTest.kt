@@ -9,6 +9,7 @@ import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import io.github.gudwns1812.jiratask.application.EditSettingsUseCase
 import io.github.gudwns1812.jiratask.domain.mr.GitLabAuthenticationError
 import io.github.gudwns1812.jiratask.domain.mr.GitLabIdentity
+import io.github.gudwns1812.jiratask.domain.mr.GitLabProjectInfo
 import io.github.gudwns1812.jiratask.domain.mr.MergeRequestCommand
 import io.github.gudwns1812.jiratask.domain.mr.MergeRequestPort
 import io.github.gudwns1812.jiratask.domain.policy.PolicyConfigurationError
@@ -245,7 +246,7 @@ class JiraTaskConfigurableTest : BasePlatformTestCase() {
 
         override fun openMergeRequest(projectPath: String, sourceBranch: String) = null
 
-        override fun defaultBranch(projectPath: String): String? = null
+        override fun projectInfo(projectPath: String) = GitLabProjectInfo()
 
         override fun create(command: MergeRequestCommand) = error("연결 테스트는 MR을 만들지 않는다")
     }
@@ -264,6 +265,7 @@ class JiraTaskConfigurableTest : BasePlatformTestCase() {
     private fun clickTestConnection(component: JComponent) {
         buttonsOf(component).single { it.text == JiraTaskConfigurable.TEST_CONNECTION_BUTTON }.doClick()
     }
+
 
     fun `test the connection test asks gitlab and shows who the token belongs to`() {
         val gitlab = RecordingGitLab { GitLabIdentity("gudwns1812", scopesKnown = true, canCreateMergeRequest = true) }
@@ -335,6 +337,22 @@ class JiraTaskConfigurableTest : BasePlatformTestCase() {
 
     private fun gitLabTokenFieldOf(component: JComponent): JTextComponent = editableFieldsOf(component)[3]
 
+    /** 모델 콤보의 편집 칸. 편집을 열어 뒀으므로 목록에 없는 이름도 여기 적을 수 있다. */
+    private fun aiModelFieldOf(component: JComponent): JTextComponent = editableFieldsOf(component)[4]
+
+    private fun aiEnabledBoxOf(container: Container): javax.swing.JCheckBox {
+        val found = mutableListOf<javax.swing.JCheckBox>()
+        fun walk(c: Container) {
+            if (c is javax.swing.JCheckBox) {
+                found += c
+            }
+            c.components.filterIsInstance<Container>().forEach(::walk)
+        }
+        walk(container)
+        return found.single()
+    }
+
+
     private fun editableFieldsOf(component: JComponent): List<JTextComponent> {
         val fields = mutableListOf<JTextComponent>()
         fun walk(container: Container) {
@@ -367,5 +385,30 @@ class JiraTaskConfigurableTest : BasePlatformTestCase() {
             ),
             values,
         )
+    }
+
+    fun `test saves nothing for a model the user did not choose`() {
+        val repository = configuredRepository()
+        val configurable = configurableOf(repository)
+        val component = configurable.createComponent()
+
+        // 기본값 항목은 "정하지 않음"이다. 그 글자가 모델 이름으로 저장되면 CLI가 거부한다.
+        aiEnabledBoxOf(component).isSelected = true
+        configurable.apply()
+
+        assertEquals(true, repository.loadConfig().ai?.enabled)
+        assertNull(repository.loadConfig().ai?.model)
+    }
+
+    fun `test saves the model the user picked`() {
+        val repository = configuredRepository()
+        val configurable = configurableOf(repository)
+        val component = configurable.createComponent()
+
+        aiEnabledBoxOf(component).isSelected = true
+        aiModelFieldOf(component).text = "opus"
+        configurable.apply()
+
+        assertEquals("opus", repository.loadConfig().ai?.model)
     }
 }

@@ -8,6 +8,7 @@ import io.github.gudwns1812.jiratask.domain.mr.GitLabError
 import io.github.gudwns1812.jiratask.domain.mr.GitLabNetworkError
 import io.github.gudwns1812.jiratask.domain.mr.GitLabPermissionError
 import io.github.gudwns1812.jiratask.domain.mr.GitLabProject
+import io.github.gudwns1812.jiratask.domain.mr.GitLabProjectInfo
 import io.github.gudwns1812.jiratask.domain.mr.MergeRequestCommand
 import io.github.gudwns1812.jiratask.domain.mr.MergeRequestDraft
 import io.github.gudwns1812.jiratask.domain.mr.MergeRequestPort
@@ -29,6 +30,8 @@ data class BranchState(
     val remoteBranches: List<String> = emptyList(),
     /** 대상 브랜치 기준으로 이 브랜치가 건드린 파일 경로들. AI 초안에만 쓴다. */
     val changedFilesSince: (String) -> List<String> = { emptyList() },
+    /** 저장소가 들고 있는 MR 템플릿들. 이름 → 내용. */
+    val templates: Map<String, String> = emptyMap(),
 )
 
 /** 화면에 채워 넣을 초안. 사용자가 여기서 제목·본문·대상 브랜치를 고칠 수 있다. */
@@ -48,6 +51,15 @@ data class MergeRequestProposal(
      * `backend-dev`)를 쓰는 팀에서 저장소 기본 브랜치를 기준으로 삼으면 남의 커밋 수백 개가 딸려 온다.
      */
     val targetCandidates: List<String> = emptyList(),
+    /**
+     * 고를 수 있는 템플릿들. 이름 → 내용. 첫 번째가 기본값이다.
+     *
+     * 프로젝트 설정의 기본 템플릿과 저장소 파일을 함께 담는다. 팀이 `.gitlab/merge_request_templates/`에
+     * 여러 개를 두는 일이 흔해서, 무엇을 쓸지는 사용자가 고른다 — GitLab 웹이 하는 것과 같다.
+     */
+    val templates: Map<String, String> = emptyMap(),
+    /** 고른 템플릿 이름. null이면 템플릿을 쓰지 않는다. */
+    val templateName: String? = null,
 )
 
 sealed interface MergeRequestPrepare {
@@ -108,6 +120,7 @@ class CreateMergeRequestUseCase(
                 .getOrDefault(emptyList()),
             changedFiles = runCatching { state.changedFilesSince(proposal.targetBranch) }
                 .getOrDefault(emptyList()),
+            template = proposal.templates[proposal.templateName],
         )
 
         return when (val outcome = runCatching { writer.write(request) }.getOrElse { DraftOutcome.Failed(FAILED) }) {
@@ -143,7 +156,9 @@ class CreateMergeRequestUseCase(
         }
 
         val existing = runCatching { gitlab.openMergeRequest(remote.projectPath, branch) }.getOrNull()
-        val target = runCatching { gitlab.defaultBranch(remote.projectPath) }.getOrNull() ?: fallbackTarget
+        val project = runCatching { gitlab.projectInfo(remote.projectPath) }.getOrNull() ?: GitLabProjectInfo()
+        val target = project.defaultBranch ?: fallbackTarget
+        val templates = templatesOf(project.mergeRequestTemplate, state.templates)
 
         val skeleton = MergeRequestProposal(
             projectPath = remote.projectPath,
@@ -154,25 +169,50 @@ class CreateMergeRequestUseCase(
             issueKeys = emptyList(),
             existingUrl = existing?.webUrl,
             targetCandidates = candidatesOf(state.remoteBranches, target, branch),
+            templates = templates,
+            templateName = templates.keys.firstOrNull(),
         )
 
         return MergeRequestPrepare.Ready(redraft(state, skeleton, target))
     }
 
     /**
+     * 고를 수 있는 템플릿들. **앞에 오는 것이 기본값**이다.
+     *
+     * 프로젝트 설정의 기본 템플릿이 저장소의 `Default.md`보다 우선한다(GitLab 문서). 저장소 파일 중에서는
+     * `Default`가 앞이고, 나머지는 이름순으로 뒤따른다.
+     */
+    private fun templatesOf(projectTemplate: String?, files: Map<String, String>): Map<String, String> {
+        val ordered = LinkedHashMap<String, String>()
+
+        projectTemplate?.trim()?.takeIf { it.isNotEmpty() }?.let { ordered[PROJECT_TEMPLATE] = it }
+        files.entries.filter { it.key.equals("Default", ignoreCase = true) }
+            .forEach { ordered.putIfAbsent(it.key, it.value) }
+        files.forEach { (name, text) -> ordered.putIfAbsent(name, text) }
+
+        return ordered
+    }
+
+    /**
      * [target]을 기준으로 제목·본문·이슈 키를 다시 만든다.
      *
      * 사용자가 대상 브랜치를 고칠 때마다 불린다 — 기준이 바뀌면 이 브랜치가 추가한 커밋도 바뀌고,
-     * 그러면 본문에 적을 이슈 키도 함께 바뀌어야 한다.
+     * 그러면 본문에 적을 커밋과 이슈 키도 함께 바뀌어야 한다.
      */
-    fun redraft(state: BranchState, proposal: MergeRequestProposal, target: String): MergeRequestProposal {
+    fun redraft(
+        state: BranchState,
+        proposal: MergeRequestProposal,
+        target: String = proposal.targetBranch,
+        templateName: String? = proposal.templateName,
+    ): MergeRequestProposal {
         val subjects = runCatching { state.commitSubjectsSince(target) }.getOrDefault(emptyList())
         val keys = issueKeysOf(subjects)
 
         return proposal.copy(
             targetBranch = target,
+            templateName = templateName,
             title = MergeRequestDraft.titleOf(proposal.sourceBranch, keys, summaryOf),
-            description = MergeRequestDraft.descriptionOf(keys),
+            description = MergeRequestDraft.descriptionOf(keys, proposal.templates[templateName]),
             issueKeys = keys,
         )
     }
@@ -220,6 +260,9 @@ class CreateMergeRequestUseCase(
     companion object {
         /** GitLab이 기본 브랜치를 알려주지 않을 때의 마지막 수단. */
         const val DEFAULT_TARGET: String = "main"
+
+        /** 프로젝트 설정에 저장된 기본 템플릿을 목록에서 부르는 이름. 파일 이름과 겹치지 않게 둔다. */
+        const val PROJECT_TEMPLATE: String = "프로젝트 기본"
 
         const val DISABLED: String = "AI 초안이 꺼져 있습니다. 설정에서 켜세요."
         const val FAILED: String = "AI 초안을 만들지 못했습니다."

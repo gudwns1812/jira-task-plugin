@@ -63,8 +63,8 @@ class JiraTaskConfigurable @JvmOverloads constructor(
      * 모델. 별칭은 늘 그 계열의 최신 모델을 가리키므로 버전을 박아 두는 것보다 낫다.
      *
      * CLI가 문서로 밝힌 것은 `fable`·`opus`·`sonnet`뿐이라 목록에는 그 셋만 둔다. 그 밖의 모델은
-     * 전체 이름으로 직접 칠 수 있도록 편집을 열어 둔다 — 없는 별칭을 지어내면 사용자는
-     * 고르기만 했는데 실행에서 거부당한다.
+     * 전체 이름(`claude-opus-5`)으로 직접 칠 수 있도록 편집을 열어 둔다 — 없는 별칭을 지어내면
+     * 사용자는 고르기만 했는데 실행에서 거부당한다.
      */
     private val aiModelBox = ComboBox(arrayOf(MODEL_DEFAULT, "fable", "opus", "sonnet")).apply {
         isEditable = true
@@ -197,6 +197,27 @@ class JiraTaskConfigurable @JvmOverloads constructor(
     }
 
     /**
+     * 토큰은 설정 파일이 아니라 IDE 비밀번호 저장소에만 넣고, 입력 칸을 즉시 비운다.
+     * 저장할 GitLab 주소를 모르면 넣을 곳이 없으므로 그렇게 알린다.
+     */
+    private fun saveGitLabToken() {
+        val token = String(gitLabTokenField.password).trim()
+        if (token.isEmpty()) {
+            return
+        }
+
+        val baseUrl = saved.gitLabBaseUrl.ifBlank {
+            throw ConfigurationException("GitLab 주소를 먼저 입력하세요.", "Jira Task 설정")
+        }
+        try {
+            gitLabTokens.save(baseUrl, token)
+        } catch (error: CredentialStorageError) {
+            throw ConfigurationException(error.message, "Jira Task 설정")
+        }
+        gitLabTokenField.text = ""
+    }
+
+    /**
      * 입력한 주소와 토큰이 실제로 통하는지 GitLab에 물어본다.
      *
      * 화면에 방금 친 토큰을 우선 쓴다 — 저장하기 전에도 확인할 수 있어야 오타를 그 자리에서 잡는다.
@@ -231,29 +252,14 @@ class JiraTaskConfigurable @JvmOverloads constructor(
         connectionLabel.text = report.message
     }
 
+    /** 고른 모델. 기본값 항목은 "정하지 않음"이라 빈 문자열로 되돌린다. */
+    private fun aiModelValue(): String =
+        (aiModelBox.editor.item ?: aiModelBox.selectedItem)?.toString()?.trim()
+            ?.takeIf { it != MODEL_DEFAULT }
+            .orEmpty()
+
     /** 연결 테스트가 지금 보여 주고 있는 문구. 화면을 뒤지지 않고 확인하려고 열어 둔다. */
     fun connectionText(): String = connectionLabel.text.orEmpty()
-
-    /**
-     * 토큰은 설정 파일이 아니라 IDE 비밀번호 저장소에만 넣고, 입력 칸을 즉시 비운다.
-     * 저장할 GitLab 주소를 모르면 넣을 곳이 없으므로 그렇게 알린다.
-     */
-    private fun saveGitLabToken() {
-        val token = String(gitLabTokenField.password).trim()
-        if (token.isEmpty()) {
-            return
-        }
-
-        val baseUrl = saved.gitLabBaseUrl.ifBlank {
-            throw ConfigurationException("GitLab 주소를 먼저 입력하세요.", "Jira Task 설정")
-        }
-        try {
-            gitLabTokens.save(baseUrl, token)
-        } catch (error: CredentialStorageError) {
-            throw ConfigurationException(error.message, "Jira Task 설정")
-        }
-        gitLabTokenField.text = ""
-    }
 
     override fun reset() {
         when (val load = settings.load()) {
@@ -277,12 +283,6 @@ class JiraTaskConfigurable @JvmOverloads constructor(
         aiExecutablePath = aiExecutablePathField.text,
     )
 
-    /** 고른 모델. 기본값 항목은 "정하지 않음"이라 빈 문자열로 되돌린다. */
-    private fun aiModelValue(): String =
-        (aiModelBox.editor.item ?: aiModelBox.selectedItem)?.toString()?.trim()
-            ?.takeIf { it != MODEL_DEFAULT }
-            .orEmpty()
-
     private fun show(snapshot: SettingsSnapshot, problem: String?) {
         projectKeyField.text = snapshot.projectKey
         baseUrlField.text = snapshot.baseUrl
@@ -303,14 +303,14 @@ class JiraTaskConfigurable @JvmOverloads constructor(
 
     companion object {
         const val NOT_CONFIGURED: String = "설정되지 않음"
+        const val RUN_WIZARD_BUTTON: String = "설정 마법사 다시 실행"
+        const val TEST_CONNECTION_BUTTON: String = "연결 테스트"
+        const val TESTING: String = "확인 중…"
         const val MODEL_DEFAULT: String = "Claude Code 설정 따름"
         const val PRIVACY_NOTICE: String =
             "브랜치 이름, 커밋 제목, 변경된 파일 경로가 Anthropic에 전송됩니다. 파일 내용은 보내지 않습니다."
-        const val TEST_CONNECTION_BUTTON: String = "연결 테스트"
-        const val TESTING: String = "확인 중…"
         const val ADDRESS_CHANGED: String =
             "GitLab 주소가 바뀌었습니다. 토큰은 주소마다 따로 보관하므로 새 주소의 토큰을 다시 입력하세요."
-        const val RUN_WIZARD_BUTTON: String = "설정 마법사 다시 실행"
     }
 }
 
