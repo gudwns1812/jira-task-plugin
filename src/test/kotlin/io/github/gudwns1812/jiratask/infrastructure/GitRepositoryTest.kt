@@ -167,6 +167,17 @@ class GitRepositoryTest {
     }
 
     @Test
+    fun `cannot tell whether a branch is pushed when there is no remote`() {
+        val directory = createRepository()
+        try {
+            // origin이 없으면 ls-remote가 실패한다. 그것은 "안 올렸다"가 아니라 "모른다"이다.
+            assertNull(GitRepository(directory).isPushed("feat/signup"))
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `rejects operating outside a git repository`() {
         val directory = Files.createTempDirectory("jira-task-plugin-non-git-").toFile()
         try {

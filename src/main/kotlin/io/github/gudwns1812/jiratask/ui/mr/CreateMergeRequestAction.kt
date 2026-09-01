@@ -8,12 +8,14 @@ import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
+import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DialogWrapper
+import com.intellij.openapi.ui.ValidationInfo
 import com.intellij.ui.DocumentAdapter
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
@@ -174,12 +176,19 @@ class MergeRequestDialog(
 
     fun target(): String = (targetBox.editor.item ?: targetBox.selectedItem)?.toString()?.trim().orEmpty()
 
-    fun problem(): String? = when {
-        titleField.text.isBlank() -> "MR 제목은 비울 수 없습니다."
-        target().isBlank() -> "대상 브랜치를 고르세요."
-        target() == proposal.sourceBranch -> "원본 브랜치와 대상 브랜치가 같습니다."
+    /**
+     * 무엇이 잘못됐는지와 어느 칸을 가리켜야 하는지.
+     *
+     * [doValidate]로 내보내야 화면에 실제로 뜬다 — 버튼만 꺼 두면 사용자는 이유 없이 죽은 버튼을 본다.
+     */
+    override fun doValidate(): ValidationInfo? = when {
+        titleField.text.isBlank() -> ValidationInfo("MR 제목은 비울 수 없습니다.", titleField)
+        target().isBlank() -> ValidationInfo("대상 브랜치를 고르세요.", targetBox)
+        target() == proposal.sourceBranch -> ValidationInfo("원본 브랜치와 대상 브랜치가 같습니다.", targetBox)
         else -> null
     }
+
+    fun problem(): String? = doValidate()?.message
 
     fun values(): MergeRequestProposal = proposal.copy(targetBranch = target())
 
@@ -229,7 +238,10 @@ class CreateMergeRequestAction @JvmOverloads constructor(
                         return@invokeLater
                     }
                     when (prepared) {
-                        is MergeRequestPrepare.Blocked -> JiraTaskNotifications.warning(project, prepared.message)
+                        is MergeRequestPrepare.Blocked -> {
+                            thisLogger().info("MR 초안을 만들 수 없음: ${prepared.message}")
+                            JiraTaskNotifications.warning(project, prepared.message)
+                        }
                         is MergeRequestPrepare.Ready ->
                             confirm(project, mr, prepared.proposal) { target ->
                                 useCase.redraft(state, prepared.proposal, target)
@@ -263,14 +275,25 @@ class CreateMergeRequestAction @JvmOverloads constructor(
     }
 
     private fun report(project: Project, result: MergeRequestResult) = when (result) {
-        is MergeRequestResult.Created -> JiraTaskNotifications.notify(
+        // 주소를 못 읽었어도 MR은 만들어졌다. 실패로 알리면 사용자가 같은 MR을 한 번 더 만들려 든다.
+        is MergeRequestResult.Created -> result.webUrl?.let { url ->
+            JiraTaskNotifications.notify(
+                project,
+                "MR을 만들었습니다: $url",
+                NotificationType.INFORMATION,
+                NotificationAction.createSimple("열기") { BrowserUtil.browse(url) },
+            )
+        } ?: JiraTaskNotifications.notify(
             project,
-            "MR을 만들었습니다: ${result.webUrl}",
+            "MR을 만들었습니다. 다만 GitLab이 주소를 알려주지 않아 여기서 열 수는 없습니다.",
             NotificationType.INFORMATION,
-            NotificationAction.createSimple("열기") { BrowserUtil.browse(result.webUrl) },
         )
-        is MergeRequestResult.Failure ->
+        is MergeRequestResult.Failure -> {
+            // 알림은 사라진다. 실패는 로그에도 남겨야 나중에 원인을 되짚을 수 있다.
+            // 토큰은 절대 적지 않는다 — 메시지에는 출처 이름만 들어 있다(ARCHITECTURE.md 191, 226).
+            thisLogger().warn("MR 생성 실패: ${result.message}")
             JiraTaskNotifications.warning(project, "MR을 만들지 못했습니다: ${result.message}")
+        }
     }
 
     private fun useCaseFor(project: Project, mr: MergeRequestSettings): CreateMergeRequestUseCase =
@@ -279,6 +302,8 @@ class CreateMergeRequestAction @JvmOverloads constructor(
             issueKeysOf = { subjects -> issueKeysIn(subjects) },
             // 이슈 하나짜리 MR의 제목에 쓴다. 캐시가 모르면 브랜치 이름으로 돌아간다.
             summaryOf = { key -> (SprintTasks.getInstance(project).findCached(key) as? TaskAnswer.Known)?.task?.summary },
+            gitLabBaseUrl = mr.gitLabBaseUrl,
+            tokenOrigin = mr.tokenSource.describe(),
         )
 
     /**
@@ -302,7 +327,7 @@ class CreateMergeRequestAction @JvmOverloads constructor(
         return BranchState(
             branch = branch,
             remoteUrl = git.remoteUrl(),
-            isPushed = branch?.let(git::isPushed) ?: false,
+            isPushed = branch?.let(git::isPushed),
             // 대상 브랜치가 정해진 뒤에 불린다. 그 브랜치의 원격 ref가 없으면 있는 기본 브랜치를 찾아 쓴다.
             commitSubjectsSince = { target -> git.baseRef(target)?.let(git::commitSubjectsSince) ?: emptyList() },
             remoteBranches = git.remoteBranches(),

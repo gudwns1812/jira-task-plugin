@@ -3,7 +3,6 @@ package io.github.gudwns1812.jiratask.ui
 import io.github.gudwns1812.jiratask.application.CredentialStore
 import io.github.gudwns1812.jiratask.domain.jira.JiraNamedValue
 import io.github.gudwns1812.jiratask.infrastructure.CredentialStorageError
-import io.github.gudwns1812.jiratask.infrastructure.GitLabTokenStore
 import io.github.gudwns1812.jiratask.infrastructure.JiraTaskConfigStorage
 import io.github.gudwns1812.jiratask.infrastructure.PolicyConfigRepository
 import org.junit.Assert.assertEquals
@@ -60,9 +59,80 @@ class JiraTaskSettingsTest {
     private fun settings(
         repository: PolicyConfigRepository,
         credentials: CredentialStore = FakeCredentials("token"),
-        gitLabTokens: GitLabTokenStore = GitLabTokenStore { error("이 테스트는 GitLab 토큰을 읽지 않는다") },
+        gitLabToken: (String) -> String? = { error("이 테스트는 GitLab 토큰을 읽지 않는다") },
         environment: (String) -> String? = { null },
-    ) = JiraTaskSettings(repository, credentials, gitLabTokens, environment)
+    ) = JiraTaskSettings(repository, credentials, gitLabToken, environment)
+
+    private fun gitLabConfiguredRepository(baseUrl: String = "https://lab.ssafy.com") = repository().apply {
+        saveConfig(mapOf("projectKey" to "S15P11A108", "gitlab" to mapOf("baseUrl" to baseUrl)))
+    }
+
+    private fun mergeRequestSettingsOf(lookup: SettingsLookup<MergeRequestSettings>) =
+        (lookup as SettingsLookup.Ready).value
+
+    @Test
+    fun `prefers the token saved in settings over the environment variable`() {
+        // 반대로 두면 사용자가 화면에서 고칠 수 없는 값이 항상 이겨서, 올바른 토큰을 넣어도 계속 거부당한다.
+        val lookup = settings(
+            gitLabConfiguredRepository(),
+            gitLabToken = { "saved-token" },
+            environment = { "environment-token" },
+        ).forMergeRequest()
+
+        val mr = mergeRequestSettingsOf(lookup)
+        assertEquals("saved-token", mr.gitLabToken)
+        assertEquals(GitLabTokenSource.SETTINGS, mr.tokenSource)
+    }
+
+    @Test
+    fun `falls back to the environment variable when nothing is saved`() {
+        val lookup = settings(
+            gitLabConfiguredRepository(),
+            gitLabToken = { null },
+            environment = { "environment-token" },
+        ).forMergeRequest()
+
+        val mr = mergeRequestSettingsOf(lookup)
+        assertEquals("environment-token", mr.gitLabToken)
+        assertEquals(GitLabTokenSource.ENVIRONMENT, mr.tokenSource)
+    }
+
+    @Test
+    fun `treats a blank token as no token at all`() {
+        // `GITLAB_TOKEN=`은 non-null이라 그냥 두면 빈 PRIVATE-TOKEN 헤더를 보내 401이 된다.
+        val lookup = settings(
+            gitLabConfiguredRepository(),
+            gitLabToken = { "   " },
+            environment = { "" },
+        ).forMergeRequest()
+
+        assertEquals(SettingsLookup.Missing(JiraTaskSettings.NO_GITLAB_TOKEN), lookup)
+    }
+
+    @Test
+    fun `says which token was used so the user knows where to fix it`() {
+        assertTrue(GitLabTokenSource.SETTINGS.describe().contains("설정"))
+        assertTrue(GitLabTokenSource.ENVIRONMENT.describe().contains("GITLAB_TOKEN"))
+    }
+
+    @Test
+    fun `asks for the gitlab address before the token`() {
+        val lookup = settings(repository(), gitLabToken = { "token" }).forMergeRequest()
+
+        assertEquals(SettingsLookup.Missing(JiraTaskSettings.NO_GITLAB), lookup)
+    }
+
+    @Test
+    fun `reports a credential store that cannot be read`() {
+        val lookup = settings(
+            gitLabConfiguredRepository(),
+            gitLabToken = { throw CredentialStorageError() },
+            environment = { "environment-token" },
+        ).forMergeRequest()
+
+        // 저장소가 고장 난 것과 토큰이 없는 것은 다르다. 환경 변수로 조용히 넘어가지 않는다.
+        assertTrue(lookup is SettingsLookup.Missing)
+    }
 
     @Test
     fun `asks for setup when no project key is configured`() {

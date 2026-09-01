@@ -3,6 +3,7 @@ package io.github.gudwns1812.jiratask.infrastructure
 import io.github.gudwns1812.jiratask.domain.mr.GitLabAuthenticationError
 import io.github.gudwns1812.jiratask.domain.mr.GitLabError
 import io.github.gudwns1812.jiratask.domain.mr.GitLabNetworkError
+import io.github.gudwns1812.jiratask.domain.mr.GitLabPermissionError
 import io.github.gudwns1812.jiratask.domain.mr.MergeRequestCommand
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -30,6 +31,60 @@ class GitLabClientTest {
     }
 
     private fun ok(body: String) = JiraHttpResponse(200, body)
+
+    @Test
+    fun `verifies the token and reports who it belongs to`() {
+        val (client, transport) = clientOf(
+            ok("""{"username":"gudwns1812","name":"박형준"}"""),
+            ok("""{"scopes":["api","read_user"]}"""),
+        )
+
+        val identity = client.verifyIdentity()
+
+        assertEquals("gudwns1812", identity.username)
+        assertTrue(identity.canCreateMergeRequest)
+        assertTrue(!identity.lacksApiScope)
+        assertTrue(transport.calls.first().url.endsWith("/api/v4/user"))
+    }
+
+    @Test
+    fun `warns about a token that can read but cannot create`() {
+        // `read_api` 토큰은 조회를 전부 통과하고 MR 생성에서만 403으로 죽는다. 미리 잡아야 한다.
+        val (client, _) = clientOf(ok("""{"username":"reader"}"""), ok("""{"scopes":["read_api"]}"""))
+
+        assertTrue(client.verifyIdentity().lacksApiScope)
+    }
+
+    @Test
+    fun `does not claim a scope problem when the scopes cannot be read`() {
+        // 구버전 GitLab에는 이 엔드포인트가 없다. 모르는 것을 위반으로 바꾸지 않는다.
+        val (client, _) = clientOf(ok("""{"username":"gudwns1812"}"""), JiraHttpResponse(404, "{}"))
+
+        val identity = client.verifyIdentity()
+
+        assertEquals("gudwns1812", identity.username)
+        assertTrue("모른다고 해서 경고하지 않는다", !identity.lacksApiScope)
+    }
+
+    @Test
+    fun `refuses to verify an invalid token`() {
+        val (invalid, _) = clientOf(JiraHttpResponse(401, "{}"))
+        val (forbidden, _) = clientOf(JiraHttpResponse(403, "{}"))
+
+        assertThrows(GitLabAuthenticationError::class.java) { invalid.verifyIdentity() }
+        assertThrows(GitLabPermissionError::class.java) { forbidden.verifyIdentity() }
+    }
+
+    @Test
+    fun `separates an invalid token from a token that lacks permission`() {
+        // 401은 토큰을 다시 발급해야 하고, 403은 스코프나 역할을 손봐야 한다. 고칠 곳이 다르다.
+        val (invalid, _) = clientOf(JiraHttpResponse(401, "{}"))
+        val (forbidden, _) = clientOf(JiraHttpResponse(403, "{}"))
+        val command = MergeRequestCommand("a/b", "s", "t", "제목", "")
+
+        assertThrows(GitLabAuthenticationError::class.java) { invalid.create(command) }
+        assertThrows(GitLabPermissionError::class.java) { forbidden.create(command) }
+    }
 
     @Test
     fun `creates a merge request and returns where it lives`() {
@@ -157,11 +212,10 @@ class GitLabClientTest {
     }
 
     @Test
-    fun `ends with an error when the create response has no url`() {
+    fun `still reports success when the create response has no url`() {
         val (client, _) = clientOf(ok("""{"id":7}"""))
 
-        assertThrows(GitLabError::class.java) {
-            client.create(MergeRequestCommand("a/b", "s", "t", "제목", ""))
-        }
+        // 여기까지 왔으면 MR은 이미 GitLab에 만들어졌다. 실패로 돌리면 사용자가 또 만들려 든다.
+        assertNull(client.create(MergeRequestCommand("a/b", "s", "t", "제목", "")).webUrl)
     }
 }

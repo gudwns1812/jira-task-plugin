@@ -26,7 +26,10 @@ Jira를 대신 조작하지 않는다. 에픽·스토리·작업은 사람이 �
 - 설정은 IntelliJ 표준 방식(애플리케이션 레벨 `PersistentStateComponent`, `jira-task.xml`)으로 보관한다.
 - Jira API 토큰과 GitLab 액세스 토큰은 설정 파일에 저장하지 않고 IDE 비밀번호 저장소(PasswordSafe)에만
   보관한다. 이메일과 토큰은 설정 화면에 표시하지 않으며, 토큰 입력 칸은 저장된 값을 되읽어 채우지 않는다.
-- `JIRA_EMAIL`·`JIRA_API_TOKEN`·`GITLAB_TOKEN` 환경 변수가 있으면 저장된 값보다 먼저 사용한다.
+- `JIRA_EMAIL`·`JIRA_API_TOKEN` 환경 변수가 있으면 저장된 값보다 먼저 사용한다.
+- GitLab 토큰은 반대로, **설정 화면에 저장한 값이 `GITLAB_TOKEN` 환경 변수보다 우선**한다.
+- 설정 화면의 **연결 테스트**로 GitLab 주소와 토큰이 통하는지 미리 확인할 수 있다.
+  MR 생성에는 `api` 스코프와 프로젝트 Developer 이상 권한이 필요하다.
 - 초기 설정은 IDE 시작 직후 모달 창을 띄우지 않고 "설정 시작" 액션이 붙은 알림으로 안내한다.
 - 오류는 종료 코드가 아니라 알림 심각도(정보/경고/오류)로 전달한다.
 

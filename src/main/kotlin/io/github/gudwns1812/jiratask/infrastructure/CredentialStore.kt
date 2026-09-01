@@ -5,6 +5,7 @@ import com.intellij.credentialStore.Credentials
 import com.intellij.credentialStore.generateServiceName
 import com.intellij.ide.passwordSafe.PasswordSafe
 import io.github.gudwns1812.jiratask.application.CredentialStore
+import io.github.gudwns1812.jiratask.domain.mr.GitLabBaseUrl
 
 private const val SERVICE_NAME = "jira-task-plugin"
 
@@ -32,7 +33,8 @@ class GitLabTokenStore(private val passwordSafe: () -> PasswordSafe = { Password
         throw CredentialStorageError()
     }
 
-    private fun gitLabAccount(baseUrl: String): String = "gitlab|${baseUrl.trimEnd('/').lowercase()}"
+    // 저장할 때와 찾을 때가 같은 모양을 써야 한다. 어긋나면 넣어 둔 토큰이 없는 것처럼 보인다.
+    private fun gitLabAccount(baseUrl: String): String = "gitlab|${GitLabBaseUrl.normalize(baseUrl)}"
 }
 
 /**

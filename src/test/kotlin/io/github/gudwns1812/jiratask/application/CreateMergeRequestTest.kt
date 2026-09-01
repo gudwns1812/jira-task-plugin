@@ -3,7 +3,9 @@ package io.github.gudwns1812.jiratask.application
 import io.github.gudwns1812.jiratask.domain.mr.CreatedMergeRequest
 import io.github.gudwns1812.jiratask.domain.mr.GitLabAuthenticationError
 import io.github.gudwns1812.jiratask.domain.mr.GitLabError
+import io.github.gudwns1812.jiratask.domain.mr.GitLabIdentity
 import io.github.gudwns1812.jiratask.domain.mr.GitLabNetworkError
+import io.github.gudwns1812.jiratask.domain.mr.GitLabPermissionError
 import io.github.gudwns1812.jiratask.domain.mr.MergeRequestCommand
 import io.github.gudwns1812.jiratask.domain.mr.MergeRequestPort
 import io.github.gudwns1812.jiratask.domain.mr.OpenMergeRequest
@@ -23,6 +25,8 @@ class CreateMergeRequestTest {
         var failure: Exception? = null,
     ) : MergeRequestPort {
         val created = mutableListOf<MergeRequestCommand>()
+
+        override fun verifyIdentity(): GitLabIdentity = GitLabIdentity("gudwns1812")
 
         override fun openMergeRequest(projectPath: String, sourceBranch: String): OpenMergeRequest? = existing
 
@@ -45,7 +49,7 @@ class CreateMergeRequestTest {
     private fun state(
         branch: String? = "feat/signup",
         remoteUrl: String? = "git@lab.ssafy.com:s15/A108.git",
-        isPushed: Boolean = true,
+        isPushed: Boolean? = true,
         commits: List<String> = listOf("S15P11A108-257 회원가입"),
         commitsOf: (String) -> List<String> = { commits },
         remoteBranches: List<String> = emptyList(),
@@ -98,6 +102,79 @@ class CreateMergeRequestTest {
         val message = blockedOf(useCase(FakeGitLab()).prepare(state(isPushed = false)))
 
         assertTrue(message.contains("푸시"))
+    }
+
+    @Test
+    fun `does not block when it could not check whether the branch was pushed`() {
+        // ls-remote는 네트워크나 SSH 키 문제로도 실패한다. 그것을 "안 올렸다"로 읽으면
+        // 이미 푸시한 브랜치에 대고 먼저 푸시하라고 말하게 된다.
+        assertTrue(useCase(FakeGitLab()).prepare(state(isPushed = null)) is MergeRequestPrepare.Ready)
+    }
+
+    @Test
+    fun `reports a merge request that was created even without an address`() {
+        val gitlab = object : MergeRequestPort by FakeGitLab() {
+            override fun create(command: MergeRequestCommand) = CreatedMergeRequest(webUrl = null)
+        }
+        val proposal = readyOf(useCase(FakeGitLab()).prepare(state()))
+
+        val result = useCase(gitlab).create(proposal, "제목", "본문")
+
+        // 주소를 모르는 것과 만들지 못한 것은 다르다. 실패로 알리면 같은 MR을 또 만들려 든다.
+        assertTrue(result is MergeRequestResult.Created)
+        assertNull((result as MergeRequestResult.Created).webUrl)
+    }
+
+    @Test
+    fun `refuses a remote that belongs to a different host than the configured gitlab`() {
+        // 토큰을 엉뚱한 서버로 보내지 않는다. 이 검사가 없으면 SSAFY 토큰이 github.com으로 날아간다.
+        val useCase = CreateMergeRequestUseCase(
+            gitlab = FakeGitLab(),
+            issueKeysOf = { emptyList() },
+            gitLabBaseUrl = "https://lab.ssafy.com",
+        )
+
+        val message = blockedOf(useCase.prepare(state(remoteUrl = "git@github.com:gudwns1812/repo.git")))
+
+        assertTrue(message.contains("github.com"))
+        assertTrue(message.contains("lab.ssafy.com"))
+    }
+
+    @Test
+    fun `accepts a remote on the configured gitlab host`() {
+        val useCase = CreateMergeRequestUseCase(
+            gitlab = FakeGitLab(),
+            issueKeysOf = { emptyList() },
+            gitLabBaseUrl = "https://LAB.SSAFY.COM/",
+        )
+
+        // 대소문자와 끝 슬래시는 같은 곳을 가리킨다.
+        assertTrue(useCase.prepare(state()) is MergeRequestPrepare.Ready)
+    }
+
+    @Test
+    fun `does not compare hosts when no gitlab address is configured`() {
+        val useCase = CreateMergeRequestUseCase(gitlab = FakeGitLab(), issueKeysOf = { emptyList() })
+
+        assertTrue(useCase.prepare(state(remoteUrl = "git@github.com:a/b.git")) is MergeRequestPrepare.Ready)
+    }
+
+    @Test
+    fun `separates an invalid token from insufficient permission and names the token source`() {
+        val proposal = readyOf(useCase(FakeGitLab()).prepare(state()))
+        fun useCaseOf(failure: Exception) = CreateMergeRequestUseCase(
+            gitlab = FakeGitLab(failure = failure),
+            issueKeysOf = { emptyList() },
+            tokenOrigin = "GITLAB_TOKEN 환경 변수의 토큰",
+        )
+
+        val invalid = useCaseOf(GitLabAuthenticationError()).create(proposal, "제목", "본문")
+        val forbidden = useCaseOf(GitLabPermissionError()).create(proposal, "제목", "본문")
+
+        assertTrue((invalid as MergeRequestResult.Failure).message.contains("유효하지 않"))
+        assertTrue("어느 토큰인지 밝힌다", invalid.message.contains("GITLAB_TOKEN"))
+        assertTrue((forbidden as MergeRequestResult.Failure).message.contains("권한"))
+        assertTrue("고칠 곳을 짚어 준다", forbidden.message.contains("api"))
     }
 
     @Test
@@ -256,13 +333,13 @@ class CreateMergeRequestTest {
     }
 
     @Test
-    fun `separates a permission failure from a network failure`() {
+    fun `separates a credential failure from a network failure`() {
         val proposal = readyOf(useCase(FakeGitLab()).prepare(state()))
 
         val denied = useCase(FakeGitLab(failure = GitLabAuthenticationError())).create(proposal, "제목", "본문")
         val offline = useCase(FakeGitLab(failure = GitLabNetworkError())).create(proposal, "제목", "본문")
 
-        assertTrue((denied as MergeRequestResult.Failure).message.contains("인증"))
+        assertTrue((denied as MergeRequestResult.Failure).message.contains("토큰"))
         assertTrue((offline as MergeRequestResult.Failure).message.contains("통신"))
     }
 

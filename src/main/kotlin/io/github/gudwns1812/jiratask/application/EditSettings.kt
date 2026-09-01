@@ -1,5 +1,6 @@
 package io.github.gudwns1812.jiratask.application
 
+import io.github.gudwns1812.jiratask.domain.mr.GitLabBaseUrl
 import io.github.gudwns1812.jiratask.domain.policy.JiraTaskConfig
 import io.github.gudwns1812.jiratask.domain.policy.PolicyConfigurationError
 import io.github.gudwns1812.jiratask.domain.policy.default
@@ -47,7 +48,8 @@ data class SettingsEdit(
 
     fun baseUrlOrNull(): String? = baseUrl.trim().ifEmpty { null }
 
-    fun gitLabBaseUrlOrNull(): String? = gitLabBaseUrl.trim().ifEmpty { null }
+    /** 저장하는 주소도 토큰 열쇠와 같은 모양으로 맞춘다. 그래야 나중에 토큰을 다시 찾을 수 있다. */
+    fun gitLabBaseUrlOrNull(): String? = GitLabBaseUrl.normalize(gitLabBaseUrl).ifEmpty { null }
 
     fun toConfigUpdate(): Map<String, Any?> {
         val update = mutableMapOf<String, Any?>()

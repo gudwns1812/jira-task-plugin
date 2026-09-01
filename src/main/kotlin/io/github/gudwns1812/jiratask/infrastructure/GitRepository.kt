@@ -145,10 +145,18 @@ class GitRepository(
         return result.stdout.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toList()
     }
 
-    /** 현재 브랜치가 원격에 올라가 있는가. 올라가지 않은 브랜치로는 MR을 만들 수 없다. */
-    fun isPushed(branch: String, remote: String = "origin"): Boolean {
-        val result = run("ls-remote", "--heads", remote, branch) ?: return false
-        return result.exitCode == 0 && result.stdout.isNotBlank()
+    /**
+     * 현재 브랜치가 원격에 올라가 있는가. **확인하지 못하면 null** — 올라가지 않은 것과 다르다.
+     *
+     * `ls-remote`는 네트워크가 끊겼거나 SSH 키가 없어도 실패한다. 그것을 "안 올렸다"로 읽으면
+     * 이미 푸시한 브랜치에 대고 "먼저 푸시하세요"라고 말하게 된다(ARCHITECTURE.md 4장).
+     */
+    fun isPushed(branch: String, remote: String = "origin"): Boolean? {
+        val result = run("ls-remote", "--heads", remote, branch) ?: return null
+        if (result.exitCode != 0) {
+            return null
+        }
+        return result.stdout.isNotBlank()
     }
 
     private fun run(vararg args: String): ProcessResult? = try {

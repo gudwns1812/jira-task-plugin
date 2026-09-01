@@ -15,11 +15,24 @@ sealed interface SettingsLookup<out T> {
 
 data class CommitSettings(val projectKey: String)
 
+/** 토큰을 어디서 가져왔는가. 거부당했을 때 **어디를 고쳐야 하는지** 말해 주려고 들고 다닌다. */
+enum class GitLabTokenSource {
+    SETTINGS,
+    ENVIRONMENT,
+    ;
+
+    fun describe(): String = when (this) {
+        SETTINGS -> "설정 화면에 저장된 토큰"
+        ENVIRONMENT -> "GITLAB_TOKEN 환경 변수의 토큰"
+    }
+}
+
 /** MR을 만드는 데 필요한 값. Jira 주소는 본문에 이슈 링크를 적는 데 쓴다. */
 data class MergeRequestSettings(
     val gitLabBaseUrl: String,
     val gitLabToken: String,
     val jiraBaseUrl: String?,
+    val tokenSource: GitLabTokenSource = GitLabTokenSource.SETTINGS,
 )
 
 /**
@@ -43,7 +56,14 @@ data class TaskTransitionSettings(
 class JiraTaskSettings(
     private val repository: PolicyConfigRepository = PolicyConfigRepository(),
     private val credentials: CredentialStore = PasswordSafeCredentialStore(),
-    private val gitLabTokens: GitLabTokenStore = GitLabTokenStore(),
+    /**
+     * GitLab 주소에 저장해 둔 토큰. 기본 구현은 IDE 비밀번호 저장소다.
+     *
+     * 저장소 타입이 아니라 함수로 받는 이유는 [environment]와 같다 — [GitLabTokenStore]는
+     * `PasswordSafe`를 물고 있어 IDE 없이는 값을 돌려주게 흉내낼 수 없고, 그러면 토큰 우선순위를
+     * 테스트할 방법이 사라진다.
+     */
+    private val gitLabToken: (String) -> String? = GitLabTokenStore()::get,
     private val environment: (String) -> String? = { System.getenv(it) },
 ) {
     fun forCommit(): SettingsLookup<CommitSettings> = withConfig { config ->
@@ -52,20 +72,33 @@ class JiraTaskSettings(
         SettingsLookup.Ready(CommitSettings(projectKey))
     }
 
-    /** MR 생성에 필요한 설정. GitLab 주소와 토큰이 없으면 무엇이 없는지 알려준다. */
+    /**
+     * MR 생성에 필요한 설정. GitLab 주소와 토큰이 없으면 무엇이 없는지 알려준다.
+     *
+     * **설정 화면의 토큰이 환경 변수를 이긴다.** 반대로 두면 사용자가 화면에서 고칠 수 없는 값이
+     * 항상 이겨서, 올바른 토큰을 넣어도 계속 거부당하고 그 이유가 화면 어디에도 보이지 않는다.
+     * 환경 변수는 화면에 아무것도 저장하지 않은 경우(CI, 스크립트)를 위한 뒷받침으로만 남긴다.
+     */
     fun forMergeRequest(): SettingsLookup<MergeRequestSettings> = withConfig { config ->
         val baseUrl = config.gitlab?.baseUrl
             ?: return@withConfig SettingsLookup.Missing(NO_GITLAB)
 
-        val token = environment("GITLAB_TOKEN")
-            ?: try {
-                gitLabTokens.get(baseUrl)
-            } catch (error: CredentialStorageError) {
-                return@withConfig SettingsLookup.Missing(error.message ?: NO_GITLAB_TOKEN)
-            }
-            ?: return@withConfig SettingsLookup.Missing(NO_GITLAB_TOKEN)
+        val saved = try {
+            gitLabToken(baseUrl)
+        } catch (error: CredentialStorageError) {
+            return@withConfig SettingsLookup.Missing(error.message ?: NO_GITLAB_TOKEN)
+        }?.trim()?.ifEmpty { null }
 
-        SettingsLookup.Ready(MergeRequestSettings(baseUrl, token, config.jira?.baseUrl))
+        // 빈 문자열도 없는 것으로 친다. `GITLAB_TOKEN=`은 non-null이라 그냥 두면 빈 헤더를 보내 401이 된다.
+        val fromEnvironment = environment("GITLAB_TOKEN")?.trim()?.ifEmpty { null }
+
+        val (token, source) = when {
+            saved != null -> saved to GitLabTokenSource.SETTINGS
+            fromEnvironment != null -> fromEnvironment to GitLabTokenSource.ENVIRONMENT
+            else -> return@withConfig SettingsLookup.Missing(NO_GITLAB_TOKEN)
+        }
+
+        SettingsLookup.Ready(MergeRequestSettings(baseUrl, token, config.jira?.baseUrl, source))
     }
 
     /** 작업을 시작할 때의 상태 전환에 필요한 설정. 하나라도 없으면 무엇이 없는지 알려준다. */

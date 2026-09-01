@@ -7,6 +7,10 @@ import com.intellij.openapi.options.ConfigurationException
 import com.intellij.openapi.project.Project
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import io.github.gudwns1812.jiratask.application.EditSettingsUseCase
+import io.github.gudwns1812.jiratask.domain.mr.GitLabAuthenticationError
+import io.github.gudwns1812.jiratask.domain.mr.GitLabIdentity
+import io.github.gudwns1812.jiratask.domain.mr.MergeRequestCommand
+import io.github.gudwns1812.jiratask.domain.mr.MergeRequestPort
 import io.github.gudwns1812.jiratask.domain.policy.PolicyConfigurationError
 import io.github.gudwns1812.jiratask.infrastructure.JiraTaskConfigStorage
 import io.github.gudwns1812.jiratask.infrastructure.PolicyConfigRepository
@@ -215,15 +219,89 @@ class JiraTaskConfigurableTest : BasePlatformTestCase() {
 
     fun `test offers a button that starts the setup wizard`() {
         var launched = 0
+        // 이름을 붙여 넘긴다. 뒤에 함수형 인자가 더 있어 트레일링 람다는 엉뚱한 자리에 붙는다.
         val configurable = JiraTaskConfigurable(
-            EditSettingsUseCase(configuredRepository()::loadConfig, configuredRepository()::saveConfig),
-        ) { launched++ }
+            settings = EditSettingsUseCase(configuredRepository()::loadConfig, configuredRepository()::saveConfig),
+            launchSetupWizard = { launched++ },
+        )
 
         val button = buttonsOf(configurable.createComponent())
             .single { it.text == JiraTaskConfigurable.RUN_WIZARD_BUTTON }
         button.doClick()
 
         assertEquals(1, launched)
+    }
+
+    /** 연결 테스트가 부른 GitLab을 기록하는 가짜. 실제 네트워크는 쓰지 않는다. */
+    private class RecordingGitLab(private val answer: () -> GitLabIdentity) : MergeRequestPort {
+        val calls = mutableListOf<Pair<String, String>>()
+
+        fun asFactory(): (String, String) -> MergeRequestPort = { baseUrl, token ->
+            calls += baseUrl to token
+            this
+        }
+
+        override fun verifyIdentity(): GitLabIdentity = answer()
+
+        override fun openMergeRequest(projectPath: String, sourceBranch: String) = null
+
+        override fun defaultBranch(projectPath: String): String? = null
+
+        override fun create(command: MergeRequestCommand) = error("연결 테스트는 MR을 만들지 않는다")
+    }
+
+    private fun configurableWith(
+        gitlab: RecordingGitLab,
+        repository: PolicyConfigRepository = configuredRepository(),
+    ) = JiraTaskConfigurable(
+        settings = EditSettingsUseCase(repository::loadConfig, repository::saveConfig),
+        createClient = gitlab.asFactory(),
+        // 테스트에서는 곧바로 실행해 결과를 바로 본다.
+        background = { it() },
+        onEdt = { it() },
+    )
+
+    private fun clickTestConnection(component: JComponent) {
+        buttonsOf(component).single { it.text == JiraTaskConfigurable.TEST_CONNECTION_BUTTON }.doClick()
+    }
+
+    fun `test the connection test asks gitlab and shows who the token belongs to`() {
+        val gitlab = RecordingGitLab { GitLabIdentity("gudwns1812", scopesKnown = true, canCreateMergeRequest = true) }
+        val configurable = configurableWith(gitlab)
+        val component = configurable.createComponent()
+
+        gitLabBaseUrlFieldOf(component).text = "https://lab.ssafy.com"
+        gitLabTokenFieldOf(component).text = "typed-token"
+        clickTestConnection(component)
+
+        assertEquals("https://lab.ssafy.com" to "typed-token", gitlab.calls.single())
+        assertTrue(configurable.connectionText().contains("gudwns1812"))
+    }
+
+    fun `test the connection test explains an invalid token instead of failing silently`() {
+        val gitlab = RecordingGitLab { throw GitLabAuthenticationError() }
+        val configurable = configurableWith(gitlab)
+        val component = configurable.createComponent()
+
+        gitLabBaseUrlFieldOf(component).text = "https://lab.ssafy.com"
+        gitLabTokenFieldOf(component).text = "dead-token"
+        clickTestConnection(component)
+
+        val shown = configurable.connectionText()
+        assertTrue(shown.startsWith("✗"))
+        assertTrue(shown.contains("발급"))
+    }
+
+    fun `test the connection test asks for what is missing before calling gitlab`() {
+        val gitlab = RecordingGitLab { GitLabIdentity("nobody") }
+        val configurable = configurableWith(gitlab, repository())
+        val component = configurable.createComponent()
+
+        // 주소도 토큰도 없다. 네트워크를 부르지 않고 무엇이 없는지 말한다.
+        clickTestConnection(component)
+
+        assertTrue(gitlab.calls.isEmpty())
+        assertTrue(configurable.connectionText().contains(GitLabConnectionCheck.NO_BASE_URL))
     }
 
     fun `test reports the setup as needed only while nothing is configured`() {
@@ -251,6 +329,11 @@ class JiraTaskConfigurableTest : BasePlatformTestCase() {
     private fun projectKeyFieldOf(component: JComponent): JTextComponent = editableFieldsOf(component)[0]
 
     private fun baseUrlFieldOf(component: JComponent): JTextComponent = editableFieldsOf(component)[1]
+
+    // 순서는 `test lists exactly the editable fields`가 고정해 둔다.
+    private fun gitLabBaseUrlFieldOf(component: JComponent): JTextComponent = editableFieldsOf(component)[2]
+
+    private fun gitLabTokenFieldOf(component: JComponent): JTextComponent = editableFieldsOf(component)[3]
 
     private fun editableFieldsOf(component: JComponent): List<JTextComponent> {
         val fields = mutableListOf<JTextComponent>()
