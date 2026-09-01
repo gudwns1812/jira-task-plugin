@@ -15,6 +15,14 @@ sealed interface SettingsLookup<out T> {
 
 data class CommitSettings(val projectKey: String)
 
+/**
+ * AI 초안에 필요한 값.
+ *
+ * API 키가 없다 — 사용자가 이미 로그인해 둔 Claude Code를 그대로 쓰기 때문이다.
+ * 플러그인이 자격 증명을 갖지 않는 것이 이 기능을 구독 요금제로 쓸 수 있는 이유다.
+ */
+data class AiDraftSettings(val model: String?, val executablePath: String?)
+
 /** 토큰을 어디서 가져왔는가. 거부당했을 때 **어디를 고쳐야 하는지** 말해 주려고 들고 다닌다. */
 enum class GitLabTokenSource {
     SETTINGS,
@@ -101,6 +109,14 @@ class JiraTaskSettings(
         SettingsLookup.Ready(MergeRequestSettings(baseUrl, token, config.jira?.baseUrl, source))
     }
 
+    /** AI 초안 설정. 꺼져 있으면 왜 쓸 수 없는지 알려준다. */
+    fun forAiDraft(): SettingsLookup<AiDraftSettings> = withConfig { config ->
+        val ai = config.ai?.takeIf { it.enabled }
+            ?: return@withConfig SettingsLookup.Missing(AI_DISABLED)
+
+        SettingsLookup.Ready(AiDraftSettings(model = ai.model, executablePath = ai.executablePath))
+    }
+
     /** 작업을 시작할 때의 상태 전환에 필요한 설정. 하나라도 없으면 무엇이 없는지 알려준다. */
     fun forTaskTransition(): SettingsLookup<TaskTransitionSettings> = withConfig { config ->
         val baseUrl = config.jira?.baseUrl
@@ -156,6 +172,8 @@ class JiraTaskSettings(
         const val NO_TOKEN: String = "Jira API 토큰을 읽지 못했습니다."
         const val NO_GITLAB: String =
             "GitLab 주소가 설정되지 않았습니다. Settings | Tools | Jira Task 에서 입력하세요."
+        const val AI_DISABLED: String =
+            "AI 초안이 꺼져 있습니다. Settings | Tools | Jira Task 에서 켜세요."
         const val NO_GITLAB_TOKEN: String =
             "GitLab 액세스 토큰이 없습니다. GITLAB_TOKEN 환경 변수 또는 설정 화면에서 입력하세요."
     }

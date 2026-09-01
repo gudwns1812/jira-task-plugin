@@ -130,6 +130,59 @@ class PolicyConfigTest {
     }
 
     @Test
+    fun `reads the ai section and round-trips it`() {
+        val original = JiraTaskConfig.resolve(
+            mapOf(
+                "projectKey" to "S15P11A108",
+                "ai" to mapOf("enabled" to true, "model" to "sonnet", "executablePath" to "C:/npm/claude.cmd"),
+            ),
+        )
+
+        assertEquals(true, original.ai?.enabled)
+        assertEquals("sonnet", original.ai?.model)
+        assertEquals("C:/npm/claude.cmd", original.ai?.executablePath)
+        assertEquals(original, JiraTaskConfig.resolve(original.toRawMap()))
+    }
+
+    @Test
+    fun `leaves the ai section out entirely when it was never configured`() {
+        val config = JiraTaskConfig.resolve(mapOf("projectKey" to "S15P11A108"))
+
+        assertNull(config.ai)
+        assertEquals(setOf("projectKey"), config.toRawMap().keys)
+    }
+
+    @Test
+    fun `rejects an ai section it does not understand`() {
+        assertThrows(PolicyConfigurationError::class.java) {
+            JiraTaskConfig.resolve(mapOf("ai" to mapOf("enabld" to true)))
+        }
+        // "maybe"를 조용히 false로 삼키지 않는다 — 잘못 적은 설정이 꺼 둔 것처럼 보이면 안 된다.
+        assertThrows(PolicyConfigurationError::class.java) {
+            JiraTaskConfig.resolve(mapOf("ai" to mapOf("enabled" to "maybe")))
+        }
+        assertThrows(PolicyConfigurationError::class.java) {
+            JiraTaskConfig.resolve(mapOf("ai" to mapOf("model" to "  ")))
+        }
+        assertThrows(PolicyConfigurationError::class.java) {
+            JiraTaskConfig.resolve(mapOf("ai" to "켜기"))
+        }
+    }
+
+    @Test
+    fun `mergeWith keeps the ai values this update did not mention`() {
+        // ai는 키가 셋이라 통째로 덮이면 model이 사라진다. 한 겹 깊이로 합쳐야 한다.
+        val current = JiraTaskConfig.resolve(
+            mapOf("ai" to mapOf("enabled" to true, "model" to "sonnet")),
+        )
+
+        val merged = current.mergeWith(mapOf("ai" to mapOf("enabled" to false)))
+
+        assertEquals(false, merged.ai?.enabled)
+        assertEquals("sonnet", merged.ai?.model)
+    }
+
+    @Test
     fun `mergeWith preserves the project key when only the jira base url changes`() {
         val current = JiraTaskConfig.resolve(mapOf("projectKey" to "S15P11A108"))
 

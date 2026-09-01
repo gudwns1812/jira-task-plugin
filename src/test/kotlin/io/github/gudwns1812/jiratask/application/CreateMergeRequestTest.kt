@@ -3,12 +3,16 @@ package io.github.gudwns1812.jiratask.application
 import io.github.gudwns1812.jiratask.domain.mr.CreatedMergeRequest
 import io.github.gudwns1812.jiratask.domain.mr.GitLabAuthenticationError
 import io.github.gudwns1812.jiratask.domain.mr.GitLabError
+import io.github.gudwns1812.jiratask.domain.mr.DraftOutcome
+import io.github.gudwns1812.jiratask.domain.mr.DraftRequest
+import io.github.gudwns1812.jiratask.domain.mr.DraftWriter
 import io.github.gudwns1812.jiratask.domain.mr.GitLabIdentity
 import io.github.gudwns1812.jiratask.domain.mr.GitLabNetworkError
 import io.github.gudwns1812.jiratask.domain.mr.GitLabPermissionError
 import io.github.gudwns1812.jiratask.domain.mr.MergeRequestCommand
 import io.github.gudwns1812.jiratask.domain.mr.MergeRequestPort
 import io.github.gudwns1812.jiratask.domain.mr.OpenMergeRequest
+import io.github.gudwns1812.jiratask.domain.mr.WrittenDraft
 import io.github.gudwns1812.jiratask.ui.commit.CommitIssueKeys
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -53,7 +57,8 @@ class CreateMergeRequestTest {
         commits: List<String> = listOf("S15P11A108-257 회원가입"),
         commitsOf: (String) -> List<String> = { commits },
         remoteBranches: List<String> = emptyList(),
-    ) = BranchState(branch, remoteUrl, isPushed, commitsOf, remoteBranches)
+        changedFiles: List<String> = emptyList(),
+    ) = BranchState(branch, remoteUrl, isPushed, commitsOf, remoteBranches, { changedFiles })
 
     private fun readyOf(prepare: MergeRequestPrepare) = (prepare as MergeRequestPrepare.Ready).proposal
 
@@ -175,6 +180,86 @@ class CreateMergeRequestTest {
         assertTrue("어느 토큰인지 밝힌다", invalid.message.contains("GITLAB_TOKEN"))
         assertTrue((forbidden as MergeRequestResult.Failure).message.contains("권한"))
         assertTrue("고칠 곳을 짚어 준다", forbidden.message.contains("api"))
+    }
+
+    @Test
+    fun `lets ai rewrite only the title and body`() {
+        val written = WrittenDraft("S15P11A108-257 회원가입 화면", "### 연결된 작업")
+        val useCase = CreateMergeRequestUseCase(
+            gitlab = FakeGitLab(),
+            issueKeysOf = { listOf("S15P11A108-257") },
+            draftWriter = DraftWriter { DraftOutcome.Written(written) },
+        )
+        val state = state()
+        val before = readyOf(useCase.prepare(state))
+
+        val after = (useCase.rewrite(state, before) as DraftRewrite.Rewritten).proposal
+
+        assertEquals(written.title, after.title)
+        assertEquals(written.description, after.description)
+        // AI가 정할 일이 아닌 것은 그대로 둔다. 특히 이슈 키는 커밋에서 뽑은 사실이다(RULE.md 5.3).
+        assertEquals(before.issueKeys, after.issueKeys)
+        assertEquals(before.targetBranch, after.targetBranch)
+        assertEquals(before.targetCandidates, after.targetCandidates)
+    }
+
+    @Test
+    fun `sends the branch, keys, commits and file paths but no file contents`() {
+        var seen: DraftRequest? = null
+        val useCase = CreateMergeRequestUseCase(
+            gitlab = FakeGitLab(),
+            issueKeysOf = { listOf("S15P11A108-257") },
+            draftWriter = DraftWriter { request -> seen = request; DraftOutcome.Failed("확인만 한다") },
+        )
+        val state = state(commits = listOf("S15P11A108-257 회원가입"), changedFiles = listOf("src/Signup.kt"))
+
+        useCase.rewrite(state, readyOf(useCase.prepare(state)))
+
+        assertEquals("feat/signup", seen?.sourceBranch)
+        assertEquals(listOf("S15P11A108-257"), seen?.issueKeys)
+        assertEquals(listOf("src/Signup.kt"), seen?.changedFiles)
+    }
+
+    @Test
+    fun `refuses to rewrite when ai is not configured`() {
+        val useCase = useCase(FakeGitLab())
+
+        // 버튼은 늘 보인다. 꺼져 있으면 눌렀을 때 이 문구가 켜러 가라고 말해 준다.
+        val refused = useCase.rewrite(state(), readyOf(useCase.prepare(state()))) as DraftRewrite.Refused
+        assertTrue(refused.message.contains("꺼져"))
+        assertTrue(refused.message.contains("설정"))
+    }
+
+    @Test
+    fun `passes the reason through when ai cannot or will not write`() {
+        fun useCaseOf(outcome: DraftOutcome) = CreateMergeRequestUseCase(
+            gitlab = FakeGitLab(),
+            issueKeysOf = { emptyList() },
+            draftWriter = DraftWriter { outcome },
+        )
+
+        val missing = useCaseOf(DraftOutcome.Unavailable("Claude Code CLI를 찾을 수 없습니다."))
+        val failed = useCaseOf(DraftOutcome.Failed("사용량 한도에 걸렸습니다."))
+        val state = state()
+
+        val a = missing.rewrite(state, readyOf(missing.prepare(state))) as DraftRewrite.Refused
+        val b = failed.rewrite(state, readyOf(failed.prepare(state))) as DraftRewrite.Refused
+
+        assertTrue("고칠 방법을 그대로 올린다", a.message.contains("찾을 수 없"))
+        assertTrue(b.message.contains("한도"))
+    }
+
+    @Test
+    fun `survives a writer that throws`() {
+        val useCase = CreateMergeRequestUseCase(
+            gitlab = FakeGitLab(),
+            issueKeysOf = { emptyList() },
+            draftWriter = DraftWriter { throw IllegalStateException("boom") },
+        )
+        val state = state()
+
+        // AI가 터져도 MR 생성은 계속 갈 수 있어야 한다.
+        assertTrue(useCase.rewrite(state, readyOf(useCase.prepare(state))) is DraftRewrite.Refused)
     }
 
     @Test

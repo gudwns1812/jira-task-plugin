@@ -146,7 +146,7 @@ test/ui/branch/CreateStoryBranchDialogTest.kt
 | 1 | Smart Commit — Jira key 자동 prefix | **있음** (`CommitIssueKey`) | 유지 |
 | 1 | Smart Commit — AI 제목 생성 | 없음 | **이번 범위 아님** |
 | 2 | Smart MR | 없음 | V9 |
-| 2 | Smart MR — AI 제목·본문 | 없음 | **이번 범위 아님** |
+| 2 | Smart MR — AI 제목·본문 | 없음 | V13 (Claude Code CLI, 구독 요금제) |
 | 3 | Task Start — 선택 후 `진행 중` | 부분 (번호를 타이핑, 전환은 **있음**) | V6 |
 | 4 | Commit Guard | 없음 (안내만, 검사 없음) | V7 |
 | 5 | Jira Quick Search | 없음 | V8 |

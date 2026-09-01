@@ -4,6 +4,7 @@ import io.github.gudwns1812.jiratask.domain.commit.GitRepositoryError
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 import java.nio.file.Files
@@ -172,6 +173,26 @@ class GitRepositoryTest {
         try {
             // origin이 없으면 ls-remote가 실패한다. 그것은 "안 올렸다"가 아니라 "모른다"이다.
             assertNull(GitRepository(directory).isPushed("feat/signup"))
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `lists the paths this branch touched, never their contents`() {
+        val directory = createRepository()
+        try {
+            runGit(directory, "update-ref", "refs/remotes/origin/main", "HEAD")
+            runGit(directory, "checkout", "-b", "feat/signup")
+            File(directory, "signup.txt").writeText("비밀번호 = 1234")
+            runGit(directory, "add", ".")
+            runGit(directory, "commit", "-m", "S15P11A108-257 회원가입")
+
+            val changed = GitRepository(directory).changedFilesSince("origin/main")
+
+            assertEquals(listOf("signup.txt"), changed)
+            // 경로만 읽는다. 이 단언이 깨지면 파일 내용을 읽기 시작했다는 뜻이다.
+            assertTrue("내용은 읽지 않는다", changed.none { it.contains("비밀번호") })
         } finally {
             directory.deleteRecursively()
         }

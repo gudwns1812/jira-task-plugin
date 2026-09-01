@@ -3,6 +3,7 @@ package io.github.gudwns1812.jiratask.ui
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.options.Configurable
+import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.options.ConfigurationException
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBTextField
@@ -57,6 +58,18 @@ class JiraTaskConfigurable @JvmOverloads constructor(
     private val gitLabTokenField = com.intellij.ui.components.JBPasswordField()
     private val problemLabel = JBLabel().apply { isVisible = false }
     private val connectionLabel = JBLabel()
+    private val aiEnabledBox = com.intellij.ui.components.JBCheckBox("MR 제목·본문을 AI에게 맡기기")
+    /**
+     * 모델. 별칭은 늘 그 계열의 최신 모델을 가리키므로 버전을 박아 두는 것보다 낫다.
+     *
+     * CLI가 문서로 밝힌 것은 `fable`·`opus`·`sonnet`뿐이라 목록에는 그 셋만 둔다. 그 밖의 모델은
+     * 전체 이름으로 직접 칠 수 있도록 편집을 열어 둔다 — 없는 별칭을 지어내면 사용자는
+     * 고르기만 했는데 실행에서 거부당한다.
+     */
+    private val aiModelBox = ComboBox(arrayOf(MODEL_DEFAULT, "fable", "opus", "sonnet")).apply {
+        isEditable = true
+    }
+    private val aiExecutablePathField = JBTextField()
 
     private var saved: SettingsSnapshot = SettingsSnapshot.empty()
 
@@ -100,6 +113,30 @@ class JiraTaskConfigurable @JvmOverloads constructor(
                 }.rowComment(
                     "MR을 만들기 전에 토큰이 통하는지 확인합니다. api 스코프가 없으면 조회만 되고 생성에서 막힙니다.",
                 )
+            }
+
+            // GitLab 그룹 **뒤에** 둔다. 앞에 끼우면 편집 칸의 순서가 밀린다.
+            group("AI 초안 (Claude Code)") {
+                row {
+                    cell(aiEnabledBox)
+                }.rowComment(
+                    "설치해 로그인해 둔 Claude Code를 그대로 씁니다. API 키를 받지 않으며 구독 요금제로 동작합니다.",
+                )
+
+                row {
+                    comment(PRIVACY_NOTICE)
+                }
+
+                row("모델:") {
+                    cell(aiModelBox).columns(COLUMNS_MEDIUM)
+                }.rowComment(
+                    "고르지 않으면 Claude Code에 설정된 모델을 그대로 씁니다. " +
+                        "목록에 없는 모델은 전체 이름으로 직접 적을 수 있습니다(예: claude-opus-5).",
+                )
+
+                row("실행 파일 경로:") {
+                    cell(aiExecutablePathField).columns(COLUMNS_LARGE)
+                }.rowComment("비워 두면 PATH에서 찾습니다. Windows에서는 claude.cmd 를 씁니다.")
             }
 
             row {
@@ -231,8 +268,20 @@ class JiraTaskConfigurable @JvmOverloads constructor(
         }
     }
 
-    private fun currentEdit(): SettingsEdit =
-        SettingsEdit(projectKeyField.text, baseUrlField.text, gitLabBaseUrlField.text)
+    private fun currentEdit(): SettingsEdit = SettingsEdit(
+        projectKey = projectKeyField.text,
+        baseUrl = baseUrlField.text,
+        gitLabBaseUrl = gitLabBaseUrlField.text,
+        aiEnabled = aiEnabledBox.isSelected,
+        aiModel = aiModelValue(),
+        aiExecutablePath = aiExecutablePathField.text,
+    )
+
+    /** 고른 모델. 기본값 항목은 "정하지 않음"이라 빈 문자열로 되돌린다. */
+    private fun aiModelValue(): String =
+        (aiModelBox.editor.item ?: aiModelBox.selectedItem)?.toString()?.trim()
+            ?.takeIf { it != MODEL_DEFAULT }
+            .orEmpty()
 
     private fun show(snapshot: SettingsSnapshot, problem: String?) {
         projectKeyField.text = snapshot.projectKey
@@ -243,6 +292,9 @@ class JiraTaskConfigurable @JvmOverloads constructor(
         epicIssueTypeLabel.text = snapshot.epicIssueType.orNotConfigured()
         gitLabBaseUrlField.text = snapshot.gitLabBaseUrl
         gitLabTokenField.text = ""
+        aiEnabledBox.isSelected = snapshot.aiEnabled
+        aiModelBox.selectedItem = snapshot.aiModel.ifEmpty { MODEL_DEFAULT }
+        aiExecutablePathField.text = snapshot.aiExecutablePath
         problemLabel.text = problem.orEmpty()
         problemLabel.isVisible = problem != null
     }
@@ -251,6 +303,9 @@ class JiraTaskConfigurable @JvmOverloads constructor(
 
     companion object {
         const val NOT_CONFIGURED: String = "설정되지 않음"
+        const val MODEL_DEFAULT: String = "Claude Code 설정 따름"
+        const val PRIVACY_NOTICE: String =
+            "브랜치 이름, 커밋 제목, 변경된 파일 경로가 Anthropic에 전송됩니다. 파일 내용은 보내지 않습니다."
         const val TEST_CONNECTION_BUTTON: String = "연결 테스트"
         const val TESTING: String = "확인 중…"
         const val ADDRESS_CHANGED: String =

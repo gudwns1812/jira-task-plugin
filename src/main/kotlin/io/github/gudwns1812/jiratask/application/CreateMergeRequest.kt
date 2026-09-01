@@ -1,5 +1,8 @@
 package io.github.gudwns1812.jiratask.application
 
+import io.github.gudwns1812.jiratask.domain.mr.DraftOutcome
+import io.github.gudwns1812.jiratask.domain.mr.DraftRequest
+import io.github.gudwns1812.jiratask.domain.mr.DraftWriter
 import io.github.gudwns1812.jiratask.domain.mr.GitLabAuthenticationError
 import io.github.gudwns1812.jiratask.domain.mr.GitLabError
 import io.github.gudwns1812.jiratask.domain.mr.GitLabNetworkError
@@ -24,6 +27,8 @@ data class BranchState(
     val commitSubjectsSince: (String) -> List<String>,
     /** MR 대상으로 고를 수 있는 원격 브랜치들. 비어 있으면 사용자가 직접 적는다. */
     val remoteBranches: List<String> = emptyList(),
+    /** 대상 브랜치 기준으로 이 브랜치가 건드린 파일 경로들. AI 초안에만 쓴다. */
+    val changedFilesSince: (String) -> List<String> = { emptyList() },
 )
 
 /** 화면에 채워 넣을 초안. 사용자가 여기서 제목·본문·대상 브랜치를 고칠 수 있다. */
@@ -50,6 +55,12 @@ sealed interface MergeRequestPrepare {
     data class Blocked(val message: String) : MergeRequestPrepare
 }
 
+/** AI에게 다시 써 달라고 한 결과. 거절돼도 원래 초안은 그대로 쓸 수 있다. */
+sealed interface DraftRewrite {
+    data class Rewritten(val proposal: MergeRequestProposal) : DraftRewrite
+    data class Refused(val message: String) : DraftRewrite
+}
+
 sealed interface MergeRequestResult {
     /** 만들었다. [webUrl]이 null이면 만들어졌지만 주소를 확인하지 못한 것이다. */
     data class Created(val webUrl: String?) : MergeRequestResult
@@ -74,7 +85,39 @@ class CreateMergeRequestUseCase(
      * application은 ui를 알지 않는다(ARCHITECTURE.md 114-119).
      */
     private val tokenOrigin: String? = null,
+    /** 제목·본문을 AI에게 맡길 때 쓸 것. 없으면 [rewrite]가 쓸 수 없다고 답한다. */
+    private val draftWriter: DraftWriter? = null,
 ) {
+
+    /**
+     * 제목과 본문만 AI에게 다시 쓰게 한다.
+     *
+     * 이슈 키·대상 브랜치·후보 목록은 그대로 둔다 — AI가 정할 일이 아니다. 특히 이슈 키는
+     * 커밋에서 뽑은 사실이라 AI가 바꾸면 Jira 연결이 어긋난다(RULE.md 5.3).
+     *
+     * 실패해도 [proposal]은 그대로 남는다. 규칙 기반 초안이 언제나 쓸 수 있는 기본값이다.
+     */
+    fun rewrite(state: BranchState, proposal: MergeRequestProposal): DraftRewrite {
+        val writer = draftWriter ?: return DraftRewrite.Refused(DISABLED)
+
+        val request = DraftRequest(
+            sourceBranch = proposal.sourceBranch,
+            targetBranch = proposal.targetBranch,
+            issueKeys = proposal.issueKeys,
+            commitSubjects = runCatching { state.commitSubjectsSince(proposal.targetBranch) }
+                .getOrDefault(emptyList()),
+            changedFiles = runCatching { state.changedFilesSince(proposal.targetBranch) }
+                .getOrDefault(emptyList()),
+        )
+
+        return when (val outcome = runCatching { writer.write(request) }.getOrElse { DraftOutcome.Failed(FAILED) }) {
+            is DraftOutcome.Written -> DraftRewrite.Rewritten(
+                proposal.copy(title = outcome.draft.title, description = outcome.draft.description),
+            )
+            is DraftOutcome.Unavailable -> DraftRewrite.Refused(outcome.message)
+            is DraftOutcome.Failed -> DraftRewrite.Refused(outcome.message)
+        }
+    }
 
     fun prepare(state: BranchState, fallbackTarget: String = DEFAULT_TARGET): MergeRequestPrepare {
         val branch = state.branch
@@ -177,5 +220,8 @@ class CreateMergeRequestUseCase(
     companion object {
         /** GitLab이 기본 브랜치를 알려주지 않을 때의 마지막 수단. */
         const val DEFAULT_TARGET: String = "main"
+
+        const val DISABLED: String = "AI 초안이 꺼져 있습니다. 설정에서 켜세요."
+        const val FAILED: String = "AI 초안을 만들지 못했습니다."
     }
 }

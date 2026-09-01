@@ -24,10 +24,25 @@ data class JiraSettings(
 /** MR을 만들 GitLab. 토큰은 여기 두지 않고 자격 증명 저장소에 보관한다. */
 data class GitLabSettings(val baseUrl: String? = null)
 
+/**
+ * MR 제목·본문을 AI에게 맡길지, 무엇으로 맡길지.
+ *
+ * API 키는 여기에도 자격 증명 저장소에도 두지 않는다. 사용자가 이미 로그인해 둔 Claude Code를
+ * 그대로 쓰기 때문이다 — 구독 요금제로 쓰려면 그 길뿐이다.
+ */
+data class AiSettings(
+    val enabled: Boolean = false,
+    /** 비어 있으면 Claude Code에 설정된 사용자 자신의 모델을 따른다. */
+    val model: String? = null,
+    /** PATH에서 찾지 못할 때만 쓴다. */
+    val executablePath: String? = null,
+)
+
 data class JiraTaskConfig(
     val projectKey: String? = null,
     val jira: JiraSettings? = null,
     val gitlab: GitLabSettings? = null,
+    val ai: AiSettings? = null,
 ) {
     companion object
 }
@@ -47,17 +62,35 @@ fun JiraTaskConfig.Companion.resolve(rawConfig: Any?): JiraTaskConfig {
     val obj = asConfigObject(rawConfig, "설정")
     val errors = mutableListOf<String>()
 
-    rejectUnknownKeys(obj, LEGACY_POLICY_KEYS + setOf("projectKey", "jira", "gitlab"), "", errors)
+    rejectUnknownKeys(obj, LEGACY_POLICY_KEYS + setOf("projectKey", "jira", "gitlab", "ai"), "", errors)
     val projectKey = readProjectKey(obj, errors)
     val jira = readJiraSettings(obj, errors)
     val gitlab = readGitLabSettings(obj, errors)
+    val ai = readAiSettings(obj, errors)
 
     // projectKey 오류와 jira 오류를 한 번에 모아 던진다.
     if (errors.isNotEmpty()) {
         throw PolicyConfigurationError("설정 형식이 올바르지 않습니다. ${errors.joinToString("; ")}")
     }
 
-    return JiraTaskConfig(projectKey = projectKey, jira = jira, gitlab = gitlab)
+    return JiraTaskConfig(projectKey = projectKey, jira = jira, gitlab = gitlab, ai = ai)
+}
+
+private fun readAiSettings(obj: Map<*, *>, errors: MutableList<String>): AiSettings? {
+    if (!obj.containsKey("ai") || obj["ai"] == null) {
+        return null
+    }
+    val raw = obj["ai"] as? Map<*, *> ?: run {
+        errors += "ai: 값 형식이 올바르지 않습니다."
+        return null
+    }
+    rejectUnknownKeys(raw, setOf("enabled", "model", "executablePath"), "ai", errors)
+
+    return AiSettings(
+        enabled = readOptionalBoolean(raw, "enabled", "ai.enabled", errors) ?: false,
+        model = readOptionalText(raw, "model", "ai.model", errors),
+        executablePath = readOptionalText(raw, "executablePath", "ai.executablePath", errors),
+    )
 }
 
 private fun readGitLabSettings(obj: Map<*, *>, errors: MutableList<String>): GitLabSettings? {
@@ -78,6 +111,14 @@ fun JiraTaskConfig.toRawMap(): Map<String, Any?> {
     projectKey?.let { result["projectKey"] = it }
     jira?.let { result["jira"] = it.toRawMap() }
     gitlab?.baseUrl?.let { result["gitlab"] = mapOf("baseUrl" to it) }
+    ai?.let { result["ai"] = it.toRawMap() }
+    return result
+}
+
+private fun AiSettings.toRawMap(): Map<String, Any?> {
+    val result = mutableMapOf<String, Any?>("enabled" to enabled)
+    model?.let { result["model"] = it }
+    executablePath?.let { result["executablePath"] = it }
     return result
 }
 
@@ -106,12 +147,14 @@ private fun JiraSettings.IssueTypes.toRawMap(): Map<String, Any?> {
 fun JiraTaskConfig.mergeWith(update: Map<String, Any?>): JiraTaskConfig {
     val merged = toRawMap().toMutableMap()
 
-    val updateJira = update["jira"] as? Map<*, *>
-    if (updateJira != null) {
-        val currentJira = merged["jira"] as? Map<*, *> ?: emptyMap<String, Any?>()
-        merged["jira"] = currentJira + updateJira
+    // 키가 여럿인 절은 한 겹 깊이로 합친다. 통째로 덮으면 이번에 건드리지 않은 값이 사라진다 —
+    // `ai.enabled`만 저장했다고 `ai.model`이 없어지면 안 된다.
+    for (section in DEEP_MERGED_SECTIONS) {
+        val incoming = update[section] as? Map<*, *> ?: continue
+        val current = merged[section] as? Map<*, *> ?: emptyMap<String, Any?>()
+        merged[section] = current + incoming
     }
-    merged.putAll(update.filterKeys { it != "jira" })
+    merged.putAll(update.filterKeys { it !in DEEP_MERGED_SECTIONS })
 
     return JiraTaskConfig.resolve(merged)
 }
@@ -258,6 +301,25 @@ private fun readOptionalText(obj: Map<*, *>, key: String, path: String, errors: 
     return readRequiredText(obj, key, path, errors)
 }
 
+/**
+ * 없거나 null이면 null, 참·거짓이 아니면 오류.
+ *
+ * `toString().toBoolean()`을 쓰지 않는다 — 그건 `"maybe"`를 조용히 `false`로 삼켜서,
+ * 잘못 적은 설정이 "꺼 둔 것"처럼 보이게 만든다.
+ */
+private fun readOptionalBoolean(obj: Map<*, *>, key: String, path: String, errors: MutableList<String>): Boolean? {
+    if (!obj.containsKey(key) || obj[key] == null) {
+        return null
+    }
+
+    val value = obj[key] as? Boolean
+    if (value == null) {
+        errors += "$path: 값 형식이 올바르지 않습니다."
+        return null
+    }
+    return value
+}
+
 private fun readRequiredText(obj: Map<*, *>, key: String, path: String, errors: MutableList<String>): String? {
     val text = (obj[key] as? String)?.trim()
     if (text.isNullOrEmpty()) {
@@ -322,3 +384,6 @@ private fun readStatuses(obj: Map<*, *>, errors: MutableList<String>) {
     val raw = obj["statuses"] as? Map<*, *> ?: return
     rejectUnknownKeys(raw, setOf("story", "task"), "jira.statuses", errors)
 }
+
+/** 한 겹 깊이로 합칠 절들. 키가 하나뿐인 절은 통째로 덮여도 잃을 것이 없다. */
+private val DEEP_MERGED_SECTIONS = setOf("jira", "ai")

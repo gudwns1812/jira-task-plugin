@@ -353,7 +353,19 @@ class JiraTaskConfigurableTest : BasePlatformTestCase() {
 
         val values = textFieldValues(configurable.createComponent())
 
-        // 프로젝트 키, Jira 주소, GitLab 주소, 그리고 비어 있는 GitLab 토큰 칸.
-        assertEquals(listOf("S15P11A108", "https://team.atlassian.net", "", ""), values)
+        // 프로젝트 키, Jira 주소, GitLab 주소, GitLab 토큰, 그리고 AI 모델·실행 파일 경로.
+        // AI 그룹은 맨 뒤에 둔다 — 앞에 끼우면 위 필드를 인덱스로 찾는 헬퍼들이 어긋난다.
+        // 모델 칸은 콤보라 "정하지 않음"을 글로 보여 준다.
+        assertEquals(
+            listOf(
+                "S15P11A108",
+                "https://team.atlassian.net",
+                "",
+                "",
+                JiraTaskConfigurable.MODEL_DEFAULT,
+                "",
+            ),
+            values,
+        )
     }
 }

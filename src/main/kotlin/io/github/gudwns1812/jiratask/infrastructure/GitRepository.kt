@@ -146,6 +146,20 @@ class GitRepository(
     }
 
     /**
+     * [base] 이후 이 브랜치가 건드린 파일들. **경로만 읽는다 — 내용은 읽지 않는다.**
+     *
+     * AI에게 무엇을 보낼지가 이 메서드에 걸려 있다. `--name-only`를 `-p`로 바꾸는 순간
+     * 소스 코드가 밖으로 나가므로, 그 결정은 여기를 고치는 일로만 할 수 있어야 한다.
+     */
+    fun changedFilesSince(base: String): List<String> {
+        val result = run("diff", "--name-only", "$base..HEAD") ?: return emptyList()
+        if (result.exitCode != 0) {
+            return emptyList()
+        }
+        return result.stdout.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.distinct().toList()
+    }
+
+    /**
      * 현재 브랜치가 원격에 올라가 있는가. **확인하지 못하면 null** — 올라가지 않은 것과 다르다.
      *
      * `ls-remote`는 네트워크가 끊겼거나 SSH 키가 없어도 실패한다. 그것을 "안 올렸다"로 읽으면

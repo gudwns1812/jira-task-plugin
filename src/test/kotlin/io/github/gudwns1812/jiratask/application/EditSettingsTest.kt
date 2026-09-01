@@ -191,11 +191,37 @@ class EditSettingsTest {
     }
 
     @Test
+    fun `carries only the ai values the screen actually touched`() {
+        // 체크박스에는 "비워 둠"이 없다. null이 그 자리를 대신하지 않으면 아무것도 안 고쳐도 저장이 일어난다.
+        assertEquals(emptyMap<String, Any?>(), SettingsEdit(" ", " ", aiEnabled = null).toConfigUpdate())
+        assertEquals(
+            mapOf("ai" to mapOf("enabled" to true)),
+            SettingsEdit("", "", aiEnabled = true).toConfigUpdate(),
+        )
+        assertEquals(
+            mapOf("ai" to mapOf("enabled" to false, "model" to "sonnet")),
+            SettingsEdit("", "", aiEnabled = false, aiModel = " sonnet ").toConfigUpdate(),
+        )
+    }
+
+    @Test
+    fun `treats a changed ai setting as a modification`() {
+        val snapshot = SettingsSnapshot.empty()
+
+        assertFalse(SettingsEdit("", "", aiEnabled = false).changes(snapshot))
+        assertTrue(SettingsEdit("", "", aiEnabled = true).changes(snapshot))
+        assertTrue(SettingsEdit("", "", aiModel = "opus").changes(snapshot))
+        assertFalse("빈 칸은 변경이 아니다", SettingsEdit("", "", aiModel = "  ").changes(snapshot))
+    }
+
+    @Test
     fun `an empty snapshot has no configured value at all`() {
         val snapshot = SettingsSnapshot.empty()
 
         assertEquals("", snapshot.projectKey)
         assertEquals("", snapshot.baseUrl)
+        assertFalse("AI는 기본값이 꺼짐이다", snapshot.aiEnabled)
+        assertEquals("", snapshot.aiModel)
     }
 
     @Test

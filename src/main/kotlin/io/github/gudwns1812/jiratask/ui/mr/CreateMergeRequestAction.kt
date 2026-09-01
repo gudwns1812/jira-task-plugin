@@ -26,9 +26,11 @@ import com.intellij.ui.dsl.builder.columns
 import com.intellij.ui.dsl.builder.panel
 import io.github.gudwns1812.jiratask.application.BranchState
 import io.github.gudwns1812.jiratask.application.CreateMergeRequestUseCase
+import io.github.gudwns1812.jiratask.application.DraftRewrite
 import io.github.gudwns1812.jiratask.application.MergeRequestPrepare
 import io.github.gudwns1812.jiratask.application.MergeRequestProposal
 import io.github.gudwns1812.jiratask.application.MergeRequestResult
+import io.github.gudwns1812.jiratask.infrastructure.ClaudeCliDraftWriter
 import io.github.gudwns1812.jiratask.infrastructure.GitLabClient
 import io.github.gudwns1812.jiratask.infrastructure.GitRepository
 import io.github.gudwns1812.jiratask.ui.JiraTaskAvailability
@@ -70,6 +72,15 @@ class MergeRequestDialog(
     private val onEdt: (() -> Unit) -> Unit = {
         ApplicationManager.getApplication().invokeLater(Runnable(it), ModalityState.any())
     },
+    /**
+     * 제목·본문을 AI에게 다시 쓰게 한다.
+     *
+     * AI가 꺼져 있어도 버튼은 보인다 — 그때는 이 함수가 이유를 담은 [DraftRewrite.Refused]를 돌려주고,
+     * 그 문구가 곧 "설정에서 켜세요"라는 안내가 된다.
+     */
+    private val rewrite: (MergeRequestProposal) -> DraftRewrite = {
+        DraftRewrite.Refused(CreateMergeRequestUseCase.DISABLED)
+    },
 ) : DialogWrapper(project, false) {
 
     private var proposal: MergeRequestProposal = proposal
@@ -91,6 +102,10 @@ class MergeRequestDialog(
 
     private val warningLabel = JBLabel(proposal.existingUrl?.let { "이미 열린 MR이 있습니다: $it" }.orEmpty())
 
+    private val rewriteButton = javax.swing.JButton(REWRITE_BUTTON)
+
+    private val rewriteLabel = JBLabel()
+
     /** 마지막으로 우리가 만든 초안. 사용자가 직접 고친 글을 덮어쓰지 않으려고 기억해 둔다. */
     private var draftedTitle = proposal.title
     private var draftedDescription = proposal.description
@@ -109,9 +124,44 @@ class MergeRequestDialog(
         (targetBox.editor.editorComponent as? JTextField)?.addFocusListener(object : FocusAdapter() {
             override fun focusLost(event: FocusEvent) = onTargetChanged()
         })
+        rewriteButton.addActionListener { onRewrite() }
         showKeys()
         refreshState()
     }
+
+    /**
+     * 제목·본문을 AI에게 다시 쓰게 한다.
+     *
+     * 대상 브랜치를 바꿀 때와 같은 배선을 탄다 — 백그라운드에서 부르고 [onEdt]로 돌아온다.
+     * [onEdt]가 `ModalityState.any()`를 쓰는 것이 여기서도 반드시 필요하다.
+     *
+     * **사용자가 손댄 글은 덮지 않는다** — [apply]가 그 규칙을 들고 있다.
+     */
+    private fun onRewrite() {
+        val current = values()
+
+        rewriteButton.isEnabled = false
+        rewriteLabel.text = REWRITING
+        background {
+            val outcome = runCatching { rewrite(current) }
+                .getOrElse { DraftRewrite.Refused(CreateMergeRequestUseCase.FAILED) }
+
+            onEdt {
+                rewriteButton.isEnabled = true
+                when (outcome) {
+                    is DraftRewrite.Rewritten -> {
+                        rewriteLabel.text = ""
+                        apply(outcome.proposal)
+                    }
+                    // 실패해도 MR 생성은 막지 않는다. 규칙 기반 초안이 그대로 남아 있다.
+                    is DraftRewrite.Refused -> rewriteLabel.text = outcome.message
+                }
+            }
+        }
+    }
+
+    /** AI가 지금 무엇을 말하고 있는지. 화면을 뒤지지 않고 확인하려고 열어 둔다. */
+    fun rewriteText(): String = rewriteLabel.text.orEmpty()
 
     /**
      * 대상이 바뀌면 그 기준으로 초안을 다시 만든다.
@@ -170,6 +220,11 @@ class MergeRequestDialog(
         row {
             cell(issueKeysLabel)
         }.rowComment("연결된 작업 키는 본문에 적혀 Jira가 이 MR을 작업에 붙일 수 있게 합니다.")
+        // 꺼져 있어도 보인다. 숨기면 기능이 있다는 것도, 켜러 가야 한다는 것도 알 길이 없다.
+        row {
+            cell(rewriteButton)
+            cell(rewriteLabel)
+        }.rowComment("브랜치 이름·커밋 제목·변경된 파일 경로만 보냅니다. 파일 내용은 보내지 않습니다.")
         row { cell(warningLabel) }
     }
 
@@ -201,6 +256,8 @@ class MergeRequestDialog(
 
     companion object {
         const val NO_ISSUE_KEYS: String = "커밋에서 Jira 작업 키를 찾지 못했습니다. 본문에 직접 적어 두세요."
+        const val REWRITE_BUTTON: String = "AI로 다시 쓰기"
+        const val REWRITING: String = "AI가 쓰는 중…"
     }
 }
 
@@ -234,7 +291,7 @@ class CreateMergeRequestAction @JvmOverloads constructor(
     private fun prepare(project: Project, workingDirectory: File, mr: MergeRequestSettings) {
         ProgressManager.getInstance().run(object : Task.Backgroundable(project, "MR 초안 준비", true) {
             override fun run(indicator: ProgressIndicator) {
-                val useCase = useCaseFor(project, mr)
+                val useCase = useCaseFor(project, mr, workingDirectory)
                 // 상태는 한 번만 읽는다. 대상 브랜치를 바꿔 다시 계산할 때도 같은 것을 쓴다.
                 val state = readBranch(workingDirectory)
                 val prepared = useCase.prepare(state)
@@ -249,9 +306,14 @@ class CreateMergeRequestAction @JvmOverloads constructor(
                             JiraTaskNotifications.warning(project, prepared.message)
                         }
                         is MergeRequestPrepare.Ready ->
-                            confirm(project, mr, prepared.proposal) { target ->
-                                useCase.redraft(state, prepared.proposal, target)
-                            }
+                            confirm(
+                                project = project,
+                                mr = mr,
+                                workingDirectory = workingDirectory,
+                                proposal = prepared.proposal,
+                                redraft = { target -> useCase.redraft(state, prepared.proposal, target) },
+                                rewrite = { current -> useCase.rewrite(state, current) },
+                            )
                     }
                 }, project.disposed)
             }
@@ -261,10 +323,12 @@ class CreateMergeRequestAction @JvmOverloads constructor(
     private fun confirm(
         project: Project,
         mr: MergeRequestSettings,
+        workingDirectory: File,
         proposal: MergeRequestProposal,
         redraft: (String) -> MergeRequestProposal,
+        rewrite: (MergeRequestProposal) -> DraftRewrite,
     ) {
-        val dialog = MergeRequestDialog(project, proposal, redraft)
+        val dialog = MergeRequestDialog(project, proposal, redraft, rewrite = rewrite)
         if (!dialog.showAndGet()) {
             return
         }
@@ -275,7 +339,7 @@ class CreateMergeRequestAction @JvmOverloads constructor(
 
         ProgressManager.getInstance().run(object : Task.Backgroundable(project, "MR 생성", false) {
             override fun run(indicator: ProgressIndicator) {
-                report(project, useCaseFor(project, mr).create(edited, title, description))
+                report(project, useCaseFor(project, mr, workingDirectory).create(edited, title, description))
             }
         })
     }
@@ -302,7 +366,11 @@ class CreateMergeRequestAction @JvmOverloads constructor(
         }
     }
 
-    private fun useCaseFor(project: Project, mr: MergeRequestSettings): CreateMergeRequestUseCase =
+    private fun useCaseFor(
+        project: Project,
+        mr: MergeRequestSettings,
+        workingDirectory: File,
+    ): CreateMergeRequestUseCase =
         CreateMergeRequestUseCase(
             gitlab = GitLabClient(mr.gitLabBaseUrl, mr.gitLabToken),
             issueKeysOf = { subjects -> issueKeysIn(subjects) },
@@ -310,7 +378,20 @@ class CreateMergeRequestAction @JvmOverloads constructor(
             summaryOf = { key -> (SprintTasks.getInstance(project).findCached(key) as? TaskAnswer.Known)?.task?.summary },
             gitLabBaseUrl = mr.gitLabBaseUrl,
             tokenOrigin = mr.tokenSource.describe(),
+            // 꺼져 있으면 아예 만들지 않는다 — 그러면 use case가 "설정에서 켜세요"라고 답한다.
+            draftWriter = draftWriterFor(workingDirectory),
         )
+
+    /** 설정에서 AI를 켰을 때만 만든다. 기본값은 꺼짐이다. */
+    private fun draftWriterFor(workingDirectory: File): ClaudeCliDraftWriter? {
+        val ai = (settings.forAiDraft() as? SettingsLookup.Ready)?.value ?: return null
+
+        return ClaudeCliDraftWriter(
+            workingDirectory = workingDirectory,
+            executablePath = ai.executablePath,
+            model = ai.model,
+        )
+    }
 
     /**
      * 커밋 제목에서 **이 프로젝트의** 이슈 키만 모은다.
@@ -337,6 +418,7 @@ class CreateMergeRequestAction @JvmOverloads constructor(
             // 대상 브랜치가 정해진 뒤에 불린다. 그 브랜치의 원격 ref가 없으면 있는 기본 브랜치를 찾아 쓴다.
             commitSubjectsSince = { target -> git.baseRef(target)?.let(git::commitSubjectsSince) ?: emptyList() },
             remoteBranches = git.remoteBranches(),
+            changedFilesSince = { target -> git.baseRef(target)?.let(git::changedFilesSince) ?: emptyList() },
         )
     }
 }
