@@ -353,6 +353,7 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
                 "JiraTask.Commit",
                 "JiraTask.CreateMergeRequest",
                 "JiraTask.Search",
+                "JiraTask.OpenSettings",
                 "JiraTask.RunSetupWizard",
             ),
             ids,

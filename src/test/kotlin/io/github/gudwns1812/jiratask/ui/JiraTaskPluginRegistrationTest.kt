@@ -29,6 +29,7 @@ class JiraTaskPluginRegistrationTest : BasePlatformTestCase() {
             "JiraTask.Commit" to CommitWithJiraTaskAction::class.java,
             "JiraTask.CreateMergeRequest" to CreateMergeRequestAction::class.java,
             "JiraTask.Search" to JiraSearchAction::class.java,
+            "JiraTask.OpenSettings" to OpenJiraTaskSettingsAction::class.java,
             "JiraTask.RunSetupWizard" to RunSetupWizardAction::class.java,
         )
 
@@ -44,7 +45,7 @@ class JiraTaskPluginRegistrationTest : BasePlatformTestCase() {
 
         assertTrue(group is DefaultActionGroup)
         val children = (group as DefaultActionGroup).childActionsOrStubs
-        assertEquals("액션 5개와 구분선 1개", 5, children.count { it !is Separator })
+        assertEquals("액션 6개와 구분선 1개", 6, children.count { it !is Separator })
         assertEquals(1, children.count { it is Separator })
         assertTrue(group.isPopup)
     }

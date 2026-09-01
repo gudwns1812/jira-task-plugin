@@ -1,5 +1,6 @@
 package io.github.gudwns1812.jiratask.application
 
+import io.github.gudwns1812.jiratask.domain.mr.GitLabBaseUrl
 import io.github.gudwns1812.jiratask.domain.policy.JiraTaskConfig
 import io.github.gudwns1812.jiratask.domain.policy.PolicyConfigurationError
 import io.github.gudwns1812.jiratask.domain.policy.default
@@ -16,6 +17,9 @@ data class SettingsSnapshot(
     val taskIssueType: String,
     val epicIssueType: String,
     val gitLabBaseUrl: String,
+    val aiEnabled: Boolean = false,
+    val aiModel: String = "",
+    val aiExecutablePath: String = "",
 ) {
     companion object
 }
@@ -28,6 +32,9 @@ fun SettingsSnapshot.Companion.from(config: JiraTaskConfig): SettingsSnapshot = 
     taskIssueType = config.jira?.issueTypes?.task?.name.orEmpty(),
     epicIssueType = config.jira?.issueTypes?.epic?.name.orEmpty(),
     gitLabBaseUrl = config.gitlab?.baseUrl.orEmpty(),
+    aiEnabled = config.ai?.enabled ?: false,
+    aiModel = config.ai?.model.orEmpty(),
+    aiExecutablePath = config.ai?.executablePath.orEmpty(),
 )
 
 /** 저장된 설정이 없거나 아직 읽지 못한 상태를 나타내는 빈 스냅샷. */
@@ -41,19 +48,43 @@ data class SettingsEdit(
     val projectKey: String,
     val baseUrl: String,
     val gitLabBaseUrl: String = "",
+    /**
+     * null은 "이 화면이 AI를 다루지 않았다"는 뜻이다.
+     *
+     * 체크박스에는 "비워 둠"이 없어서 다른 칸과 같은 규칙을 쓸 수 없다. null을 두지 않으면
+     * [toConfigUpdate]가 언제나 값을 내보내게 되고, 아무것도 안 고쳤는데 저장이 일어난다.
+     */
+    val aiEnabled: Boolean? = null,
+    val aiModel: String = "",
+    val aiExecutablePath: String = "",
 ) {
 
     fun projectKeyOrNull(): String? = projectKey.trim().ifEmpty { null }
 
     fun baseUrlOrNull(): String? = baseUrl.trim().ifEmpty { null }
 
-    fun gitLabBaseUrlOrNull(): String? = gitLabBaseUrl.trim().ifEmpty { null }
+    /** 저장하는 주소도 토큰 열쇠와 같은 모양으로 맞춘다. 그래야 나중에 토큰을 다시 찾을 수 있다. */
+    fun gitLabBaseUrlOrNull(): String? = GitLabBaseUrl.normalize(gitLabBaseUrl).ifEmpty { null }
+
+    fun aiModelOrNull(): String? = aiModel.trim().ifEmpty { null }
+
+    fun aiExecutablePathOrNull(): String? = aiExecutablePath.trim().ifEmpty { null }
 
     fun toConfigUpdate(): Map<String, Any?> {
         val update = mutableMapOf<String, Any?>()
         projectKeyOrNull()?.let { update["projectKey"] = it }
         baseUrlOrNull()?.let { update["jira"] = mapOf("baseUrl" to it) }
         gitLabBaseUrlOrNull()?.let { update["gitlab"] = mapOf("baseUrl" to it) }
+
+        // 한 겹 깊이로 합쳐지므로(PolicyConfig.mergeWith) 이번에 채운 값만 실어도 나머지가 남는다.
+        val ai = mutableMapOf<String, Any?>()
+        aiEnabled?.let { ai["enabled"] = it }
+        aiModelOrNull()?.let { ai["model"] = it }
+        aiExecutablePathOrNull()?.let { ai["executablePath"] = it }
+        if (ai.isNotEmpty()) {
+            update["ai"] = ai
+        }
+
         return update
     }
 
@@ -62,7 +93,11 @@ data class SettingsEdit(
         val projectKeyChanged = projectKeyOrNull()?.let { it != snapshot.projectKey } ?: false
         val baseUrlChanged = baseUrlOrNull()?.let { it != snapshot.baseUrl } ?: false
         val gitLabChanged = gitLabBaseUrlOrNull()?.let { it != snapshot.gitLabBaseUrl } ?: false
-        return projectKeyChanged || baseUrlChanged || gitLabChanged
+        val aiEnabledChanged = aiEnabled?.let { it != snapshot.aiEnabled } ?: false
+        val aiModelChanged = aiModelOrNull()?.let { it != snapshot.aiModel } ?: false
+        val aiPathChanged = aiExecutablePathOrNull()?.let { it != snapshot.aiExecutablePath } ?: false
+        return projectKeyChanged || baseUrlChanged || gitLabChanged ||
+            aiEnabledChanged || aiModelChanged || aiPathChanged
     }
 }
 

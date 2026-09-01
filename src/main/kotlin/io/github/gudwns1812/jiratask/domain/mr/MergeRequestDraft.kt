@@ -1,8 +1,5 @@
 package io.github.gudwns1812.jiratask.domain.mr
 
-/** 브랜치의 커밋 하나. 제목만 쓴다 — 본문은 MR 설명에 넣을 만큼 짧지 않다. */
-data class BranchCommit(val subject: String)
-
 /**
  * MR 제목과 본문을 **규칙으로** 만든다. AI는 다음 단계다(TASKS.md 6장).
  *
@@ -26,33 +23,27 @@ object MergeRequestDraft {
     }
 
     /**
-     * 본문. 연결된 작업과 커밋 목록만 담는다.
+     * 본문. **작업 키만** 줄줄이 적는다.
      *
-     * 이슈 키를 본문에 적어 두면 Jira의 개발 정보 패널과 automation이 MR을 작업에 붙일 수 있다(RULE.md 5.3).
+     * 커밋 제목을 붙이지 않는 이유는 읽는 사람이 여기서 찾는 것이 "어느 작업인가" 하나뿐이기
+     * 때문이다. 무슨 일을 했는지는 MR의 커밋 목록이 이미 보여 준다. 본문에 적힌 키 문자열이
+     * Jira가 이 MR을 작업에 붙이는 근거다(RULE.md 5.3).
      */
-    fun descriptionOf(issueKeys: List<String>, commits: List<BranchCommit>, jiraBaseUrl: String?): String {
-        val sections = mutableListOf<String>()
+    fun descriptionOf(issueKeys: List<String>, template: String? = null): String {
+        val keys = issueKeys.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        val body = template?.trim().orEmpty()
 
-        if (issueKeys.isNotEmpty()) {
-            sections += buildString {
-                appendLine("### 연결된 작업")
-                issueKeys.forEach { key -> appendLine("- ${linkOf(key, jiraBaseUrl)}") }
-            }.trimEnd()
+        if (body.isNotEmpty()) {
+            return MergeRequestTemplate.fill(body, keys)
+        }
+        if (keys.isEmpty()) {
+            return ""
         }
 
-        if (commits.isNotEmpty()) {
-            sections += buildString {
-                appendLine("### 커밋")
-                commits.forEach { appendLine("- ${it.subject}") }
-            }.trimEnd()
-        }
-
-        return sections.joinToString("\n\n")
-    }
-
-    private fun linkOf(key: String, jiraBaseUrl: String?): String {
-        val base = jiraBaseUrl?.trim()?.trimEnd('/').orEmpty()
-        return if (base.isEmpty()) key else "[$key]($base/browse/$key)"
+        return buildString {
+            appendLine("### 연결된 작업")
+            keys.forEach { appendLine("- $it") }
+        }.trimEnd()
     }
 
     /** `feat/live-chat` → `live chat`. 접두와 구분자를 걷어내 읽을 수 있는 말로 만든다. */

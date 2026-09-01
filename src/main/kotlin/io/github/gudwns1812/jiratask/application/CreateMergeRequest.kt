@@ -1,10 +1,14 @@
 package io.github.gudwns1812.jiratask.application
 
-import io.github.gudwns1812.jiratask.domain.mr.BranchCommit
+import io.github.gudwns1812.jiratask.domain.mr.DraftOutcome
+import io.github.gudwns1812.jiratask.domain.mr.DraftRequest
+import io.github.gudwns1812.jiratask.domain.mr.DraftWriter
 import io.github.gudwns1812.jiratask.domain.mr.GitLabAuthenticationError
 import io.github.gudwns1812.jiratask.domain.mr.GitLabError
 import io.github.gudwns1812.jiratask.domain.mr.GitLabNetworkError
+import io.github.gudwns1812.jiratask.domain.mr.GitLabPermissionError
 import io.github.gudwns1812.jiratask.domain.mr.GitLabProject
+import io.github.gudwns1812.jiratask.domain.mr.GitLabProjectInfo
 import io.github.gudwns1812.jiratask.domain.mr.MergeRequestCommand
 import io.github.gudwns1812.jiratask.domain.mr.MergeRequestDraft
 import io.github.gudwns1812.jiratask.domain.mr.MergeRequestPort
@@ -13,8 +17,21 @@ import io.github.gudwns1812.jiratask.domain.mr.MergeRequestPort
 data class BranchState(
     val branch: String?,
     val remoteUrl: String?,
-    val isPushed: Boolean,
-    val commitSubjects: List<String>,
+    /** 원격에 올라가 있는가. 확인하지 못했으면 null — 그때는 막지 않는다. */
+    val isPushed: Boolean?,
+    /**
+     * 대상 브랜치에는 없고 이 브랜치에만 있는 커밋 제목들.
+     *
+     * 값이 아니라 함수다 — 어디서부터 셀지는 대상 브랜치를 정한 뒤에야 알 수 있고,
+     * 그 범위를 잘못 잡으면 커밋이 통째로 비어 이슈 키까지 사라진다.
+     */
+    val commitSubjectsSince: (String) -> List<String>,
+    /** MR 대상으로 고를 수 있는 원격 브랜치들. 비어 있으면 사용자가 직접 적는다. */
+    val remoteBranches: List<String> = emptyList(),
+    /** 대상 브랜치 기준으로 이 브랜치가 건드린 파일 경로들. AI 초안에만 쓴다. */
+    val changedFilesSince: (String) -> List<String> = { emptyList() },
+    /** 저장소가 들고 있는 MR 템플릿들. 이름 → 내용. */
+    val templates: Map<String, String> = emptyMap(),
 )
 
 /** 화면에 채워 넣을 초안. 사용자가 여기서 제목·본문·대상 브랜치를 고칠 수 있다. */
@@ -27,6 +44,22 @@ data class MergeRequestProposal(
     val issueKeys: List<String>,
     /** 이미 열린 MR이 있으면 그 주소. 새로 만들지 말라는 뜻이다. */
     val existingUrl: String? = null,
+    /**
+     * 대상으로 고를 수 있는 브랜치들. 첫 번째가 기본값이다.
+     *
+     * 기본값을 추측으로 정하지 않는 이유는 그 추측이 자주 틀리기 때문이다 — 통합 브랜치(`develop`,
+     * `backend-dev`)를 쓰는 팀에서 저장소 기본 브랜치를 기준으로 삼으면 남의 커밋 수백 개가 딸려 온다.
+     */
+    val targetCandidates: List<String> = emptyList(),
+    /**
+     * 고를 수 있는 템플릿들. 이름 → 내용. 첫 번째가 기본값이다.
+     *
+     * 프로젝트 설정의 기본 템플릿과 저장소 파일을 함께 담는다. 팀이 `.gitlab/merge_request_templates/`에
+     * 여러 개를 두는 일이 흔해서, 무엇을 쓸지는 사용자가 고른다 — GitLab 웹이 하는 것과 같다.
+     */
+    val templates: Map<String, String> = emptyMap(),
+    /** 고른 템플릿 이름. null이면 템플릿을 쓰지 않는다. */
+    val templateName: String? = null,
 )
 
 sealed interface MergeRequestPrepare {
@@ -34,8 +67,15 @@ sealed interface MergeRequestPrepare {
     data class Blocked(val message: String) : MergeRequestPrepare
 }
 
+/** AI에게 다시 써 달라고 한 결과. 거절돼도 원래 초안은 그대로 쓸 수 있다. */
+sealed interface DraftRewrite {
+    data class Rewritten(val proposal: MergeRequestProposal) : DraftRewrite
+    data class Refused(val message: String) : DraftRewrite
+}
+
 sealed interface MergeRequestResult {
-    data class Created(val webUrl: String) : MergeRequestResult
+    /** 만들었다. [webUrl]이 null이면 만들어졌지만 주소를 확인하지 못한 것이다. */
+    data class Created(val webUrl: String?) : MergeRequestResult
     data class Failure(val message: String) : MergeRequestResult
 }
 
@@ -48,8 +88,49 @@ class CreateMergeRequestUseCase(
     private val gitlab: MergeRequestPort,
     private val issueKeysOf: (List<String>) -> List<String>,
     private val summaryOf: (String) -> String? = { null },
-    private val jiraBaseUrl: String? = null,
+    /** 설정된 GitLab 주소. remote가 정말 이 GitLab인지 견주는 데 쓴다. 모르면 견주지 않는다. */
+    private val gitLabBaseUrl: String? = null,
+    /**
+     * 토큰을 어디서 가져왔는지 사람이 읽을 말로. 거부당했을 때 어디를 고쳐야 하는지 알려준다.
+     *
+     * 계층 규칙 때문에 문자열로 받는다 — 출처를 나타내는 타입은 ui 계층에 있고
+     * application은 ui를 알지 않는다(ARCHITECTURE.md 114-119).
+     */
+    private val tokenOrigin: String? = null,
+    /** 제목·본문을 AI에게 맡길 때 쓸 것. 없으면 [rewrite]가 쓸 수 없다고 답한다. */
+    private val draftWriter: DraftWriter? = null,
 ) {
+
+    /**
+     * 제목과 본문만 AI에게 다시 쓰게 한다.
+     *
+     * 이슈 키·대상 브랜치·후보 목록은 그대로 둔다 — AI가 정할 일이 아니다. 특히 이슈 키는
+     * 커밋에서 뽑은 사실이라 AI가 바꾸면 Jira 연결이 어긋난다(RULE.md 5.3).
+     *
+     * 실패해도 [proposal]은 그대로 남는다. 규칙 기반 초안이 언제나 쓸 수 있는 기본값이다.
+     */
+    fun rewrite(state: BranchState, proposal: MergeRequestProposal): DraftRewrite {
+        val writer = draftWriter ?: return DraftRewrite.Refused(DISABLED)
+
+        val request = DraftRequest(
+            sourceBranch = proposal.sourceBranch,
+            targetBranch = proposal.targetBranch,
+            issueKeys = proposal.issueKeys,
+            commitSubjects = runCatching { state.commitSubjectsSince(proposal.targetBranch) }
+                .getOrDefault(emptyList()),
+            changedFiles = runCatching { state.changedFilesSince(proposal.targetBranch) }
+                .getOrDefault(emptyList()),
+            template = proposal.templates[proposal.templateName],
+        )
+
+        return when (val outcome = runCatching { writer.write(request) }.getOrElse { DraftOutcome.Failed(FAILED) }) {
+            is DraftOutcome.Written -> DraftRewrite.Rewritten(
+                proposal.copy(title = outcome.draft.title, description = outcome.draft.description),
+            )
+            is DraftOutcome.Unavailable -> DraftRewrite.Refused(outcome.message)
+            is DraftOutcome.Failed -> DraftRewrite.Refused(outcome.message)
+        }
+    }
 
     fun prepare(state: BranchState, fallbackTarget: String = DEFAULT_TARGET): MergeRequestPrepare {
         val branch = state.branch
@@ -61,30 +142,88 @@ class CreateMergeRequestUseCase(
                     ?: "git remote(origin)가 없습니다. MR을 만들 프로젝트를 알 수 없습니다.",
             )
 
-        if (!state.isPushed) {
+        // 토큰을 엉뚱한 서버로 보내지 않는다. remote가 다른 곳이면 요청 자체를 만들지 않는다.
+        if (gitLabBaseUrl != null && !remote.matches(gitLabBaseUrl)) {
+            return MergeRequestPrepare.Blocked(
+                "이 저장소의 remote는 ${remote.host}인데 설정된 GitLab은 $gitLabBaseUrl 입니다. " +
+                    "다른 곳에 토큰을 보내지 않으려고 멈췄습니다.",
+            )
+        }
+
+        // 확실히 안 올라간 경우만 막는다. 확인하지 못한 것은 위반이 아니다(ARCHITECTURE.md 4장).
+        if (state.isPushed == false) {
             return MergeRequestPrepare.Blocked("$branch 브랜치를 아직 원격에 올리지 않았습니다. 먼저 푸시하세요.")
         }
 
         val existing = runCatching { gitlab.openMergeRequest(remote.projectPath, branch) }.getOrNull()
-        val target = runCatching { gitlab.defaultBranch(remote.projectPath) }.getOrNull() ?: fallbackTarget
-        val keys = issueKeysOf(state.commitSubjects)
+        val project = runCatching { gitlab.projectInfo(remote.projectPath) }.getOrNull() ?: GitLabProjectInfo()
+        val target = project.defaultBranch ?: fallbackTarget
+        val templates = templatesOf(project.mergeRequestTemplate, state.templates)
 
-        return MergeRequestPrepare.Ready(
-            MergeRequestProposal(
-                projectPath = remote.projectPath,
-                sourceBranch = branch,
-                targetBranch = target,
-                title = MergeRequestDraft.titleOf(branch, keys, summaryOf),
-                description = MergeRequestDraft.descriptionOf(
-                    keys,
-                    state.commitSubjects.map(::BranchCommit),
-                    jiraBaseUrl,
-                ),
-                issueKeys = keys,
-                existingUrl = existing?.webUrl,
-            ),
+        val skeleton = MergeRequestProposal(
+            projectPath = remote.projectPath,
+            sourceBranch = branch,
+            targetBranch = target,
+            title = "",
+            description = "",
+            issueKeys = emptyList(),
+            existingUrl = existing?.webUrl,
+            targetCandidates = candidatesOf(state.remoteBranches, target, branch),
+            templates = templates,
+            templateName = templates.keys.firstOrNull(),
+        )
+
+        return MergeRequestPrepare.Ready(redraft(state, skeleton, target))
+    }
+
+    /**
+     * 고를 수 있는 템플릿들. **앞에 오는 것이 기본값**이다.
+     *
+     * 프로젝트 설정의 기본 템플릿이 저장소의 `Default.md`보다 우선한다(GitLab 문서). 저장소 파일 중에서는
+     * `Default`가 앞이고, 나머지는 이름순으로 뒤따른다.
+     */
+    private fun templatesOf(projectTemplate: String?, files: Map<String, String>): Map<String, String> {
+        val ordered = LinkedHashMap<String, String>()
+
+        projectTemplate?.trim()?.takeIf { it.isNotEmpty() }?.let { ordered[PROJECT_TEMPLATE] = it }
+        files.entries.filter { it.key.equals("Default", ignoreCase = true) }
+            .forEach { ordered.putIfAbsent(it.key, it.value) }
+        files.forEach { (name, text) -> ordered.putIfAbsent(name, text) }
+
+        return ordered
+    }
+
+    /**
+     * [target]을 기준으로 제목·본문·이슈 키를 다시 만든다.
+     *
+     * 사용자가 대상 브랜치를 고칠 때마다 불린다 — 기준이 바뀌면 이 브랜치가 추가한 커밋도 바뀌고,
+     * 그러면 본문에 적을 커밋과 이슈 키도 함께 바뀌어야 한다.
+     */
+    fun redraft(
+        state: BranchState,
+        proposal: MergeRequestProposal,
+        target: String = proposal.targetBranch,
+        templateName: String? = proposal.templateName,
+    ): MergeRequestProposal {
+        val subjects = runCatching { state.commitSubjectsSince(target) }.getOrDefault(emptyList())
+        val keys = issueKeysOf(subjects)
+
+        return proposal.copy(
+            targetBranch = target,
+            templateName = templateName,
+            title = MergeRequestDraft.titleOf(proposal.sourceBranch, keys, summaryOf),
+            description = MergeRequestDraft.descriptionOf(keys, proposal.templates[templateName]),
+            issueKeys = keys,
         )
     }
+
+    /** 자격 증명 오류에 출처를 덧붙인다. "토큰이 유효하지 않다"만으로는 어느 토큰인지 알 수 없다. */
+    private fun withTokenSource(message: String): String =
+        tokenOrigin?.takeIf { it.isNotBlank() }?.let { "$message ($it)" } ?: message
+
+    /** 고를 수 있는 대상들. 기본값이 맨 앞에 오고, 자기 자신으로는 MR을 만들 수 없으니 뺀다. */
+    private fun candidatesOf(remoteBranches: List<String>, target: String, sourceBranch: String): List<String> =
+        (listOf(target) + remoteBranches).distinct().filter { it != sourceBranch }
 
     fun create(proposal: MergeRequestProposal, title: String, description: String): MergeRequestResult {
         if (title.isBlank()) {
@@ -106,7 +245,9 @@ class CreateMergeRequestUseCase(
             )
             MergeRequestResult.Created(created.webUrl)
         } catch (error: GitLabAuthenticationError) {
-            MergeRequestResult.Failure(error.message.orEmpty())
+            MergeRequestResult.Failure(withTokenSource(error.message.orEmpty()))
+        } catch (error: GitLabPermissionError) {
+            MergeRequestResult.Failure(withTokenSource(error.message.orEmpty()))
         } catch (error: GitLabNetworkError) {
             MergeRequestResult.Failure(error.message.orEmpty())
         } catch (error: GitLabError) {
@@ -119,5 +260,11 @@ class CreateMergeRequestUseCase(
     companion object {
         /** GitLab이 기본 브랜치를 알려주지 않을 때의 마지막 수단. */
         const val DEFAULT_TARGET: String = "main"
+
+        /** 프로젝트 설정에 저장된 기본 템플릿을 목록에서 부르는 이름. 파일 이름과 겹치지 않게 둔다. */
+        const val PROJECT_TEMPLATE: String = "프로젝트 기본"
+
+        const val DISABLED: String = "AI 초안이 꺼져 있습니다. 설정에서 켜세요."
+        const val FAILED: String = "AI 초안을 만들지 못했습니다."
     }
 }
