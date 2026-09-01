@@ -36,6 +36,7 @@ import io.github.gudwns1812.jiratask.ui.JiraTaskCommand
 import io.github.gudwns1812.jiratask.ui.JiraTaskNotifications
 import io.github.gudwns1812.jiratask.ui.JiraTaskSettings
 import io.github.gudwns1812.jiratask.ui.MergeRequestSettings
+import io.github.gudwns1812.jiratask.ui.OpenJiraTaskSettingsAction
 import io.github.gudwns1812.jiratask.ui.SettingsLookup
 import io.github.gudwns1812.jiratask.ui.applyAvailability
 import io.github.gudwns1812.jiratask.ui.commit.CommitIssueKeys
@@ -220,7 +221,12 @@ class CreateMergeRequestAction @JvmOverloads constructor(
         val workingDirectory = project.basePath?.let(::File) ?: return
 
         when (val ready = settings.forMergeRequest()) {
-            is SettingsLookup.Missing -> JiraTaskNotifications.warning(project, ready.message)
+            // 막힌 자리에서 바로 고치러 갈 수 있게 한다. 설정 화면에 이르는 다른 길이 사실상 없다.
+            is SettingsLookup.Missing -> JiraTaskNotifications.warning(
+                project,
+                ready.message,
+                OpenJiraTaskSettingsAction.notificationAction(project),
+            )
             is SettingsLookup.Ready -> prepare(project, workingDirectory, ready.value)
         }
     }

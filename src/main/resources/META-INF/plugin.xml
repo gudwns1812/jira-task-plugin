@@ -59,6 +59,11 @@
                     description="이슈를 찾아 제목과 설명을 확인하고 고칩니다"
                     icon="AllIcons.Actions.Search"/>
             <separator/>
+            <action id="JiraTask.OpenSettings"
+                    class="io.github.gudwns1812.jiratask.ui.OpenJiraTaskSettingsAction"
+                    text="Jira Task Settings"
+                    description="Jira 주소·프로젝트 키와 GitLab 주소·토큰을 설정합니다"
+                    icon="AllIcons.General.GearPlain"/>
             <action id="JiraTask.RunSetupWizard"
                     class="io.github.gudwns1812.jiratask.ui.RunSetupWizardAction"
                     text="Run Setup Wizard"
@@ -73,6 +78,7 @@
             <reference id="JiraTask.CreateMergeRequest"/>
             <reference id="JiraTask.Search"/>
             <separator/>
+            <reference id="JiraTask.OpenSettings"/>
             <reference id="JiraTask.RunSetupWizard"/>
         </group>
     </actions>
