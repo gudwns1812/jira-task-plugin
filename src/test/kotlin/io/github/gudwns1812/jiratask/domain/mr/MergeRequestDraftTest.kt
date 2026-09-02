@@ -73,6 +73,8 @@ class MergeRequestDraftTest {
 
     private fun summaryOf(key: String): String? = when (key) {
         "S15P11A108-257" -> "[AUTH-001 | FE] 회원가입 화면 구현"
+        "S15P11A108-301" -> "[INFRA | BE] CI/CD 파이프라인 구축"
+        "S15P11A108-302" -> "긴급 핫픽스"
         else -> null
     }
 
@@ -80,12 +82,38 @@ class MergeRequestDraftTest {
     fun `titles a single-issue merge request with that issue`() {
         val title = MergeRequestDraft.titleOf("feat/signup", listOf("S15P11A108-257"), ::summaryOf)
 
-        assertEquals("S15P11A108-257 [AUTH-001 | FE] 회원가입 화면 구현", title)
+        assertEquals("[AUTH] 회원가입 화면 구현", title)
     }
 
     @Test
-    fun `falls back to the key alone when the summary is unknown`() {
-        assertEquals("S15P11A108-999", MergeRequestDraft.titleOf("feat/x", listOf("S15P11A108-999"), ::summaryOf))
+    fun `keeps the issue key out of the title`() {
+        // 키는 본문 `### 연결된 작업`에 있다(RULE.md 5.3). 제목에까지 두면 읽을 자리만 좁아진다.
+        val title = MergeRequestDraft.titleOf("feat/signup", listOf("S15P11A108-257"), ::summaryOf)
+
+        assertTrue("제목에 작업 키가 없다", !title.contains("S15P11A108"))
+    }
+
+    @Test
+    fun `cuts the issue title down to its domain code`() {
+        // 일련번호와 담당 영역은 뗀다(RULE.md 1.3).
+        val title = MergeRequestDraft.titleOf("feat/pipeline", listOf("S15P11A108-301"), ::summaryOf)
+
+        assertEquals("[INFRA] CI/CD 파이프라인 구축", title)
+    }
+
+    @Test
+    fun `leaves an issue title that follows no such rule alone`() {
+        val title = MergeRequestDraft.titleOf("fix/hotfix", listOf("S15P11A108-302"), ::summaryOf)
+
+        assertEquals("긴급 핫픽스", title)
+    }
+
+    @Test
+    fun `falls back to the branch name when the summary is unknown`() {
+        // 키 하나만 적힌 제목은 읽을 말이 없다. 브랜치 이름이 그보다 낫다.
+        val title = MergeRequestDraft.titleOf("fix/token-refresh", listOf("S15P11A108-999"), ::summaryOf)
+
+        assertEquals("token refresh", title)
     }
 
     @Test
