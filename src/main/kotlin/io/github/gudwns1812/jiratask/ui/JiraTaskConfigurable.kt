@@ -58,7 +58,15 @@ class JiraTaskConfigurable @JvmOverloads constructor(
     private val gitLabTokenField = com.intellij.ui.components.JBPasswordField()
     private val problemLabel = JBLabel().apply { isVisible = false }
     private val connectionLabel = JBLabel()
-    private val aiEnabledBox = com.intellij.ui.components.JBCheckBox("MR 제목·본문을 AI에게 맡기기")
+    private val aiEnabledBox = com.intellij.ui.components.JBCheckBox("MR 제목·본문과 커밋 메시지를 AI에게 맡기기")
+
+    /**
+     * 커밋 초안에 변경 내용(diff)까지 보낼지.
+     *
+     * 커밋 창의 초안은 이것을 끄면 파일 경로만 보고 쓴다. MR 초안에는 영향이 없다 —
+     * 그쪽은 어떤 경우에도 파일 내용을 보내지 않는다.
+     */
+    private val aiSendDiffBox = com.intellij.ui.components.JBCheckBox("커밋 초안에 변경 내용(diff)까지 보내기")
     /**
      * 모델. 별칭은 늘 그 계열의 최신 모델을 가리키므로 버전을 박아 두는 것보다 낫다.
      *
@@ -127,6 +135,10 @@ class JiraTaskConfigurable @JvmOverloads constructor(
                     comment(PRIVACY_NOTICE)
                 }
 
+                row {
+                    cell(aiSendDiffBox)
+                }.rowComment(DIFF_NOTICE)
+
                 row("모델:") {
                     cell(aiModelBox).columns(COLUMNS_MEDIUM)
                 }.rowComment(
@@ -147,6 +159,8 @@ class JiraTaskConfigurable @JvmOverloads constructor(
         }
 
         reset()
+        // 테마 글꼴에 한글이 없으면 이 화면의 글자가 통째로 네모가 된다.
+        component.applyHangulFallback()
         return component
     }
 
@@ -281,6 +295,7 @@ class JiraTaskConfigurable @JvmOverloads constructor(
         aiEnabled = aiEnabledBox.isSelected,
         aiModel = aiModelValue(),
         aiExecutablePath = aiExecutablePathField.text,
+        aiSendDiff = aiSendDiffBox.isSelected,
     )
 
     private fun show(snapshot: SettingsSnapshot, problem: String?) {
@@ -295,6 +310,7 @@ class JiraTaskConfigurable @JvmOverloads constructor(
         aiEnabledBox.isSelected = snapshot.aiEnabled
         aiModelBox.selectedItem = snapshot.aiModel.ifEmpty { MODEL_DEFAULT }
         aiExecutablePathField.text = snapshot.aiExecutablePath
+        aiSendDiffBox.isSelected = snapshot.aiSendDiff
         problemLabel.text = problem.orEmpty()
         problemLabel.isVisible = problem != null
     }
@@ -308,7 +324,10 @@ class JiraTaskConfigurable @JvmOverloads constructor(
         const val TESTING: String = "확인 중…"
         const val MODEL_DEFAULT: String = "Claude Code 설정 따름"
         const val PRIVACY_NOTICE: String =
-            "브랜치 이름, 커밋 제목, 변경된 파일 경로가 Anthropic에 전송됩니다. 파일 내용은 보내지 않습니다."
+            "MR 초안은 브랜치 이름, 커밋 제목, 변경된 파일 경로만 보냅니다. 파일 내용은 보내지 않습니다."
+        const val DIFF_NOTICE: String =
+            "커밋 초안은 여기에 더해 커밋할 변경 내용(diff)을 보냅니다. " +
+                "끄면 파일 경로만 보고 쓰므로 메시지가 덜 정확해집니다."
         const val ADDRESS_CHANGED: String =
             "GitLab 주소가 바뀌었습니다. 토큰은 주소마다 따로 보관하므로 새 주소의 토큰을 다시 입력하세요."
     }

@@ -35,6 +35,9 @@ intellijPlatform {
 
         ideaVersion {
             sinceBuild = providers.gradleProperty("pluginSinceBuild")
+            // 상한을 두지 않는다. 기본값은 빌드에 쓴 플랫폼의 major(242.*)라, 팀원이 더 새 IDE를
+            // 쓰면 설치 자체가 거부된다 — 사내 플러그인에서는 그 쪽이 훨씬 잦은 사고다.
+            untilBuild = provider { null }
         }
     }
 

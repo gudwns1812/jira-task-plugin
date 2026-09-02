@@ -1,5 +1,6 @@
 package io.github.gudwns1812.jiratask.ui.task
 
+import io.github.gudwns1812.jiratask.ui.applyHangulFallbackToWindow
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.ValidationInfo
@@ -82,6 +83,8 @@ class StartTaskDialog(
         title = "Start Jira Task"
         setOKButtonText("작업 시작")
         init()
+        // 테마 글꼴에 한글이 없으면 이 창의 글자가 통째로 네모가 된다.
+        applyHangulFallbackToWindow()
 
         taskNumberField.document.addDocumentListener(object : DocumentAdapter() {
             override fun textChanged(event: DocumentEvent) = refreshState()

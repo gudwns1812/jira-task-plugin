@@ -2,14 +2,17 @@ package io.github.gudwns1812.jiratask.ui.commit
 
 import io.github.gudwns1812.jiratask.ui.task.TaskAnswer
 
-/** 커밋 메시지에서 이슈 키를 찾아낸다. RULE.md 5.2는 메시지가 작업 키로 시작하도록 정한다. */
+/** 커밋 메시지에서 이슈 키를 찾아낸다. 메시지는 `[<이슈 키>]`로 시작한다. */
 object CommitIssueKeys {
 
     private val ISSUE_KEY = Regex("""\b[A-Z][A-Z0-9_]*-\d+\b""")
 
+    /** 맨 앞의 이슈 키. 대괄호는 있어도 없어도 읽는다 — 예전에 쓰던 형태도 알아본다. */
+    private val LEADING_ISSUE_KEY = Regex("""^\[?([A-Z][A-Z0-9_]*-\d+)]?""")
+
     /** 맨 앞의 이슈 키. 없으면 null. */
     fun leading(message: String?): String? =
-        message?.trimStart()?.let { text -> ISSUE_KEY.find(text)?.takeIf { it.range.first == 0 }?.value }
+        message?.trimStart()?.let { text -> LEADING_ISSUE_KEY.find(text)?.groupValues?.get(1) }
 
     /** 메시지에 등장하는 모든 이슈 키(중복 제거, 등장 순서). */
     fun all(message: String?): List<String> =

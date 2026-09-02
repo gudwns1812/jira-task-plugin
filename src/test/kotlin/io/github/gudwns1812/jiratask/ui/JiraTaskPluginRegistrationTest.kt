@@ -12,6 +12,7 @@ import com.intellij.openapi.vcs.checkin.CheckinHandlerFactory
 import com.intellij.openapi.wm.StatusBarWidgetFactory
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import io.github.gudwns1812.jiratask.ui.commit.CommitWithJiraTaskAction
+import io.github.gudwns1812.jiratask.ui.commit.DraftCommitMessageAction
 import io.github.gudwns1812.jiratask.ui.commit.JiraTaskCheckinHandlerFactory
 import io.github.gudwns1812.jiratask.ui.commit.JiraTaskCommitMessageProvider
 import io.github.gudwns1812.jiratask.ui.mr.CreateMergeRequestAction
@@ -48,6 +49,27 @@ class JiraTaskPluginRegistrationTest : BasePlatformTestCase() {
         assertEquals("액션 6개와 구분선 1개", 6, children.count { it !is Separator })
         assertEquals(1, children.count { it is Separator })
         assertTrue(group.isPopup)
+    }
+
+    fun `test the commit message draft action sits by the commit message field`() {
+        val manager = ActionManager.getInstance()
+
+        val action = manager.getAction("JiraTask.DraftCommitMessage")
+        assertTrue("초안 액션이 등록되어 있어야 한다", action is DraftCommitMessageAction)
+
+        // IDE 커밋 창의 메시지 칸 옆 툴바다. 여기 붙지 않으면 커밋 창에서는 부를 방법이 없다.
+        val group = manager.getAction("Vcs.MessageActionGroup") as DefaultActionGroup
+        val texts = group.childActionsOrStubs.map { it.templatePresentation.text }
+        assertTrue("메시지 칸 툴바에 붙어야 한다: $texts", texts.contains("AI로 커밋 메시지 쓰기"))
+    }
+
+    fun `test the commit message draft action stays out of the Jira Task menu`() {
+        // 채울 메시지 칸이 없는 자리에서는 할 일이 없다. 메뉴 항목 수는 위 테스트가 고정한다.
+        val group = ActionManager.getInstance().getAction("JiraTask.Menu") as DefaultActionGroup
+
+        assertFalse(
+            group.childActionsOrStubs.any { it.templatePresentation.text == "AI로 커밋 메시지 쓰기" },
+        )
     }
 
     fun `test the removed actions are gone`() {

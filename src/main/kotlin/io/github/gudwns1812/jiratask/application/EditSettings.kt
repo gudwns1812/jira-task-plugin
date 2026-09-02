@@ -20,6 +20,8 @@ data class SettingsSnapshot(
     val aiEnabled: Boolean = false,
     val aiModel: String = "",
     val aiExecutablePath: String = "",
+    /** 커밋 초안에 변경 내용까지 보낼지. 기본은 켜짐이다(AiSettings.sendDiff). */
+    val aiSendDiff: Boolean = true,
 ) {
     companion object
 }
@@ -35,6 +37,7 @@ fun SettingsSnapshot.Companion.from(config: JiraTaskConfig): SettingsSnapshot = 
     aiEnabled = config.ai?.enabled ?: false,
     aiModel = config.ai?.model.orEmpty(),
     aiExecutablePath = config.ai?.executablePath.orEmpty(),
+    aiSendDiff = config.ai?.sendDiff ?: true,
 )
 
 /** 저장된 설정이 없거나 아직 읽지 못한 상태를 나타내는 빈 스냅샷. */
@@ -57,6 +60,8 @@ data class SettingsEdit(
     val aiEnabled: Boolean? = null,
     val aiModel: String = "",
     val aiExecutablePath: String = "",
+    /** [aiEnabled]와 같은 이유로 null을 둔다 — 체크박스에는 "비워 둠"이 없다. */
+    val aiSendDiff: Boolean? = null,
 ) {
 
     fun projectKeyOrNull(): String? = projectKey.trim().ifEmpty { null }
@@ -79,6 +84,7 @@ data class SettingsEdit(
         // 한 겹 깊이로 합쳐지므로(PolicyConfig.mergeWith) 이번에 채운 값만 실어도 나머지가 남는다.
         val ai = mutableMapOf<String, Any?>()
         aiEnabled?.let { ai["enabled"] = it }
+        aiSendDiff?.let { ai["sendDiff"] = it }
         aiModelOrNull()?.let { ai["model"] = it }
         aiExecutablePathOrNull()?.let { ai["executablePath"] = it }
         if (ai.isNotEmpty()) {
@@ -96,8 +102,9 @@ data class SettingsEdit(
         val aiEnabledChanged = aiEnabled?.let { it != snapshot.aiEnabled } ?: false
         val aiModelChanged = aiModelOrNull()?.let { it != snapshot.aiModel } ?: false
         val aiPathChanged = aiExecutablePathOrNull()?.let { it != snapshot.aiExecutablePath } ?: false
+        val aiSendDiffChanged = aiSendDiff?.let { it != snapshot.aiSendDiff } ?: false
         return projectKeyChanged || baseUrlChanged || gitLabChanged ||
-            aiEnabledChanged || aiModelChanged || aiPathChanged
+            aiEnabledChanged || aiModelChanged || aiPathChanged || aiSendDiffChanged
     }
 }
 

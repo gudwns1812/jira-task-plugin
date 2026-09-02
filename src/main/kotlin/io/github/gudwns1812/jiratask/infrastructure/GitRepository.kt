@@ -1,6 +1,7 @@
 package io.github.gudwns1812.jiratask.infrastructure
 
 import io.github.gudwns1812.jiratask.domain.commit.CommitRepositoryPort
+import io.github.gudwns1812.jiratask.domain.commit.PendingChanges
 import io.github.gudwns1812.jiratask.domain.commit.GitRepositoryError
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -180,6 +181,53 @@ class GitRepository(
     }
 
     /**
+     * 지금 커밋하려는 변경. 커밋 메시지 초안의 재료다.
+     *
+     * 스테이지된 것이 있으면 그것만 보고, 없으면 작업 트리를 본다 — **고친 파일과 새로 만든 파일
+     * 둘 다.** IDE 커밋 창은 스테이징 없이 고른 파일을 그대로 커밋하고 새 파일도 거기서 함께 고른다.
+     * `git diff`만 보면 새 파일이 통째로 빠져서, 커밋할 것이 있는데도 "변경이 없습니다"라고 말하게 되고
+     * 사용자는 IDE 흐름에 없는 `git add`를 강요당한다.
+     *
+     * 새 파일은 **경로만** 담긴다. `git diff`는 추적되지 않는 파일의 내용을 내지 않고, 그 내용을
+     * 굳이 따로 읽지도 않는다 — 보내는 것을 늘리는 결정은 이 메서드를 고치는 일로만 할 수 있어야 한다.
+     *
+     * **[includeDiff]가 false면 내용을 아예 읽지 않는다.** 설정에서 diff 전송을 껐다는 뜻이므로,
+     * 보내지 않을 것을 굳이 프로세스로 꺼내 오지 않는다. AI에게 무엇이 나가는지가 이 분기에 걸려 있다.
+     */
+    fun pendingChanges(includeDiff: Boolean = false): PendingChanges {
+        val staged = linesOf("diff", "--cached", "--name-only")
+        if (staged.isNotEmpty()) {
+            return PendingChanges(staged, diffOf(includeDiff, "--cached"), staged = true)
+        }
+
+        val modified = linesOf("diff", "--name-only", "HEAD")
+        val created = linesOf("ls-files", "--others", "--exclude-standard")
+        return PendingChanges(
+            files = (modified + created).distinct(),
+            diff = diffOf(includeDiff, "HEAD"),
+            staged = false,
+        )
+    }
+
+    private fun diffOf(includeDiff: Boolean, vararg range: String): String {
+        if (!includeDiff) {
+            return ""
+        }
+        val result = run(*QUOTE_PATH_OFF, "diff", "--no-color", *range) ?: return ""
+        return if (result.exitCode == 0) result.stdout else ""
+    }
+
+    private fun linesOf(vararg args: String): List<String> {
+        // 한글 파일 이름을 8진 이스케이프로 뱉지 않게 한다. 그렇게 나온 경로는 AI에게도,
+        // 사람에게도 읽히지 않는다.
+        val result = run(*QUOTE_PATH_OFF, *args) ?: return emptyList()
+        if (result.exitCode != 0) {
+            return emptyList()
+        }
+        return result.stdout.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.distinct().toList()
+    }
+
+    /**
      * 현재 브랜치가 원격에 올라가 있는가. **확인하지 못하면 null** — 올라가지 않은 것과 다르다.
      *
      * `ls-remote`는 네트워크가 끊겼거나 SSH 키가 없어도 실패한다. 그것을 "안 올렸다"로 읽으면
@@ -213,5 +261,8 @@ class GitRepository(
 
         /** GitLab이 MR 템플릿을 찾는 자리. */
         const val TEMPLATE_DIRECTORY = ".gitlab/merge_request_templates"
+
+        /** 경로를 8진 이스케이프로 바꾸지 말라는 옵션. 명령 앞에 붙인다. */
+        val QUOTE_PATH_OFF = arrayOf("-c", "core.quotepath=false")
     }
 }

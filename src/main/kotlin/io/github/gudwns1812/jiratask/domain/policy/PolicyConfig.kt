@@ -36,6 +36,14 @@ data class AiSettings(
     val model: String? = null,
     /** PATH에서 찾지 못할 때만 쓴다. */
     val executablePath: String? = null,
+    /**
+     * 커밋 메시지 초안에 변경 내용(diff)까지 보낼지.
+     *
+     * MR 초안은 커밋 제목이라는 요약이 이미 있어 경로만으로도 쓸 수 있지만, 커밋은 아직 만들지
+     * 않은 것이라 경로만 주면 모델이 지어낸다. 그래서 이 기능은 기본으로 켜 두되,
+     * **소스 코드가 밖으로 나가는 유일한 자리**이므로 끌 수 있게 남긴다.
+     */
+    val sendDiff: Boolean = true,
 )
 
 data class JiraTaskConfig(
@@ -84,12 +92,14 @@ private fun readAiSettings(obj: Map<*, *>, errors: MutableList<String>): AiSetti
         errors += "ai: 값 형식이 올바르지 않습니다."
         return null
     }
-    rejectUnknownKeys(raw, setOf("enabled", "model", "executablePath"), "ai", errors)
+    rejectUnknownKeys(raw, setOf("enabled", "model", "executablePath", "sendDiff"), "ai", errors)
 
     return AiSettings(
         enabled = readOptionalBoolean(raw, "enabled", "ai.enabled", errors) ?: false,
         model = readOptionalText(raw, "model", "ai.model", errors),
         executablePath = readOptionalText(raw, "executablePath", "ai.executablePath", errors),
+        // 예전 설정 파일에는 이 키가 없다. 없으면 기본값(켜짐)을 쓴다.
+        sendDiff = readOptionalBoolean(raw, "sendDiff", "ai.sendDiff", errors) ?: true,
     )
 }
 
@@ -116,7 +126,7 @@ fun JiraTaskConfig.toRawMap(): Map<String, Any?> {
 }
 
 private fun AiSettings.toRawMap(): Map<String, Any?> {
-    val result = mutableMapOf<String, Any?>("enabled" to enabled)
+    val result = mutableMapOf<String, Any?>("enabled" to enabled, "sendDiff" to sendDiff)
     model?.let { result["model"] = it }
     executablePath?.let { result["executablePath"] = it }
     return result

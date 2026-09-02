@@ -202,6 +202,10 @@ class EditSettingsTest {
             mapOf("ai" to mapOf("enabled" to false, "model" to "sonnet")),
             SettingsEdit("", "", aiEnabled = false, aiModel = " sonnet ").toConfigUpdate(),
         )
+        assertEquals(
+            mapOf("ai" to mapOf("enabled" to true, "sendDiff" to false)),
+            SettingsEdit("", "", aiEnabled = true, aiSendDiff = false).toConfigUpdate(),
+        )
     }
 
     @Test
@@ -212,6 +216,8 @@ class EditSettingsTest {
         assertTrue(SettingsEdit("", "", aiEnabled = true).changes(snapshot))
         assertTrue(SettingsEdit("", "", aiModel = "opus").changes(snapshot))
         assertFalse("빈 칸은 변경이 아니다", SettingsEdit("", "", aiModel = "  ").changes(snapshot))
+        assertTrue("diff를 끄는 것도 변경이다", SettingsEdit("", "", aiSendDiff = false).changes(snapshot))
+        assertFalse(SettingsEdit("", "", aiSendDiff = true).changes(snapshot))
     }
 
     @Test
@@ -221,6 +227,7 @@ class EditSettingsTest {
         assertEquals("", snapshot.projectKey)
         assertEquals("", snapshot.baseUrl)
         assertFalse("AI는 기본값이 꺼짐이다", snapshot.aiEnabled)
+        assertTrue("AI를 켰다면 커밋 초안은 변경 내용까지 본다", snapshot.aiSendDiff)
         assertEquals("", snapshot.aiModel)
     }
 

@@ -73,27 +73,76 @@ class MergeRequestDraftTest {
 
     private fun summaryOf(key: String): String? = when (key) {
         "S15P11A108-257" -> "[AUTH-001 | FE] 회원가입 화면 구현"
+        "S15P11A108-258" -> "[INFRA | BE] CI/CD 파이프라인 구축"
         else -> null
     }
 
     @Test
-    fun `titles a single-issue merge request with that issue`() {
+    fun `titles a single-issue merge request with that issue's own title`() {
         val title = MergeRequestDraft.titleOf("feat/signup", listOf("S15P11A108-257"), ::summaryOf)
 
-        assertEquals("S15P11A108-257 [AUTH-001 | FE] 회원가입 화면 구현", title)
+        // 이슈 키는 넣지 않는다 — Jira를 잇는 것은 본문의 키이고, 제목은 사람이 읽는 자리다.
+        // 기능 ID(AUTH-001)도 뺀 태그로 다시 붙인다.
+        assertEquals("[FE] 회원가입 화면 구현", title)
     }
 
     @Test
-    fun `falls back to the key alone when the summary is unknown`() {
-        assertEquals("S15P11A108-999", MergeRequestDraft.titleOf("feat/x", listOf("S15P11A108-999"), ::summaryOf))
+    fun `falls back to the branch when the summary is unknown`() {
+        assertEquals("x", MergeRequestDraft.titleOf("feat/x", listOf("S15P11A108-999"), ::summaryOf))
     }
 
     @Test
-    fun `titles a multi-issue merge request from the branch name`() {
-        // 브랜치 이름에는 이제 요약이 들어 있다(RULE.md 5.1).
-        val title = MergeRequestDraft.titleOf("feat/live-chat", listOf("A-1", "A-2"), ::summaryOf)
+    fun `keeps the area tag on a multi-issue merge request`() {
+        // 브랜치 이름에는 이제 요약이 들어 있다(RULE.md 5.1). 태그는 작업에서 가져온다.
+        val title = MergeRequestDraft.titleOf(
+            "feat/live-chat",
+            listOf("S15P11A108-258", "S15P11A108-257"),
+            ::summaryOf,
+        )
 
-        assertEquals("live chat", title)
+        assertEquals("[INFRA | BE] live chat", title)
+    }
+
+    @Test
+    fun `reads the tag out of a jira task title`() {
+        assertEquals("[INFRA | BE]", MergeRequestDraft.tagOf("[INFRA | BE] CI/CD 파이프라인 구축"))
+        assertEquals("[PLAN]", MergeRequestDraft.tagOf("  [PLAN] 서비스 목표 정의  "))
+        assertEquals("[DESIGN | FE]", MergeRequestDraft.tagOf("[DESIGN | FE] 와이어프레임 제작"))
+    }
+
+    @Test
+    fun `leaves the feature id out of the tag`() {
+        // AUTH-001은 Jira 안에서 스토리를 가리키는 번호다. MR 목록에서는 아무것도 알려주지 않는다.
+        assertEquals("[FE]", MergeRequestDraft.tagOf("[AUTH-001 | FE] 이메일 회원가입 API 구현"))
+        assertEquals("[BE]", MergeRequestDraft.tagOf("[S15P21A403-19 | BE] 방 입장 인증"))
+        // 영역이 안 적혔으면 번호만 떼고 갈래 이름은 남긴다.
+        assertEquals("[AUTH]", MergeRequestDraft.tagOf("[AUTH-001] 회원가입"))
+        assertNull("남길 이름이 아예 없으면 태그도 없다", MergeRequestDraft.tagOf("[ | ] 무엇"))
+    }
+
+    @Test
+    fun `has no tag to offer when the task title carries none`() {
+        // 태그는 읽어 오기만 한다. 잘못 붙은 영역은 아무도 고쳐 주지 않는다.
+        assertNull(MergeRequestDraft.tagOf("회원가입 화면 구현"))
+        assertNull(MergeRequestDraft.tagOf("[] 빈 태그"))
+        assertNull(MergeRequestDraft.tagOf("[닫히지 않은 태그"))
+        assertNull(MergeRequestDraft.tagOf(null))
+    }
+
+    @Test
+    fun `puts the tag in front and never twice`() {
+        assertEquals("[BE] 로그인 API 구현", MergeRequestDraft.withTag("[BE]", "로그인 API 구현"))
+        assertEquals(
+            "AI가 흉내 낸 태그는 걷어낸다",
+            "[BE] 로그인 API 구현",
+            MergeRequestDraft.withTag("[BE]", "[FE] 로그인 API 구현"),
+        )
+        assertEquals(
+            "AI가 붙인 이슈 키도 걷어낸다",
+            "[BE] 로그인 API 구현",
+            MergeRequestDraft.withTag("[BE]", "S15P11A108-257 로그인 API 구현"),
+        )
+        assertEquals("태그가 없으면 제목만 남는다", "로그인 API 구현", MergeRequestDraft.withTag(null, "[FE] 로그인 API 구현"))
     }
 
     @Test

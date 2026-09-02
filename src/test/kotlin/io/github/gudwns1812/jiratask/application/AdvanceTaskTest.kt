@@ -109,13 +109,18 @@ class AdvanceTaskTest {
     }
 
     @Test
-    fun `moves a finished task forward only if the caller asked`() {
-        // 유스케이스 자체는 완료 상태도 옮긴다. 되돌리지 않을 판단은 부르는 쪽이 한다(SprintTaskList).
+    fun `never moves a finished task back`() {
+        // 끝난 작업의 상태는 어떤 경우에도 바꾸지 않는다(RULE.md 4.3). 화면에서도 막지만
+        // 번호를 직접 친 경우에는 여기가 유일한 방벽이다.
         val transitioner = FakeTransitioner(
             issue = TODO_TASK.copy(statusName = "완료", statusCategory = JiraStatusCategory.DONE),
         )
 
-        assertTrue(advance(transitioner) is AdvanceTaskResult.Success)
+        val result = advance(transitioner)
+
+        assertEquals(AdvanceTaskResult.LeftAlone("S15P11A108-257", "완료"), result)
+        assertEquals("전환 목록조차 읽지 않는다", 0, transitioner.listedTransitions)
+        assertEquals("전환을 부르지 않는다", 0, transitioner.executed.size)
     }
 
     @Test

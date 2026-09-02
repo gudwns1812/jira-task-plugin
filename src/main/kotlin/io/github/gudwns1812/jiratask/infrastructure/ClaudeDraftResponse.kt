@@ -2,6 +2,8 @@ package io.github.gudwns1812.jiratask.infrastructure
 
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import io.github.gudwns1812.jiratask.domain.commit.CommitType
+import io.github.gudwns1812.jiratask.domain.commit.WrittenCommitMessage
 import io.github.gudwns1812.jiratask.domain.mr.WrittenDraft
 
 /**
@@ -51,6 +53,36 @@ object ClaudeDraftResponse {
         }
 
         return WrittenDraft(title = title, description = obj.text("description").orEmpty().trim())
+    }
+
+    /**
+     * 모델이 낸 글에서 커밋 타입과 한 줄 요약을 읽는다. MR 초안과 봉투는 같고 열쇠만 다르다.
+     *
+     * **첫 줄만, 마침표 없이 쓴다.** 지시해도 여러 줄을 내놓거나 본문을 덧붙여 오는 일이 있는데,
+     * 팀의 커밋 메시지는 `키 + type: 한 줄`이 전부라(RULE.md 5.2) 그 나머지는 여기서 떨군다.
+     *
+     * 접두사는 `type`에서 읽되, 요약 앞에 `refactor:`처럼 되풀이해 온 경우도 건져 낸다 —
+     * 실제로 자주 그렇게 온다. 어느 쪽에서도 아는 접두사를 찾지 못하면 **초안으로 읽지 않는다.**
+     * 아무거나 골라 붙이면 잘못된 분류가 커밋 기록에 그대로 남는다.
+     */
+    fun commit(text: String?): WrittenCommitMessage? {
+        val json = unwrapFence(text.orEmpty()).ifBlank { return null }
+        val obj = runCatching { JsonParser.parseString(json) }.getOrNull() as? JsonObject ?: return null
+
+        val line = obj.text("summary")?.lineSequence()?.firstOrNull()?.trim().orEmpty()
+        val repeated = CommitType.of(line.substringBefore(':', ""))
+        val type = CommitType.of(obj.text("type")) ?: repeated ?: return null
+
+        val summary = (if (repeated != null) line.substringAfter(':') else line)
+            .trim()
+            .trimEnd('.')
+            .trim()
+        if (summary.isEmpty()) {
+            // 요약 없는 커밋 메시지는 쓸 수 없다.
+            return null
+        }
+
+        return WrittenCommitMessage(type, summary)
     }
 
     /** ```json … ``` 로 감싸 온 경우 안쪽만 꺼낸다. 감싸지 않았으면 그대로 둔다. */

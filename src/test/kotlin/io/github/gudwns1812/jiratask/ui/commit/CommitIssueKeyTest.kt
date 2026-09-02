@@ -72,22 +72,22 @@ class CommitIssueKeyTest : BasePlatformTestCase() {
     fun `test builds the message from the cached task number`() {
         CurrentTaskState.getInstance(project).apply("257")
 
-        assertEquals("S15P11A108-257 ", issueKey().messageFor(project, null))
+        assertEquals("[S15P11A108-257] ", issueKey().messageFor(project, null))
         assertEmpty(announced)
     }
 
     fun `test keeps the description of the change list`() {
         CurrentTaskState.getInstance(project).apply("257")
 
-        assertEquals("S15P11A108-257 이메일 회원가입 폼 구현", issueKey().messageFor(project, "이메일 회원가입 폼 구현"))
+        assertEquals("[S15P11A108-257] 이메일 회원가입 폼 구현", issueKey().messageFor(project, "이메일 회원가입 폼 구현"))
     }
 
     fun `test replaces the issue key of another task in the description`() {
         CurrentTaskState.getInstance(project).apply("257")
 
         assertEquals(
-            "S15P11A108-257 이메일 회원가입 폼 구현",
-            issueKey().messageFor(project, "S15P11A108-100 이메일 회원가입 폼 구현"),
+            "[S15P11A108-257] 이메일 회원가입 폼 구현",
+            issueKey().messageFor(project, "[S15P11A108-100] 이메일 회원가입 폼 구현"),
         )
     }
 
@@ -102,7 +102,7 @@ class CommitIssueKeyTest : BasePlatformTestCase() {
 
         assertNull("이번 창의 메시지는 이미 만들어졌다", found.messageFor(project, null))
         assertEmpty("값이 있는데 경고를 띄우면 거짓말이 된다", announced)
-        assertEquals("다음 번에는 캐시에 값이 있다", "S15P11A108-257 ", found.messageFor(project, null))
+        assertEquals("다음 번에는 캐시에 값이 있다", "[S15P11A108-257] ", found.messageFor(project, null))
     }
 
     fun `test does not read git when the project key is missing`() {
@@ -119,7 +119,7 @@ class CommitIssueKeyTest : BasePlatformTestCase() {
 
         issueKey().fill(target, project)
 
-        assertEquals("S15P11A108-257 ", target.text())
+        assertEquals("[S15P11A108-257] ", target.text())
     }
 
     fun `test fills an open commit window after reading git`() {
@@ -127,7 +127,7 @@ class CommitIssueKeyTest : BasePlatformTestCase() {
 
         issueKey(refresh = { CurrentTaskState.getInstance(it).apply("257") }).fill(target, project)
 
-        assertEquals("S15P11A108-257 ", target.text())
+        assertEquals("[S15P11A108-257] ", target.text())
         assertEmpty(announced)
     }
 
@@ -137,12 +137,12 @@ class CommitIssueKeyTest : BasePlatformTestCase() {
 
         issueKey().fill(target, project)
 
-        assertEquals("S15P11A108-257 이메일 회원가입 폼 구현", target.text())
+        assertEquals("[S15P11A108-257] 이메일 회원가입 폼 구현", target.text())
     }
 
     fun `test leaves a message that already starts with the same issue key untouched`() {
         CurrentTaskState.getInstance(project).apply("257")
-        val target = RecordingTarget("S15P11A108-257 이메일 회원가입 폼 구현")
+        val target = RecordingTarget("[S15P11A108-257] 이메일 회원가입 폼 구현")
 
         issueKey().fill(target, project)
 
@@ -173,7 +173,7 @@ class CommitIssueKeyTest : BasePlatformTestCase() {
     fun `test calls the after-commit hook only once the commit succeeded`() {
         val checkedIn = mutableListOf<Project>()
         val handler = JiraTaskCheckinHandlerFactory(issueKey(), onCheckedIn = { checkedIn += it })
-            .handlerFor(project) { "S15P11A108-257 구현" }
+            .handlerFor(project) { "[S15P11A108-257] 구현" }
 
         handler.beforeCheckin()
         assertEmpty("커밋 전에는 부르지 않는다", checkedIn)

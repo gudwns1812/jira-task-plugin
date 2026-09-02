@@ -23,6 +23,7 @@ import com.intellij.ui.components.JBList
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.content.ContentFactory
 import com.intellij.ui.dsl.builder.panel
+import io.github.gudwns1812.jiratask.ui.applyHangulFallback
 import io.github.gudwns1812.jiratask.domain.jira.EmptySprintReason
 import io.github.gudwns1812.jiratask.ui.task.SprintTaskGroup
 import io.github.gudwns1812.jiratask.ui.task.SprintTaskList
@@ -187,6 +188,8 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
     init {
         toolbar = createToolbar().component
         setContent(JBScrollPane(body))
+        // 테마 글꼴에 한글이 없으면 이 패널의 글자가 통째로 네모가 된다.
+        body.applyHangulFallback()
         show(JiraTaskBoard.EMPTY)
         subscribe(parentDisposable)
     }

@@ -1,0 +1,1312 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jira Task 플러그인 사용 설명서</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@600;700&display=swap">
+<style>
+  :root {
+    --ground: #f2f4f8;
+    --surface: #ffffff;
+    --sunken: #e8ebf2;
+    --ink: #151922;
+    --ink-soft: #414a5c;
+    --muted: #6a7386;
+    --line: #d7dce6;
+    --line-strong: #b9c1d1;
+    --accent: #3348c6;
+    --accent-ink: #2438a8;
+    --accent-tint: #e6e9fa;
+    --verify: #0f6e60;
+    --verify-tint: #e0f0ec;
+    --warn: #8a5300;
+    --warn-tint: #fbf0dc;
+
+    --step: clamp(2rem, 4vw, 3rem);
+    --measure: 68ch;
+  }
+
+  :root:not([data-theme="light"]) {
+    color-scheme: light;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0e1116;
+      --surface: #161a22;
+      --sunken: #1c212b;
+      --ink: #e6eaf2;
+      --ink-soft: #c2c9d8;
+      --muted: #8b95a8;
+      --line: #262c38;
+      --line-strong: #39414f;
+      --accent: #93a6ff;
+      --accent-ink: #b3c0ff;
+      --accent-tint: #1d2440;
+      --verify: #57c9b3;
+      --verify-tint: #12302c;
+      --warn: #e0a94b;
+      --warn-tint: #33270f;
+      color-scheme: dark;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #0e1116;
+    --surface: #161a22;
+    --sunken: #1c212b;
+    --ink: #e6eaf2;
+    --ink-soft: #c2c9d8;
+    --muted: #8b95a8;
+    --line: #262c38;
+    --line-strong: #39414f;
+    --accent: #93a6ff;
+    --accent-ink: #b3c0ff;
+    --accent-tint: #1d2440;
+    --verify: #57c9b3;
+    --verify-tint: #12302c;
+    --warn: #e0a94b;
+    --warn-tint: #33270f;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Sans KR", system-ui, "Malgun Gothic", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+    letter-spacing: -0.003em;
+  }
+
+  code, kbd, .mono { font-family: "IBM Plex Mono", ui-monospace, Consolas, monospace; }
+
+  h1, h2, h3 {
+    font-family: "Noto Serif KR", "Nanum Myeongjo", serif;
+    font-weight: 600;
+    line-height: 1.35;
+    text-wrap: balance;
+    margin: 0;
+  }
+
+  a { color: var(--accent-ink); }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+
+  /* ---------- 뼈대 ---------- */
+
+  .shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 clamp(1rem, 4vw, 3rem);
+  }
+
+  @media (min-width: 1000px) {
+    .shell {
+      grid-template-columns: 15.5rem minmax(0, 1fr);
+      gap: clamp(2rem, 5vw, 4.5rem);
+      align-items: start;
+    }
+  }
+
+  /* ---------- 표지 ---------- */
+
+  .cover {
+    grid-column: 1 / -1;
+    padding: clamp(3rem, 8vw, 6rem) 0 clamp(2rem, 4vw, 3rem);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .cover__eyebrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.75rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    margin: 0 0 1rem;
+  }
+
+  .cover h1 {
+    font-size: clamp(2.1rem, 5.5vw, 3.4rem);
+    letter-spacing: -0.02em;
+    max-width: 20ch;
+  }
+
+  .cover__lead {
+    max-width: var(--measure);
+    margin: 1.25rem 0 0;
+    color: var(--ink-soft);
+    font-size: 1.05rem;
+  }
+
+  .cover__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 2rem;
+    margin-top: 2rem;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+
+  .cover__meta b { color: var(--ink-soft); font-weight: 500; }
+
+  /* ---------- 색인 ---------- */
+
+  .rail {
+    position: sticky;
+    top: 0;
+    align-self: start;
+    padding: 2.5rem 0 3rem;
+    max-height: 100vh;
+    overflow-y: auto;
+  }
+
+  @media (max-width: 999px) {
+    .rail {
+      position: static;
+      max-height: none;
+      border-bottom: 1px solid var(--line);
+    }
+  }
+
+  .rail h2 {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.7rem;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 0.75rem;
+  }
+
+  .rail ol { list-style: none; margin: 0 0 1.75rem; padding: 0; }
+
+  .rail li { margin: 0; }
+
+  .rail a {
+    display: grid;
+    grid-template-columns: 1.9rem 1fr;
+    gap: 0.4rem;
+    padding: 0.18rem 0;
+    color: var(--ink-soft);
+    text-decoration: none;
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+
+  .rail a:hover { color: var(--accent-ink); }
+
+  .rail a span:first-child {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.75rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .progress {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    padding: 0.85rem 0.95rem;
+    font-size: 0.8rem;
+    color: var(--ink-soft);
+  }
+
+  .progress__count {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 1.35rem;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+    display: block;
+    line-height: 1.2;
+  }
+
+  .progress__bar {
+    height: 4px;
+    background: var(--sunken);
+    margin: 0.6rem 0;
+  }
+
+  .progress__fill {
+    height: 100%;
+    width: 0;
+    background: var(--accent);
+    transition: width 0.4s ease;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .progress__fill { transition: none; }
+  }
+
+  /* ---------- 본문 ---------- */
+
+  .doc { padding: 2.5rem 0 6rem; min-width: 0; }
+
+  .phase { margin-bottom: 3.5rem; }
+
+  .phase__head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.9rem;
+    padding-bottom: 0.7rem;
+    margin-bottom: 2rem;
+    border-bottom: 2px solid var(--ink);
+  }
+
+  .phase__num {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.8rem;
+    color: var(--accent-ink);
+    letter-spacing: 0.1em;
+  }
+
+  .phase__head h2 { font-size: clamp(1.35rem, 3vw, 1.7rem); }
+
+  .step {
+    max-width: 56rem;
+    padding-bottom: var(--step);
+    margin-bottom: var(--step);
+    border-bottom: 1px solid var(--line);
+  }
+
+  /* 글은 읽기 좋은 폭으로 묶고, 캡처·표·예시만 넓게 쓴다. */
+  .step__body > p,
+  .step__body > ul,
+  .step__body > ol,
+  .step__where,
+  .note { max-width: var(--measure); }
+
+  .phase .step:last-child { border-bottom: 0; margin-bottom: 0; padding-bottom: 1rem; }
+
+  .step__head { display: flex; gap: 0.9rem; align-items: baseline; }
+
+  .step__num {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.9rem;
+    color: var(--accent-ink);
+    font-variant-numeric: tabular-nums;
+    padding-top: 0.15rem;
+  }
+
+  .step h3 { font-size: 1.2rem; }
+
+  .step__where {
+    margin: 0.5rem 0 0 2.4rem;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+
+  .step__body { margin-left: 2.4rem; }
+
+  @media (max-width: 640px) {
+    .step__where, .step__body { margin-left: 0; }
+  }
+
+  .step__body > p { margin: 1rem 0; color: var(--ink-soft); }
+
+  .step__body ol, .step__body ul { margin: 1rem 0; padding-left: 1.25rem; }
+
+  .step__body li { margin: 0.35rem 0; }
+
+  .step__body li::marker { color: var(--muted); }
+
+  code {
+    background: var(--sunken);
+    padding: 0.1em 0.38em;
+    font-size: 0.86em;
+    border-radius: 2px;
+    word-break: break-word;
+  }
+
+  kbd {
+    background: var(--surface);
+    border: 1px solid var(--line-strong);
+    border-bottom-width: 2px;
+    border-radius: 3px;
+    padding: 0.05em 0.4em;
+    font-size: 0.8em;
+    white-space: nowrap;
+  }
+
+  /* ---------- 캡처 슬롯 ---------- */
+
+  figure.shot { margin: 1.5rem 0; }
+
+  .shot__frame {
+    position: relative;
+    border: 1px solid var(--line-strong);
+    background: var(--surface);
+    overflow: hidden;
+  }
+
+  .shot img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  .shot__slot {
+    display: none;
+    aspect-ratio: 16 / 9;
+    place-content: center;
+    text-align: center;
+    padding: 1.5rem;
+    background:
+      repeating-linear-gradient(135deg, transparent 0 11px, var(--sunken) 11px 12px);
+    color: var(--muted);
+  }
+
+  .shot.is-empty .shot__slot { display: grid; }
+  .shot.is-empty .shot__frame { border-style: dashed; }
+  .shot.is-empty img { display: none; }
+
+  .shot__id {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 2rem;
+    color: var(--line-strong);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .shot__need {
+    margin: 0.6rem 0 0;
+    font-size: 0.85rem;
+    color: var(--ink-soft);
+    max-width: 46ch;
+    margin-inline: auto;
+  }
+
+  .shot__cmd {
+    margin-top: 0.9rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.78rem;
+    background: var(--sunken);
+    border: 1px solid var(--line);
+    color: var(--ink-soft);
+    padding: 0.3rem 0.55rem;
+    cursor: pointer;
+  }
+
+  .shot__cmd:hover { border-color: var(--accent); color: var(--accent-ink); }
+
+  /* ---------- 표시 ---------- */
+
+  .note {
+    margin: 1.25rem 0;
+    padding: 0.85rem 1rem;
+    border-left: 3px solid var(--line-strong);
+    background: var(--surface);
+    font-size: 0.9rem;
+    color: var(--ink-soft);
+  }
+
+  .note--check { border-left-color: var(--verify); background: var(--verify-tint); }
+  .note--warn { border-left-color: var(--warn); background: var(--warn-tint); }
+
+  .note__label {
+    display: block;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 0.3rem;
+  }
+
+  .note--check .note__label { color: var(--verify); }
+  .note--warn .note__label { color: var(--warn); }
+  .note--plain .note__label { color: var(--muted); }
+
+  .note p { margin: 0.3rem 0; }
+
+  .sample {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.85rem;
+    background: var(--sunken);
+    border-left: 3px solid var(--accent);
+    padding: 0.7rem 0.9rem;
+    margin: 1.1rem 0;
+    overflow-x: auto;
+    white-space: pre;
+    color: var(--ink);
+  }
+
+  .table-wrap { overflow-x: auto; margin: 1.25rem 0; }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 0.875rem;
+  }
+
+  th, td {
+    text-align: left;
+    vertical-align: top;
+    padding: 0.6rem 0.8rem 0.6rem 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  th {
+    font-weight: 500;
+    color: var(--muted);
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border-bottom-color: var(--line-strong);
+    white-space: nowrap;
+  }
+
+  td code { font-size: 0.82em; }
+
+  /* ---------- 인쇄 ---------- */
+
+  @media print {
+    body { background: #fff; color: #000; font-size: 11pt; }
+    .rail, .shot__cmd { display: none; }
+    .shell { display: block; max-width: none; padding: 0; }
+    .step, .phase { break-inside: avoid; }
+    figure.shot { break-inside: avoid; }
+    /* 한 장짜리 캡처가 페이지를 넘겨 잘리지 않게 한다. */
+    .shot img { max-height: 14cm; object-fit: contain; }
+    a { color: #000; text-decoration: none; }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <header class="cover">
+    <p class="cover__eyebrow">IntelliJ Plugin · 사용 설명서</p>
+    <h1>Jira Task 플러그인 사용 설명서</h1>
+    <p class="cover__lead">
+      설치부터 MR까지, 실제로 하는 순서 그대로 따라가는 안내서입니다.
+      각 단계에 그 화면을 함께 실었습니다.
+    </p>
+    <div class="cover__meta">
+      <span><b>대상</b> 팀에 새로 합류한 개발자</span>
+      <span><b>필요한 것</b> IntelliJ IDEA 2024.2 이상</span>
+      <span><b>커밋 규칙</b> RULE.md 5.2</span>
+    </div>
+  </header>
+
+  <nav class="rail" aria-label="단계 색인">
+    <h2>준비</h2>
+    <ol>
+      <li><a href="#s01"><span>01</span><span>준비물 확인</span></a></li>
+      <li><a href="#s02"><span>02</span><span>플러그인 설치</span></a></li>
+    </ol>
+    <h2>설정</h2>
+    <ol>
+      <li><a href="#s03"><span>03</span><span>설정 마법사</span></a></li>
+      <li><a href="#s04"><span>04</span><span>GitLab 연결</span></a></li>
+      <li><a href="#s05"><span>05</span><span>AI 초안 켜기</span></a></li>
+    </ol>
+    <h2>작업 시작</h2>
+    <ol>
+      <li><a href="#s06"><span>06</span><span>작업 고르기</span></a></li>
+      <li><a href="#s07"><span>07</span><span>상태 표시줄</span></a></li>
+      <li><a href="#s08"><span>08</span><span>툴 윈도우</span></a></li>
+    </ol>
+    <h2>커밋</h2>
+    <ol>
+      <li><a href="#s09"><span>09</span><span>이슈 키 자동 접두</span></a></li>
+      <li><a href="#s10"><span>10</span><span>AI로 메시지 쓰기</span></a></li>
+      <li><a href="#s11"><span>11</span><span>커밋 전 확인</span></a></li>
+      <li><a href="#s12"><span>12</span><span>플러그인 커밋 창</span></a></li>
+      <li><a href="#s13"><span>13</span><span>AI가 거절할 때</span></a></li>
+    </ol>
+    <h2>MR</h2>
+    <ol>
+      <li><a href="#s14"><span>14</span><span>MR 만들기</span></a></li>
+    </ol>
+    <h2>그 밖</h2>
+    <ol>
+      <li><a href="#s15"><span>15</span><span>이슈 검색·수정</span></a></li>
+      <li><a href="#s16"><span>16</span><span>이슈 키로 이동</span></a></li>
+      <li><a href="#a1"><span>A</span><span>AI에게 나가는 것</span></a></li>
+      <li><a href="#a2"><span>B</span><span>문제 해결</span></a></li>
+      <li><a href="#a3"><span>C</span><span>캡처하는 법</span></a></li>
+    </ol>
+
+    <div class="progress">
+      <span class="progress__count"><span id="filled">0</span>/<span id="total">0</span></span>
+      캡처 채움
+      <div class="progress__bar"><div class="progress__fill" id="fill"></div></div>
+      <span id="progressHint">비어 있는 자리는 본문에서 점선으로 보입니다.</span>
+    </div>
+  </nav>
+
+  <main class="doc">
+
+    <!-- ================= 준비 ================= -->
+    <section class="phase">
+      <div class="phase__head">
+        <span class="phase__num">PHASE 0</span>
+        <h2>준비</h2>
+      </div>
+
+      <article class="step" id="s01">
+        <div class="step__head">
+          <span class="step__num">01</span>
+          <h3>준비물 확인</h3>
+        </div>
+        <p class="step__where">터미널</p>
+        <div class="step__body">
+          <p>시작 전에 확인할 것은 셋입니다.</p>
+          <ul>
+            <li>IntelliJ IDEA 2024.2 이상</li>
+            <li><code>git</code> 명령이 PATH에 있을 것</li>
+            <li>Claude Code CLI 설치 + 로그인 — AI로 커밋 메시지·MR 초안을 쓸 때만 필요합니다</li>
+          </ul>
+          <div class="sample">claude --version
+claude /login   # 로그인하지 않았다면</div>
+          <figure class="shot" data-slot="01">
+            <div class="shot__frame">
+              <img src="images/01.png" alt="claude --version 실행 결과">
+              <div class="shot__slot">
+                <div>
+                  <div class="shot__id">01</div>
+                  <p class="shot__need">터미널에서 <code>claude --version</code> 이 버전을 답하는 화면</p>
+                  <button class="shot__cmd" type="button" data-cmd=".\capture.ps1 1">.\capture.ps1 1 <span aria-hidden="true">⧉</span></button>
+                </div>
+              </div>
+            </div>
+          </figure>
+          <div class="note note--plain">
+            <span class="note__label">요금</span>
+            <p>API 키를 넣는 칸은 없습니다. 이미 로그인해 둔 Claude Code를 그대로 쓰므로 Pro/Max 구독으로 동작합니다.</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="step" id="s02">
+        <div class="step__head">
+          <span class="step__num">02</span>
+          <h3>플러그인 설치</h3>
+        </div>
+        <p class="step__where">Settings | Plugins</p>
+        <div class="step__body">
+          <p>팀에서 받은 <code>jira-task-plugin-&lt;버전&gt;.zip</code> 파일을 그대로 설치합니다.</p>
+          <ol>
+            <li><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>S</kbd> → <b>Plugins</b></li>
+            <li>톱니바퀴 ⚙ → <b>Install Plugin from Disk…</b> → 받은 zip 선택</li>
+            <li><b>Restart IDE</b> 로 다시 시작합니다.</li>
+          </ol>
+          <figure class="shot" data-slot="02">
+            <div class="shot__frame">
+              <img src="images/02.png" alt="Install Plugin from Disk 메뉴">
+              <div class="shot__slot">
+                <div>
+                  <div class="shot__id">02</div>
+                  <p class="shot__need">Settings &gt; Plugins &gt; 톱니바퀴 &gt; Install Plugin from Disk 메뉴</p>
+                  <button class="shot__cmd" type="button" data-cmd=".\capture.ps1 2">.\capture.ps1 2 <span aria-hidden="true">⧉</span></button>
+                </div>
+              </div>
+            </div>
+          </figure>
+          <div class="note note--check">
+            <span class="note__label">확인</span>
+            <p>다시 시작한 뒤 <code>Tools &gt; Jira Task</code> 메뉴가 보이면 설치된 것입니다.
+              오른쪽 사이드바에도 <b>Jira Task</b> 툴 윈도우가 생깁니다.</p>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <!-- ================= 설정 ================= -->
+    <section class="phase">
+      <div class="phase__head">
+        <span class="phase__num">PHASE 1</span>
+        <h2>설정</h2>
+      </div>
+
+      <article class="step" id="s03">
+        <div class="step__head">
+          <span class="step__num">03</span>
+          <h3>설정 마법사로 Jira 연결</h3>
+        </div>
+        <p class="step__where">Tools &gt; Jira Task &gt; Run Setup Wizard</p>
+        <div class="step__body">
+          <p>설정이 없으면 IDE를 켠 직후 알림으로 안내합니다. 알림을 놓쳤다면 메뉴에서 직접 엽니다.</p>
+          <ol>
+            <li>Jira 주소 · 이메일 · API 토큰을 넣습니다. 토큰은
+              <a href="https://id.atlassian.com/manage-profile/security/api-tokens">Atlassian 계정 화면</a>에서 만듭니다.</li>
+            <li>프로젝트와 이슈 유형(스토리·작업·에픽)을 고릅니다.</li>
+            <li>마지막 확인 화면에서 저장합니다.</li>
+          </ol>
+          <figure class="shot" data-slot="03">
+            <div class="shot__frame">
+              <img src="images/03.png" alt="Tools > Jira Task 메뉴">
+              <div class="shot__slot">
+                <div>
+                  <div class="shot__id">03</div>
+                  <p class="shot__need">Tools &gt; Jira Task 메뉴가 펼쳐진 화면(항목 6개)</p>
+                  <button class="shot__cmd" type="button" data-cmd=".\capture.ps1 3">.\capture.ps1 3 <span aria-hidden="true">⧉</span></button>
+                </div>
+              </div>
+            </div>
+          </figure>
+          <figure class="shot" data-slot="04">
+            <div class="shot__frame">
+              <img src="images/04.png" alt="Jira 연결 정보 창">
+              <div class="shot__slot">
+                <div>
+                  <div class="shot__id">04</div>
+                  <p class="shot__need">설정 마법사 1단계 — <b>Jira 연결 정보</b> 창(주소·이메일·토큰)</p>
+                  <button class="shot__cmd" type="button" data-cmd=".\capture.ps1 4 -Window">.\capture.ps1 4 -Window <span aria-hidden="true">⧉</span></button>
+                </div>
+              </div>
+            </div>
+          </figure>
+          <figure class="shot" data-slot="05">
+            <div class="shot__frame">
+              <img src="images/05.png" alt="설정 내용 확인 창">
+              <div class="shot__slot">
+                <div>
+                  <div class="shot__id">05</div>
+                  <p class="shot__need">설정 마법사 마지막 — <b>설정 내용 확인</b> 창</p>
+                  <button class="shot__cmd" type="button" data-cmd=".\capture.ps1 5 -Window">.\capture.ps1 5 -Window <span aria-hidden="true">⧉</span></button>
+                </div>
+              </div>
+            </div>
+          </figure>
+          <div class="note note--warn">
+            <span class="note__label">주의</span>
+            <p>토큰은 IDE 비밀번호 저장소에만 저장되고 설정 화면에 다시 표시되지 않습니다.
+              한 번 넣으면 다시 넣을 일은 없습니다.</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="step" id="s04">
+        <div class="step__head">
+          <span class="step__num">04</span>
+          <h3>GitLab 연결</h3>
+        </div>
+        <p class="step__where">Settings | Tools | Jira Task</p>
+        <div class="step__body">
+          <p>MR을 만들려면 GitLab 주소와 액세스 토큰이 필요합니다. 토큰에는 <code>api</code> 스코프가
+            있어야 합니다 — <code>read_api</code>로는 조회만 되고 생성에서 막힙니다.</p>
+          <ol>
+            <li><b>GitLab 주소</b>와 <b>액세스 토큰</b>을 넣습니다.</li>
+            <li><b>연결 테스트</b>를 눌러 통하는지 그 자리에서 확인합니다.</li>
+            <li><kbd>Apply</kbd> 로 저장합니다. 토큰 칸은 저장 후 비워집니다.</li>
+          </ol>
+          <figure class="shot" data-slot="06">
+            <div class="shot__frame">
+              <img src="images/06.png" alt="Jira Task 설정 화면">
+              <div class="shot__slot">
+                <div>
+                  <div class="shot__id">06</div>
+                  <p class="shot__need">Settings | Tools | Jira Task 설정 화면 전체</p>
+                  <button class="shot__cmd" type="button" data-cmd=".\capture.ps1 6">.\capture.ps1 6 <span aria-hidden="true">⧉</span></button>
+                </div>
+              </div>
+            </div>
+          </figure>
+          <figure class="shot" data-slot="07">
+            <div class="shot__frame">
+              <img src="images/07.png" alt="GitLab 연결 테스트 결과">
+              <div class="shot__slot">
+                <div>
+                  <div class="shot__id">07</div>
+                  <p class="shot__need">연결 테스트를 눌러 성공 문구가 뜬 상태</p>
+                  <button class="shot__cmd" type="button" data-cmd=".\capture.ps1 7">.\capture.ps1 7 <span aria-hidden="true">⧉</span></button>
+                </div>
+              </div>
+            </div>
+          </figure>
+          <div class="note note--plain">
+            <span class="note__label">토큰 우선순위</span>
+            <p>GitLab 주소를 바꾸면 토큰을 다시 넣어야 합니다. 토큰은 주소마다 따로 보관합니다.</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="step" id="s05">
+        <div class="step__head">
+          <span class="step__num">05</span>
+          <h3>AI 초안 켜기</h3>
+        </div>
+        <p class="step__where">Settings | Tools | Jira Task → AI 초안 (Claude Code)</p>
+        <div class="step__body">
+          <p><b>기본값은 꺼짐</b>입니다. 켜야 커밋 메시지와 MR 초안을 AI가 씁니다.</p>
+          <ul>
+            <li><b>MR 제목·본문과 커밋 메시지를 AI에게 맡기기</b> — 이 기능 전체의 스위치</li>
+            <li><b>커밋 초안에 변경 내용(diff)까지 보내기</b> — 켜져 있음이 기본. 자세한 내용은 <a href="#a1">부록 A</a></li>
+            <li><b>모델</b> — 비워 두면 Claude Code에 설정된 모델을 그대로 씁니다</li>
+            <li><b>실행 파일 경로</b> — 비워 두면 PATH에서 찾습니다. Windows에서는 <code>claude.cmd</code>를 씁니다</li>
+          </ul>
+          <figure class="shot" data-slot="08">
+            <div class="shot__frame">
+              <img src="images/08.png" alt="AI 초안 설정 그룹">
+              <div class="shot__slot">
+                <div>
+                  <div class="shot__id">08</div>
+                  <p class="shot__need">AI 초안 (Claude Code) 그룹 — 체크박스 2개와 모델·경로 칸</p>
+                  <button class="shot__cmd" type="button" data-cmd=".\capture.ps1 8">.\capture.ps1 8 <span aria-hidden="true">⧉</span></button>
+                </div>
+              </div>
+            </div>
+          </figure>
+        </div>
+      </article>
+    </section>
+
+    <!-- ================= 작업 시작 ================= -->
+    <section class="phase">
+      <div class="phase__head">
+        <span class="phase__num">PHASE 2</span>
+        <h2>작업 시작</h2>
+      </div>
+
+      <article class="step" id="s06">
+        <div class="step__head">
+          <span class="step__num">06</span>
+          <h3>오늘 할 작업 고르기</h3>
+        </div>
+        <p class="step__where">Tools &gt; Jira Task &gt; Start Jira Task</p>
+        <div class="step__body">
+          <p>현재 스프린트의 작업을 목록에서 고릅니다. 고른 번호는 <b>저장소별로</b> 기억되므로
+            팀원과 섞이지 않고, 커밋할 때마다 이 번호로 이슈 키가 만들어집니다.</p>
+          <ol>
+            <li>목록에서 작업을 고르거나, 목록을 못 읽었으면 <b>작업 번호</b>를 직접 칩니다.</li>
+            <li><b>작업 시작</b>을 누릅니다.</li>
+          </ol>
+          <figure class="shot" data-slot="09">
+            <div class="shot__frame">
+              <img src="images/09.png" alt="Start Jira Task 창">
+              <div class="shot__slot">
+                <div>
+                  <div class="shot__id">09</div>
+                  <p class="shot__need">Start Jira Task 창 — 현재 스프린트 작업 목록</p>
+                  <button class="shot__cmd" type="button" data-cmd=".\capture.ps1 9 -Window">.\capture.ps1 9 -Window <span aria-hidden="true">⧉</span></button>
+                </div>
+              </div>
+            </div>
+          </figure>
+          <div class="note note--plain">
+            <span class="note__label">브랜치</span>
+            <p>브랜치 이름에는 규칙이 없습니다. 브랜치는 평소처럼 만들고, Jira와의 연결은
+              커밋 메시지의 이슈 키가 담당합니다.</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="step" id="s07">
+        <div class="step__head">
+          <span class="step__num">07</span>
+          <h3>상태 표시줄에서 현재 작업 보기</h3>
+        </div>
+        <p class="step__where">IDE 오른쪽 아래 상태 표시줄</p>
+        <div class="step__body">
+          <p>지금 어떤 작업에 커밋하고 있는지 항상 보입니다. 눌러서 바로 다른 작업으로 바꿀 수도 있습니다.</p>
+          <figure class="shot" data-slot="10">
+            <div class="shot__frame">
+              <img src="images/10.png" alt="현재 작업 상태 표시줄 위젯">
+              <div class="shot__slot">
+                <div>
+                  <div class="shot__id">10</div>
+                  <p class="shot__need">상태 표시줄의 현재 작업 위젯(가까이 확대해서)</p>
+                  <button class="shot__cmd" type="button" data-cmd=".\capture.ps1 10">.\capture.ps1 10 <span aria-hidden="true">⧉</span></button>
+                </div>
+              </div>
+            </div>
+          </figure>
+        </div>
+      </article>
+
+      <article class="step" id="s08">
+        <div class="step__head">
+          <span class="step__num">08</span>
+          <h3>툴 윈도우로 한눈에 보기</h3>
+        </div>
+        <p class="step__where">오른쪽 사이드바 &gt; Jira Task</p>
+        <div class="step__body">
+          <p>현재 작업, 현재 스프린트 목록, 설정 요약이 한 화면에 있습니다. 스프린트 목록에서 작업을
+            두 번 클릭하면 그 작업으로 바꿉니다. Jira에서 바꾼 내용은 <b>새로 고침</b>을 눌러야 보입니다.</p>
+          <figure class="shot" data-slot="11">
+            <div class="shot__frame">
+              <img src="images/11.png" alt="Jira Task 툴 윈도우">
+              <div class="shot__slot">
+                <div>
+                  <div class="shot__id">11</div>
+                  <p class="shot__need">Jira Task 툴 윈도우 — 현재 작업 / 현재 스프린트 / 설정 요약</p>
+                  <button class="shot__cmd" type="button" data-cmd=".\capture.ps1 11">.\capture.ps1 11 <span aria-hidden="true">⧉</span></button>
+                </div>
+              </div>
+            </div>
+          </figure>
+        </div>
+      </article>
+    </section>
+
+    <!-- ================= 커밋 ================= -->
+    <section class="phase">
+      <div class="phase__head">
+        <span class="phase__num">PHASE 3</span>
+        <h2>커밋</h2>
+      </div>
+
+      <article class="step" id="s09">
+        <div class="step__head">
+          <span class="step__num">09</span>
+          <h3>이슈 키는 저절로 붙는다</h3>
+        </div>
+        <p class="step__where">IDE 커밋 창 (<kbd>Ctrl</kbd>+<kbd>K</kbd>)</p>
+        <div class="step__body">
+          <p>커밋 창을 열면 메시지 칸이 이미 이슈 키로 시작합니다. 직접 칠 필요도, 외울 필요도 없습니다.
+            키가 없는 커밋은 Jira가 보지 못합니다.</p>
+          <div class="sample">[S15P11A601-152] </div>
+          <figure class="shot" data-slot="12">
+            <div class="shot__frame">
+              <img src="images/12.png" alt="이슈 키가 붙은 커밋 메시지 칸">
+              <div class="shot__slot">
+                <div>
+                  <div class="shot__id">12</div>
+                  <p class="shot__need">커밋 창을 연 순간, 메시지 칸에 이슈 키가 이미 붙어 있는 모습</p>
+                  <button class="shot__cmd" type="button" data-cmd=".\capture.ps1 12">.\capture.ps1 12 <span aria-hidden="true">⧉</span></button>
+                </div>
+              </div>
+            </div>
+          </figure>
+        </div>
+      </article>
+
+      <article class="step" id="s10">
+        <div class="step__head">
+          <span class="step__num">10</span>
+          <h3>AI로 커밋 메시지 쓰기</h3>
+        </div>
+        <p class="step__where">커밋 메시지 칸 옆 툴바 → <b>AI로 커밋 메시지 쓰기</b></p>
+        <div class="step__body">
+          <p>커밋할 변경을 읽어 제목 한 줄을 만들어 넣습니다. 이슈 키는 그대로 두고 그 뒤만 채웁니다.</p>
+          <ol>
+            <li>파일을 고칩니다. 저장하지 않아도, <code>git add</code> 하지 않아도 됩니다.</li>
+            <li>메시지 칸 옆 전구 아이콘을 누릅니다. 메시지 히스토리(시계) 아이콘 바로 앞에 있습니다.
+              누르면 칸에 진행 표시가 돌아갑니다.</li>
+            <li>몇 초 뒤 초안이 채워집니다. 마음에 안 들면 그대로 고쳐 쓰면 됩니다.</li>
+          </ol>
+          <div class="sample">[S15P11A601-152] refactor: livekit 의존성 버전 명시 주석 제거
+└───────┬───────┘ └───┬───┘ └──────────────┬──────────────┘
+    도구가 붙임       AI가 고름            AI가 씀</div>
+          <figure class="shot" data-slot="13">
+            <div class="shot__frame">
+              <img src="images/13.png" alt="커밋 메시지 툴바의 AI 아이콘">
+              <div class="shot__slot">
+                <div>
+                  <div class="shot__id">13</div>
+                  <p class="shot__need">커밋 메시지 칸 옆 툴바의 AI 아이콘(툴팁이 보이면 더 좋습니다)</p>
+                  <button class="shot__cmd" type="button" data-cmd=".\capture.ps1 13">.\capture.ps1 13 <span aria-hidden="true">⧉</span></button>
+                </div>
+              </div>
+            </div>
+          </figure>
+          <figure class="shot" data-slot="14">
+            <div class="shot__frame">
+              <img src="images/14.png" alt="AI가 채운 커밋 메시지">
+              <div class="shot__slot">
+                <div>
+                  <div class="shot__id">14</div>
+                  <p class="shot__need">AI 초안이 채워진 커밋 메시지 — <code>키 + type: 한 줄</code></p>
+                  <button class="shot__cmd" type="button" data-cmd=".\capture.ps1 14">.\capture.ps1 14 <span aria-hidden="true">⧉</span></button>
+                </div>
+              </div>
+            </div>
+          </figure>
+          <div class="note note--check">
+            <span class="note__label">지키는 규칙</span>
+            <p>접두사는 <code>feat</code> · <code>fix</code> · <code>docs</code> · <code>style</code> ·
+              <code>refactor</code> · <code>test</code> · <code>chore</code> 중 하나입니다.
+              제목은 언제나 한 줄이고, 본문은 붙지 않습니다.</p>
+          </div>
+          <div class="note note--plain">
+            <span class="note__label">쓰던 글이 있으면</span>
+            <p>메시지 칸에 쓰던 메모가 있으면 그것을 참고해서 씁니다. 초안이 실패하면 쓰던 글은 그대로 둡니다.</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="step" id="s11">
+        <div class="step__head">
+          <span class="step__num">11</span>
+          <h3>커밋 직전 확인</h3>
+        </div>
+        <p class="step__where">커밋 버튼을 누른 직후</p>
+        <div class="step__body">
+          <p>커밋 메시지를 한 번 봅니다. <b>막지 않고 경고만</b> 합니다. 언제나 <b>그래도 커밋</b>을 고를 수 있습니다.</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>경고</th><th>뜻</th></tr></thead>
+              <tbody>
+                <tr><td>작업 키로 시작하지 않음</td><td>Jira가 이 커밋을 보지 못합니다</td></tr>
+                <tr><td>Jira에서 찾지 못한 키</td><td>키를 잘못 적었을 수 있습니다</td></tr>
+                <tr><td>현재 스프린트에 없는 작업</td><td>동결된 스프린트 밖의 일을 하고 있다는 뜻입니다</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="note note--plain">
+            <span class="note__label">경고하지 않는 것</span>
+            <p>끝난 작업에 커밋하는 것은 경고하지 않습니다. Jira에 물어보지 못했을 때(오프라인 등)도
+              경고하지 않습니다.</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="step" id="s12">
+        <div class="step__head">
+          <span class="step__num">12</span>
+          <h3>플러그인 커밋 창으로 커밋하기</h3>
+        </div>
+        <p class="step__where">Tools &gt; Jira Task &gt; Commit with Jira Task</p>
+        <div class="step__body">
+          <p>IDE 커밋 창 대신 쓰는 간단한 창입니다. <b>스테이지된 변경</b>을 커밋하며, 이슈 키는 자동으로
+            붙으므로 메시지만 칩니다. 여기에도 <b>AI로 쓰기</b> 버튼이 있습니다.</p>
+          <figure class="shot" data-slot="15">
+            <div class="shot__frame">
+              <img src="images/15.png" alt="Commit with Jira Task 창">
+              <div class="shot__slot">
+                <div>
+                  <div class="shot__id">15</div>
+                  <p class="shot__need">Commit with Jira Task 창과 <b>AI로 쓰기</b> 버튼</p>
+                  <button class="shot__cmd" type="button" data-cmd=".\capture.ps1 15 -Window">.\capture.ps1 15 -Window <span aria-hidden="true">⧉</span></button>
+                </div>
+              </div>
+            </div>
+          </figure>
+        </div>
+      </article>
+
+      <article class="step" id="s13">
+        <div class="step__head">
+          <span class="step__num">13</span>
+          <h3>AI가 거절할 때</h3>
+        </div>
+        <p class="step__where">알림(오른쪽 아래) 또는 창 안의 문구</p>
+        <div class="step__body">
+          <p>초안이 실패해도 커밋은 막히지 않습니다. 이유는 언제나 문장으로 나오고, 대개 다음 넷 중 하나입니다.</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>문구</th><th>할 일</th></tr></thead>
+              <tbody>
+                <tr><td>AI 초안이 꺼져 있습니다</td><td><a href="#s05">단계 05</a>에서 켭니다</td></tr>
+                <tr><td>Claude Code CLI를 찾을 수 없습니다</td><td>설치하거나 설정에 실행 파일 경로를 지정합니다</td></tr>
+                <tr><td>커밋할 변경이 없습니다</td><td>파일을 고친 뒤 다시 누릅니다</td></tr>
+                <tr><td>Claude Code가 제때 답하지 않았습니다</td><td>잠시 뒤 다시 누르거나 직접 씁니다</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <!-- ================= MR ================= -->
+    <section class="phase">
+      <div class="phase__head">
+        <span class="phase__num">PHASE 4</span>
+        <h2>MR</h2>
+      </div>
+
+      <article class="step" id="s14">
+        <div class="step__head">
+          <span class="step__num">14</span>
+          <h3>MR 만들기</h3>
+        </div>
+        <p class="step__where">Tools &gt; Jira Task &gt; Create Merge Request</p>
+        <div class="step__body">
+          <p>현재 브랜치의 커밋에서 작업 키를 모아 GitLab MR을 만듭니다. 그 키가 본문에 적혀야
+            Jira가 이 MR을 작업에 붙입니다.</p>
+          <ol>
+            <li>브랜치를 먼저 푸시합니다. 올리지 않은 브랜치는 확인 창이 막습니다.</li>
+            <li>메뉴에서 <b>Create Merge Request</b>를 엽니다.</li>
+            <li><b>대상 브랜치</b>를 고릅니다. 바꾸면 본문과 작업 키를 그 기준으로 다시 만듭니다.
+              통합 브랜치(<code>backend-dev</code> 등)를 쓴다면 꼭 확인하세요.</li>
+            <li>저장소에 MR 템플릿이 있으면 고릅니다. 템플릿 글자는 지우지 않고 관련 이슈 절만 채웁니다.</li>
+            <li>필요하면 <b>AI로 다시 쓰기</b>로 제목·본문을 다듬습니다.</li>
+            <li><b>MR 만들기</b>를 누릅니다.</li>
+          </ol>
+          <figure class="shot" data-slot="16">
+            <div class="shot__frame">
+              <img src="images/16.png" alt="Create Merge Request 창">
+              <div class="shot__slot">
+                <div>
+                  <div class="shot__id">16</div>
+                  <p class="shot__need">Create Merge Request 창 — 대상 브랜치 / 템플릿 / 제목 / 본문</p>
+                  <button class="shot__cmd" type="button" data-cmd=".\capture.ps1 16 -Window">.\capture.ps1 16 -Window <span aria-hidden="true">⧉</span></button>
+                </div>
+              </div>
+            </div>
+          </figure>
+          <figure class="shot" data-slot="17">
+            <div class="shot__frame">
+              <img src="images/17.png" alt="AI로 다시 쓴 MR 초안">
+              <div class="shot__slot">
+                <div>
+                  <div class="shot__id">17</div>
+                  <p class="shot__need"><b>AI로 다시 쓰기</b>를 누른 뒤 바뀐 제목과 본문</p>
+                  <button class="shot__cmd" type="button" data-cmd=".\capture.ps1 17 -Window">.\capture.ps1 17 -Window <span aria-hidden="true">⧉</span></button>
+                </div>
+              </div>
+            </div>
+          </figure>
+          <figure class="shot" data-slot="18">
+            <div class="shot__frame">
+              <img src="images/18.png" alt="MR 생성 알림">
+              <div class="shot__slot">
+                <div>
+                  <div class="shot__id">18</div>
+                  <p class="shot__need">"MR을 만들었습니다" 알림과 <b>열기</b> 버튼</p>
+                  <button class="shot__cmd" type="button" data-cmd=".\capture.ps1 18">.\capture.ps1 18 <span aria-hidden="true">⧉</span></button>
+                </div>
+              </div>
+            </div>
+          </figure>
+          <div class="note note--warn">
+            <span class="note__label">막힐 때</span>
+            <p>"이 저장소의 remote는 …인데 설정된 GitLab은 … 입니다"가 뜨면 설정의 GitLab 주소와
+              저장소의 remote 주소가 다른 것입니다.</p>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <!-- ================= 그 밖 ================= -->
+    <section class="phase">
+      <div class="phase__head">
+        <span class="phase__num">PHASE 5</span>
+        <h2>그 밖의 기능</h2>
+      </div>
+
+      <article class="step" id="s15">
+        <div class="step__head">
+          <span class="step__num">15</span>
+          <h3>이슈 검색·간단 수정</h3>
+        </div>
+        <p class="step__where">Tools &gt; Jira Task &gt; Search Jira Issues</p>
+        <div class="step__body">
+          <p>IDE를 떠나지 않고 이슈를 찾아 제목과 설명을 고칩니다. <b>상태와 스프린트는 여기서 바꾸지 않습니다.</b></p>
+          <figure class="shot" data-slot="19">
+            <div class="shot__frame">
+              <img src="images/19.png" alt="Jira Quick Search 창">
+              <div class="shot__slot">
+                <div>
+                  <div class="shot__id">19</div>
+                  <p class="shot__need">Search Jira Issues 창 — 검색 결과와 제목·설명 칸</p>
+                  <button class="shot__cmd" type="button" data-cmd=".\capture.ps1 19 -Window">.\capture.ps1 19 -Window <span aria-hidden="true">⧉</span></button>
+                </div>
+              </div>
+            </div>
+          </figure>
+        </div>
+      </article>
+
+      <article class="step" id="s16">
+        <div class="step__head">
+          <span class="step__num">16</span>
+          <h3>이슈 키를 눌러 Jira로 가기</h3>
+        </div>
+        <p class="step__where">커밋 메시지 · VCS 로그 · 주석 어디서나</p>
+        <div class="step__body">
+          <p>이슈 키가 링크로 보입니다. 누르면 브라우저에서 그 이슈가 열립니다. 따로 설정할 것은 없습니다.</p>
+        </div>
+      </article>
+    </section>
+
+    <!-- ================= 부록 ================= -->
+    <section class="phase">
+      <div class="phase__head">
+        <span class="phase__num">부록</span>
+        <h2>알아 둘 것</h2>
+      </div>
+
+      <article class="step" id="a1">
+        <div class="step__head">
+          <span class="step__num">A</span>
+          <h3>AI에게 무엇이 나가는가</h3>
+        </div>
+        <div class="step__body">
+          <p>이 표가 전부입니다.</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>기능</th><th>보내는 것</th><th>보내지 않는 것</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>MR 초안</td>
+                  <td>브랜치 이름, 커밋 제목, 변경된 파일 경로, 고른 템플릿</td>
+                  <td>파일 내용 일체</td>
+                </tr>
+                <tr>
+                  <td>커밋 초안</td>
+                  <td>브랜치 이름, 작업 키, 커밋할 파일 경로, 쓰던 메시지, <b>변경 내용(diff)</b></td>
+                  <td>새로 만든 파일의 내용, 커밋 대상이 아닌 파일</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <ul>
+            <li>커밋 초안의 diff는 설정에서 끌 수 있습니다. 끄면 파일 경로만 나갑니다.</li>
+            <li>변경이 아주 크면 앞부분만 보냅니다.</li>
+          </ul>
+        </div>
+      </article>
+
+      <article class="step" id="a2">
+        <div class="step__head">
+          <span class="step__num">B</span>
+          <h3>문제 해결</h3>
+        </div>
+        <div class="step__body">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>증상</th><th>원인과 해결</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>메뉴 항목이 회색</td>
+                  <td>프로젝트를 열지 않았거나 프로젝트 키가 없습니다. 툴팁에 이유가 적힙니다.</td>
+                </tr>
+                <tr>
+                  <td>커밋 메시지에 키가 안 붙음</td>
+                  <td>작업 번호가 없습니다. <a href="#s06">Start Jira Task</a>로 저장하세요.</td>
+                </tr>
+                <tr>
+                  <td>"커밋할 변경이 없습니다"</td>
+                  <td>정말 변경이 없는 경우입니다. 새로 만든 파일도 <code>git add</code> 없이 인식하며,
+                      저장하지 않은 편집기 내용은 누를 때 자동으로 저장합니다.</td>
+                </tr>
+                <tr>
+                  <td>"Claude Code CLI를 찾을 수 없습니다"</td>
+                  <td>PATH에 없습니다. 설정에 실행 파일 경로를 넣으세요(Windows는 <code>claude.cmd</code>).</td>
+                </tr>
+                <tr>
+                  <td>"GitLab 액세스 토큰이 없습니다"</td>
+                  <td>설정 화면에 넣거나 <code>GITLAB_TOKEN</code> 환경 변수를 씁니다.</td>
+                </tr>
+                <tr>
+                  <td>MR 생성만 403</td>
+                  <td>토큰 스코프가 <code>read_api</code>입니다. <code>api</code> 스코프가 필요합니다.</td>
+                </tr>
+                <tr>
+                  <td>"브랜치를 아직 원격에 올리지 않았습니다"</td>
+                  <td>먼저 푸시하세요. 확인하지 못한 경우에는 막지 않습니다.</td>
+                </tr>
+                <tr>
+                  <td>스프린트 목록이 비어 있음</td>
+                  <td>Jira 조회에 실패했을 수 있습니다. 툴 윈도우의 <b>새로 고침</b>을 누르거나,
+                      작업 번호를 직접 입력해 계속 진행하세요.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </article>
+
+      <article class="step" id="a3">
+        <div class="step__head">
+          <span class="step__num">C</span>
+          <h3>캡처를 채우는 법</h3>
+        </div>
+        <div class="step__body">
+          <p>이 문서의 빈 자리는 <code>docs/manual/capture.ps1</code> 로 채웁니다. 슬롯 번호로 저장하면
+            문서가 알아서 그 자리에 넣습니다 — HTML은 손대지 않습니다.</p>
+          <div class="sample">cd docs\manual
+.\capture.ps1 -List          # 남은 슬롯과 담을 화면 보기
+.\capture.ps1 14             # 5초 뒤 화면 전체를 14번 자리에 저장
+.\capture.ps1 16 -Window     # 그때 앞에 있는 창만 (다이얼로그에 좋음)
+.\capture.ps1 5 -Delay 10    # 준비할 시간이 더 필요할 때</div>
+          <ul>
+            <li>저장 위치는 <code>docs/manual/images/&lt;번호&gt;.png</code> 입니다. 직접 찍은 파일을
+              그 이름으로 넣어도 똑같이 동작합니다.</li>
+            <li>다시 찍으면 덮어씁니다. 브라우저는 <kbd>Ctrl</kbd>+<kbd>F5</kbd>로 새로 고칩니다.</li>
+            <li>토큰·주소처럼 가려야 할 것이 찍혔다면 지우고 다시 찍으세요.</li>
+          </ul>
+          <div class="note note--plain">
+            <span class="note__label">PDF로 넘기기</span>
+            <p>브라우저에서 <kbd>Ctrl</kbd>+<kbd>P</kbd> → 대상을 <b>PDF로 저장</b>. 색인과 캡처 명령은
+              인쇄에서 자동으로 빠집니다.</p>
+          </div>
+        </div>
+      </article>
+    </section>
+  </main>
+</div>
+
+<script>
+  (function () {
+    var shots = Array.prototype.slice.call(document.querySelectorAll('figure.shot'));
+    var filled = 0;
+
+    document.getElementById('total').textContent = shots.length;
+
+    function paint() {
+      document.getElementById('filled').textContent = filled;
+      document.getElementById('fill').style.width = (shots.length ? (filled / shots.length) * 100 : 0) + '%';
+      document.getElementById('progressHint').textContent = filled === shots.length
+        ? '모두 채웠습니다. 인쇄하면 그대로 배포할 수 있습니다.'
+        : '비어 있는 자리는 본문에서 점선으로 보입니다.';
+    }
+
+    shots.forEach(function (shot) {
+      var image = shot.querySelector('img');
+      var triedJpg = false;
+
+      function found() {
+        shot.classList.remove('is-empty');
+        filled++;
+        paint();
+      }
+
+      function missing() {
+        // png가 없으면 jpg로 한 번 더 찾는다. 찍어 둔 캡처가 어느 쪽이든 들어가게.
+        if (!triedJpg) {
+          triedJpg = true;
+          image.setAttribute('src', image.getAttribute('src').replace(/\.png$/i, '.jpg'));
+          return;
+        }
+        shot.classList.add('is-empty');
+        paint();
+      }
+
+      // 확인되기 전까지는 빈 자리로 둔다.
+      shot.classList.add('is-empty');
+      image.addEventListener('load', found);
+      image.addEventListener('error', missing);
+
+      if (image.complete) {
+        if (image.naturalWidth > 0) { found(); } else { missing(); }
+      }
+    });
+
+    paint();
+
+    document.addEventListener('click', function (event) {
+      var button = event.target.closest ? event.target.closest('.shot__cmd') : null;
+      if (!button || !navigator.clipboard) { return; }
+
+      var original = button.firstChild.nodeValue;
+      navigator.clipboard.writeText(button.getAttribute('data-cmd')).then(function () {
+        button.firstChild.nodeValue = '복사했습니다 ';
+        setTimeout(function () { button.firstChild.nodeValue = original; }, 1400);
+      });
+    });
+  })();
+</script>
+</body>
+</html>

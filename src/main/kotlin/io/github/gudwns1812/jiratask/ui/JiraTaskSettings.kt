@@ -21,7 +21,12 @@ data class CommitSettings(val projectKey: String)
  * API 키가 없다 — 사용자가 이미 로그인해 둔 Claude Code를 그대로 쓰기 때문이다.
  * 플러그인이 자격 증명을 갖지 않는 것이 이 기능을 구독 요금제로 쓸 수 있는 이유다.
  */
-data class AiDraftSettings(val model: String?, val executablePath: String?)
+data class AiDraftSettings(
+    val model: String?,
+    val executablePath: String?,
+    /** 커밋 초안에 변경 내용(diff)까지 보낼지. 커밋 초안에서만 본다. */
+    val sendDiff: Boolean = true,
+)
 
 /** 토큰을 어디서 가져왔는가. 거부당했을 때 **어디를 고쳐야 하는지** 말해 주려고 들고 다닌다. */
 enum class GitLabTokenSource {
@@ -114,7 +119,9 @@ class JiraTaskSettings(
         val ai = config.ai?.takeIf { it.enabled }
             ?: return@withConfig SettingsLookup.Missing(AI_DISABLED)
 
-        SettingsLookup.Ready(AiDraftSettings(model = ai.model, executablePath = ai.executablePath))
+        SettingsLookup.Ready(
+            AiDraftSettings(model = ai.model, executablePath = ai.executablePath, sendDiff = ai.sendDiff),
+        )
     }
 
     /** 작업을 시작할 때의 상태 전환에 필요한 설정. 하나라도 없으면 무엇이 없는지 알려준다. */

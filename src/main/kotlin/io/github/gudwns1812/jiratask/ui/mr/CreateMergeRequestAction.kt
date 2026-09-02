@@ -1,5 +1,6 @@
 package io.github.gudwns1812.jiratask.ui.mr
 
+import io.github.gudwns1812.jiratask.ui.applyHangulFallbackToWindow
 import com.intellij.ide.BrowserUtil
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationType
@@ -121,6 +122,8 @@ class MergeRequestDialog(
         title = "Create Merge Request"
         setOKButtonText("MR 만들기")
         init()
+        // 테마 글꼴에 한글이 없으면 이 창의 글자가 통째로 네모가 된다.
+        applyHangulFallbackToWindow()
 
         titleField.document.addDocumentListener(object : DocumentAdapter() {
             override fun textChanged(event: javax.swing.event.DocumentEvent) = refreshState()

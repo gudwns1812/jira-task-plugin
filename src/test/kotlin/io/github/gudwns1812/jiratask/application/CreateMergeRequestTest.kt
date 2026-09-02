@@ -217,7 +217,7 @@ class CreateMergeRequestTest {
 
     @Test
     fun `lets ai rewrite only the title and body`() {
-        val written = WrittenDraft("S15P11A108-257 회원가입 화면", "### 연결된 작업\n- S15P11A108-257")
+        val written = WrittenDraft("회원가입 화면 구현", "### 연결된 작업\n- S15P11A108-257")
         val useCase = CreateMergeRequestUseCase(
             gitlab = FakeGitLab(),
             issueKeysOf = { listOf("S15P11A108-257") },
@@ -235,6 +235,24 @@ class CreateMergeRequestTest {
         assertEquals(before.targetBranch, after.targetBranch)
         assertEquals(before.targetCandidates, after.targetCandidates)
         assertEquals(before.projectPath, after.projectPath)
+    }
+
+    @Test
+    fun `puts the task's area tag back on the title the ai wrote`() {
+        // 태그는 Jira 작업 제목에서 읽어 우리가 붙인다. AI가 흉내 낸 태그와 이슈 키는 걷어낸다.
+        val useCase = CreateMergeRequestUseCase(
+            gitlab = FakeGitLab(),
+            issueKeysOf = { listOf("S15P11A108-257") },
+            summaryOf = { "[AUTH-001 | FE] 회원가입 화면 구현" },
+            draftWriter = DraftWriter {
+                DraftOutcome.Written(WrittenDraft("S15P11A108-257 [BE] 회원가입 폼 검증 정리", "본문"))
+            },
+        )
+        val state = state()
+
+        val after = (useCase.rewrite(state, readyOf(useCase.prepare(state))) as DraftRewrite.Rewritten).proposal
+
+        assertEquals("[FE] 회원가입 폼 검증 정리", after.title)
     }
 
     @Test

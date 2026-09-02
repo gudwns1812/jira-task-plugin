@@ -30,6 +30,10 @@ object AdvanceTaskReports {
             NotificationType.INFORMATION,
             "작업이 이미 '${result.statusName}' 상태입니다: ${result.taskKey}",
         )
+        is AdvanceTaskResult.LeftAlone -> TaskReport(
+            NotificationType.INFORMATION,
+            "이미 완료된 작업이라 상태를 그대로 뒀습니다: ${result.taskKey}",
+        )
         // git 작업은 이미 끝났으므로 오류가 아니라 경고로 알린다.
         is AdvanceTaskResult.Failure -> TaskReport(
             NotificationType.WARNING,

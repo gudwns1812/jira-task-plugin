@@ -2,6 +2,7 @@ package io.github.gudwns1812.jiratask.infrastructure
 
 import io.github.gudwns1812.jiratask.domain.commit.GitRepositoryError
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -276,6 +277,103 @@ class GitRepositoryTest {
         val directory = createRepository()
         try {
             assertEquals(emptyMap<String, String>(), GitRepository(directory).mergeRequestTemplates())
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `reads what is staged for the next commit`() {
+        val directory = createRepository()
+        try {
+            File(directory, "feature.txt").writeText("feature\n")
+            runGit(directory, "add", "feature.txt")
+
+            val changes = GitRepository(directory).pendingChanges(includeDiff = true)
+
+            assertTrue(changes.staged)
+            assertEquals(listOf("feature.txt"), changes.files)
+            assertTrue(changes.diff.contains("+feature"))
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `falls back to the working tree when nothing is staged`() {
+        // IDE 커밋 창은 스테이징 없이 고른 파일을 커밋한다. 스테이지만 보면 재료가 있는데도 없다고 한다.
+        val directory = createRepository()
+        try {
+            File(directory, "README.md").writeText("test\n고친 줄\n")
+
+            val changes = GitRepository(directory).pendingChanges(includeDiff = true)
+
+            assertFalse(changes.staged)
+            assertEquals(listOf("README.md"), changes.files)
+            assertTrue(changes.diff.contains("+고친 줄"))
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `reads the paths but never the contents when the diff is turned off`() {
+        // AI에게 소스 코드가 나가는지가 이 분기에 걸려 있다.
+        val directory = createRepository()
+        try {
+            File(directory, "secret.txt").writeText("비밀 값\n")
+            runGit(directory, "add", "secret.txt")
+
+            val changes = GitRepository(directory).pendingChanges(includeDiff = false)
+
+            assertEquals(listOf("secret.txt"), changes.files)
+            assertEquals("", changes.diff)
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `sees a brand new file that was never added`() {
+        // IDE 커밋 창은 새 파일도 그냥 골라서 커밋한다. git add를 요구하는 것은 그 흐름이 아니다.
+        val directory = createRepository()
+        try {
+            File(directory, "새 화면.kt").writeText("val secret = 1\n")
+
+            val changes = GitRepository(directory).pendingChanges(includeDiff = true)
+
+            assertEquals(listOf("새 화면.kt"), changes.files)
+            assertFalse(changes.staged)
+            assertFalse("새 파일의 내용은 diff에 담기지 않는다", changes.diff.contains("val secret"))
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `sees a changed file and a new file together`() {
+        val directory = createRepository()
+        try {
+            File(directory, "README.md").writeText("test\n고친 줄\n")
+            File(directory, "added.txt").writeText("new\n")
+
+            val changes = GitRepository(directory).pendingChanges(includeDiff = true)
+
+            assertEquals(listOf("README.md", "added.txt"), changes.files)
+            assertTrue(changes.diff.contains("+고친 줄"))
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `has nothing pending in a clean repository`() {
+        val directory = createRepository()
+        try {
+            val changes = GitRepository(directory).pendingChanges(includeDiff = true)
+
+            assertTrue(changes.files.isEmpty())
+            assertEquals("", changes.diff)
         } finally {
             directory.deleteRecursively()
         }

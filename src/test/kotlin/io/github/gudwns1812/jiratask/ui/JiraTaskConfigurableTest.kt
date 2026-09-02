@@ -340,7 +340,8 @@ class JiraTaskConfigurableTest : BasePlatformTestCase() {
     /** 모델 콤보의 편집 칸. 편집을 열어 뒀으므로 목록에 없는 이름도 여기 적을 수 있다. */
     private fun aiModelFieldOf(component: JComponent): JTextComponent = editableFieldsOf(component)[4]
 
-    private fun aiEnabledBoxOf(container: Container): javax.swing.JCheckBox {
+    /** AI 그룹의 체크박스들. 화면에 놓인 순서 그대로다 — 켜기, 그리고 diff 보내기. */
+    private fun checkBoxesOf(container: Container): List<javax.swing.JCheckBox> {
         val found = mutableListOf<javax.swing.JCheckBox>()
         fun walk(c: Container) {
             if (c is javax.swing.JCheckBox) {
@@ -349,8 +350,12 @@ class JiraTaskConfigurableTest : BasePlatformTestCase() {
             c.components.filterIsInstance<Container>().forEach(::walk)
         }
         walk(container)
-        return found.single()
+        return found
     }
+
+    private fun aiEnabledBoxOf(container: Container): javax.swing.JCheckBox = checkBoxesOf(container)[0]
+
+    private fun aiSendDiffBoxOf(container: Container): javax.swing.JCheckBox = checkBoxesOf(container)[1]
 
 
     private fun editableFieldsOf(component: JComponent): List<JTextComponent> {
@@ -398,6 +403,21 @@ class JiraTaskConfigurableTest : BasePlatformTestCase() {
 
         assertEquals(true, repository.loadConfig().ai?.enabled)
         assertNull(repository.loadConfig().ai?.model)
+    }
+
+    fun `test the commit draft sends the diff until the user turns it off`() {
+        val repository = configuredRepository()
+        val configurable = configurableOf(repository)
+        val component = configurable.createComponent()
+
+        assertTrue("켜 둔 채로 보여 준다", aiSendDiffBoxOf(component).isSelected)
+
+        aiEnabledBoxOf(component).isSelected = true
+        aiSendDiffBoxOf(component).isSelected = false
+        configurable.apply()
+
+        assertEquals(false, repository.loadConfig().ai?.sendDiff)
+        assertFalse("저장한 뒤에도 끈 채로 보여야 한다", aiSendDiffBoxOf(component).isSelected)
     }
 
     fun `test saves the model the user picked`() {

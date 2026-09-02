@@ -1,5 +1,6 @@
 package io.github.gudwns1812.jiratask.ui.setup
 
+import io.github.gudwns1812.jiratask.ui.applyHangulFallbackToWindow
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
@@ -25,6 +26,7 @@ class SetupConnectionDialog(
     init {
         title = "Jira 연결 정보"
         init()
+        applyHangulFallbackToWindow()
     }
 
     override fun createCenterPanel(): JComponent = form.panel
@@ -45,6 +47,7 @@ class SetupChoiceDialog(
     init {
         title = "Jira Task 초기 설정"
         init()
+        applyHangulFallbackToWindow()
     }
 
     override fun createCenterPanel(): JComponent = form.panel
@@ -58,6 +61,7 @@ class SetupConfirmDialog(project: Project?, private val summary: SetupSummary) :
         title = "설정 내용 확인"
         setOKButtonText("저장")
         init()
+        applyHangulFallbackToWindow()
     }
 
     override fun createCenterPanel(): JComponent = panel {

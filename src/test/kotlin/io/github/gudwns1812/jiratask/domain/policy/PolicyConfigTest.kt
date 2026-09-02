@@ -145,6 +145,24 @@ class PolicyConfigTest {
     }
 
     @Test
+    fun `sends the commit diff unless the setting says not to`() {
+        // 예전 설정 파일에는 이 키가 없다. 없다고 기능이 반쪽이 되면 안 되므로 기본값은 켜짐이다.
+        val old = JiraTaskConfig.resolve(mapOf("ai" to mapOf("enabled" to true)))
+        assertEquals(true, old.ai?.sendDiff)
+
+        val off = JiraTaskConfig.resolve(mapOf("ai" to mapOf("enabled" to true, "sendDiff" to false)))
+        assertEquals(false, off.ai?.sendDiff)
+        assertEquals("끈 것은 저장되어 살아남아야 한다", off, JiraTaskConfig.resolve(off.toRawMap()))
+    }
+
+    @Test
+    fun `rejects a sendDiff value that is not true or false`() {
+        assertThrows(PolicyConfigurationError::class.java) {
+            JiraTaskConfig.resolve(mapOf("ai" to mapOf("sendDiff" to "가끔")))
+        }
+    }
+
+    @Test
     fun `leaves the ai section out entirely when it was never configured`() {
         val config = JiraTaskConfig.resolve(mapOf("projectKey" to "S15P11A108"))
 

@@ -125,12 +125,20 @@ class CreateMergeRequestUseCase(
 
         return when (val outcome = runCatching { writer.write(request) }.getOrElse { DraftOutcome.Failed(FAILED) }) {
             is DraftOutcome.Written -> DraftRewrite.Rewritten(
-                proposal.copy(title = outcome.draft.title, description = outcome.draft.description),
+                proposal.copy(
+                    // 태그는 Jira 작업 제목에서 읽어 우리가 붙인다. AI가 정할 일이 아니다.
+                    title = MergeRequestDraft.withTag(tagFor(proposal.issueKeys), outcome.draft.title),
+                    description = outcome.draft.description,
+                ),
             )
             is DraftOutcome.Unavailable -> DraftRewrite.Refused(outcome.message)
             is DraftOutcome.Failed -> DraftRewrite.Refused(outcome.message)
         }
     }
+
+    /** 이 MR에 붙일 태그. 연결된 작업들의 Jira 제목에서 처음 찾은 것을 쓴다. */
+    private fun tagFor(issueKeys: List<String>): String? =
+        issueKeys.firstNotNullOfOrNull { MergeRequestDraft.tagOf(summaryOf(it)) }
 
     fun prepare(state: BranchState, fallbackTarget: String = DEFAULT_TARGET): MergeRequestPrepare {
         val branch = state.branch

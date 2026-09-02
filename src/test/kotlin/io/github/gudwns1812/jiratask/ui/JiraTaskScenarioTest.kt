@@ -113,7 +113,7 @@ class JiraTaskScenarioTest {
         // 3. 커밋 (메시지 접두는 커밋 다이얼로그가 하는 것과 같은 규칙으로 확인)
         val commitSettings = (settings.forCommit() as SettingsLookup.Ready).value
         assertEquals(
-            "S15P11A108-257 회원가입 폼 구현",
+            "[S15P11A108-257] 회원가입 폼 구현",
             JiraCommitMessages.withIssueKey("회원가입 폼 구현", "${commitSettings.projectKey}-257"),
         )
 
@@ -123,11 +123,11 @@ class JiraTaskScenarioTest {
             CreateCommitCommand(commitSettings.projectKey, "회원가입 폼 구현"),
         )
         assertEquals(
-            CreateCommitResult.Success("S15P11A108-257", "S15P11A108-257 회원가입 폼 구현"),
+            CreateCommitResult.Success("S15P11A108-257", "[S15P11A108-257] 회원가입 폼 구현"),
             commitResult,
         )
         assertEquals(
-            "S15P11A108-257 회원가입 폼 구현\n",
+            "[S15P11A108-257] 회원가입 폼 구현\n",
             runGit(directory, "log", "-1", "--pretty=%s"),
         )
         assertTrue(CommitReports.of(commitResult).message.contains("S15P11A108-257"))
