@@ -1,5 +1,7 @@
 package io.github.gudwns1812.jiratask.domain.mr
 
+import io.github.gudwns1812.jiratask.domain.jira.IssueSummary
+
 /**
  * MR 제목과 본문을 **규칙으로** 만든다. AI는 다음 단계다(TASKS.md 6장).
  *
@@ -8,17 +10,23 @@ package io.github.gudwns1812.jiratask.domain.mr
 object MergeRequestDraft {
 
     /**
-     * 제목. 이슈가 하나면 그 이슈를 그대로 쓰고, 여럿이거나 없으면 브랜치 이름을 사람이 읽을 말로 편다.
+     * 제목. 이슈가 하나면 그 이슈 제목으로 쓰고, 여럿이거나 없으면 브랜치 이름을 사람이 읽을 말로 편다.
      *
      * 브랜치 이름에는 이제 이슈 번호가 없으므로(RULE.md 5.1) `feat/signup` 같은 요약이 들어 있다.
      * 그 요약이 곧 제목으로 쓸 만한 말이다.
+     *
+     * **제목에 작업 키를 적지 않는다**(RULE.md 5.3). 키는 본문 `### 연결된 작업`에 있고, Jira가 이 MR을
+     * 작업에 붙이는 근거도 그 본문이다. 제목에까지 두면 MR 목록에서 열 몇 자가 키로 채워져,
+     * 정작 무슨 일인지 읽을 자리가 좁아진다.
+     *
+     * 이슈 제목은 그대로 옮기지 않고 앞의 대괄호를 도메인 코드로 줄인다([IssueSummary]).
      */
     fun titleOf(branch: String?, issueKeys: List<String>, summaryOf: (String) -> String?): String {
         if (issueKeys.size == 1) {
-            val key = issueKeys.single()
-            summaryOf(key)?.takeIf { it.isNotBlank() }?.let { return "$key $it" }
-            return key
+            summaryOf(issueKeys.single())?.takeIf { it.isNotBlank() }
+                ?.let { return IssueSummary.withDomainPrefix(it) }
         }
+        // 이슈 제목을 못 읽었으면 키만 적지 않고 브랜치 이름으로 간다. 키 하나뿐인 제목은 읽을 말이 없다.
         return humanize(branch)
     }
 
