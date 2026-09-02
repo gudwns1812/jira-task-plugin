@@ -1,5 +1,6 @@
 package io.github.gudwns1812.jiratask.application
 
+import io.github.gudwns1812.jiratask.domain.jira.IssueSummary
 import io.github.gudwns1812.jiratask.domain.mr.DraftOutcome
 import io.github.gudwns1812.jiratask.domain.mr.DraftRequest
 import io.github.gudwns1812.jiratask.domain.mr.DraftWriter
@@ -127,7 +128,7 @@ class CreateMergeRequestUseCase(
             is DraftOutcome.Written -> DraftRewrite.Rewritten(
                 proposal.copy(
                     // 태그는 Jira 작업 제목에서 읽어 우리가 붙인다. AI가 정할 일이 아니다.
-                    title = MergeRequestDraft.withTag(tagFor(proposal.issueKeys), outcome.draft.title),
+                    title = MergeRequestDraft.withDomain(domainFor(proposal.issueKeys), outcome.draft.title),
                     description = outcome.draft.description,
                 ),
             )
@@ -136,9 +137,9 @@ class CreateMergeRequestUseCase(
         }
     }
 
-    /** 이 MR에 붙일 태그. 연결된 작업들의 Jira 제목에서 처음 찾은 것을 쓴다. */
-    private fun tagFor(issueKeys: List<String>): String? =
-        issueKeys.firstNotNullOfOrNull { MergeRequestDraft.tagOf(summaryOf(it)) }
+    /** 이 MR에 붙일 도메인 대괄호. 연결된 작업들의 Jira 제목에서 처음 찾은 것을 쓴다. */
+    private fun domainFor(issueKeys: List<String>): String? =
+        issueKeys.firstNotNullOfOrNull { IssueSummary.domainPrefixOf(summaryOf(it)) }
 
     fun prepare(state: BranchState, fallbackTarget: String = DEFAULT_TARGET): MergeRequestPrepare {
         val branch = state.branch

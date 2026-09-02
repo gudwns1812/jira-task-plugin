@@ -273,6 +273,23 @@ class GitRepositoryTest {
     }
 
     @Test
+    fun `finds the templates from a subdirectory of the repository`() {
+        val directory = createRepository()
+        try {
+            // IDE가 `proj/backend`만 열어 두는 일이 흔하다. 템플릿은 저장소 뿌리에만 있다.
+            val templates = File(directory, ".gitlab/merge_request_templates").apply { mkdirs() }
+            File(templates, "Default.md").writeText("## 관련 이슈")
+            val module = File(directory, "backend/something").apply { mkdirs() }
+
+            val read = GitRepository(module).mergeRequestTemplates()
+
+            assertEquals(listOf("Default"), read.keys.toList())
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `has no templates when the repository keeps none`() {
         val directory = createRepository()
         try {
@@ -374,6 +391,17 @@ class GitRepositoryTest {
 
             assertTrue(changes.files.isEmpty())
             assertEquals("", changes.diff)
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `has no templates to offer outside a git repository`() {
+        // 뿌리를 못 물으면 열어 둔 폴더를 그대로 본다. 거기에도 없으면 빈 목록이다.
+        val directory = Files.createTempDirectory("jira-task-plugin-non-git-").toFile()
+        try {
+            assertEquals(emptyMap<String, String>(), GitRepository(directory).mergeRequestTemplates())
         } finally {
             directory.deleteRecursively()
         }

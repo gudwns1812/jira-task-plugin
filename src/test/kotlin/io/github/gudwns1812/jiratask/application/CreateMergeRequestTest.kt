@@ -238,8 +238,8 @@ class CreateMergeRequestTest {
     }
 
     @Test
-    fun `puts the task's area tag back on the title the ai wrote`() {
-        // 태그는 Jira 작업 제목에서 읽어 우리가 붙인다. AI가 흉내 낸 태그와 이슈 키는 걷어낸다.
+    fun `puts the task's domain back on the title the ai wrote`() {
+        // 대괄호는 Jira 작업 제목에서 읽어 우리가 붙인다. AI가 흉내 낸 대괄호와 이슈 키는 걷어낸다.
         val useCase = CreateMergeRequestUseCase(
             gitlab = FakeGitLab(),
             issueKeysOf = { listOf("S15P11A108-257") },
@@ -252,7 +252,7 @@ class CreateMergeRequestTest {
 
         val after = (useCase.rewrite(state, readyOf(useCase.prepare(state))) as DraftRewrite.Rewritten).proposal
 
-        assertEquals("[FE] 회원가입 폼 검증 정리", after.title)
+        assertEquals("[AUTH] 회원가입 폼 검증 정리", after.title)
     }
 
     @Test

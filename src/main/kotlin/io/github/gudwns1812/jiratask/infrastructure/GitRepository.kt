@@ -147,14 +147,32 @@ class GitRepository(
     }
 
     /**
+     * 이 작업 트리의 뿌리. 알아내지 못하면 [workingDirectory] 그대로.
+     *
+     * 다른 메서드들은 이것을 물을 일이 없다 — `git`이 알아서 위로 올라가 저장소를 찾아 준다.
+     * 파일을 직접 읽는 자리에서만 필요하다.
+     */
+    private fun repositoryRoot(): File {
+        val result = run("rev-parse", "--show-toplevel") ?: return workingDirectory
+        if (result.exitCode != 0) {
+            return workingDirectory
+        }
+        return result.stdout.trim().ifEmpty { null }?.let(::File) ?: workingDirectory
+    }
+
+    /**
      * 저장소가 들고 있는 MR 템플릿들. 이름 → 내용.
      *
      * GitLab이 정한 자리는 [TEMPLATE_DIRECTORY] 아래의 `.md` 파일들이다. 작업 트리에서 읽는다 —
      * 엄밀히는 기본 브랜치의 것이지만, 작업 브랜치는 거기서 갈라져 나왔으니 대개 같고,
      * 이번 브랜치에서 템플릿을 손봤다면 그 손본 것을 쓰는 편이 덜 놀랍다.
+     *
+     * **여는 폴더가 아니라 저장소 뿌리에서 찾는다.** IDE는 `proj/backend`처럼 하위 폴더만 열어 두는 일이
+     * 흔한데, GitLab은 템플릿을 저장소 루트에서만 읽는다. 여기서 열어 둔 폴더만 보면 브랜치·커밋 조회는
+     * 다 되는데 템플릿만 조용히 비어, 기능이 아예 없는 것처럼 보인다.
      */
     fun mergeRequestTemplates(): Map<String, String> {
-        val directory = File(workingDirectory, TEMPLATE_DIRECTORY)
+        val directory = File(repositoryRoot(), TEMPLATE_DIRECTORY)
         val files = directory.listFiles { file -> file.isFile && file.extension.equals("md", ignoreCase = true) }
             ?: return emptyMap()
 
