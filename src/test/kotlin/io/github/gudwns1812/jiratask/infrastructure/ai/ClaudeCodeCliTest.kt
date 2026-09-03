@@ -150,25 +150,26 @@ class ClaudeCodeCliTest {
 
 
     @Test
-    fun `drops the restricted flag when the cli does not know it`() {
+    fun `tells the user to update when the cli does not know the option`() {
         // 맥에서 실제로 본 답이다: error: unknown option '--restricted'
-        val invocation = ClaudeCodeCli.invocationOf("claude", null)
+        // 그 말을 그대로 올리면 사용자는 우리 코드가 잘못된 줄 안다. 할 일은 CLI를 올리는 것 하나다.
         val rejected = ProcessResult(1, "", "error: unknown option '--restricted'")
 
-        val retry = invocation.fallbackFor(rejected)
-
-        assertNotNull(retry)
-        assertTrue("도구를 막지 못하는 것과 초안을 못 쓰는 것 중에는 앞이 낫다", !retry!!.command.contains("--restricted"))
-        assertTrue(retry.command.containsAll(listOf("claude", "-p", "--output-format", "json")))
+        assertEquals(ClaudeCodeCli.OUTDATED, ClaudeCodeCli.outdated(rejected))
     }
 
     @Test
-    fun `does not retry when the failure was something else`() {
-        val invocation = ClaudeCodeCli.invocationOf("claude", null)
+    fun `keeps restricting the tools even on a version that refuses`() {
+        // 도구를 막지 못한 채로 사용자 저장소에서 모델을 부르는 것은 초안 하나와 바꿀 일이 아니다.
+        val command = ClaudeCodeCli.invocationOf("claude", null).command
 
-        assertNull(invocation.fallbackFor(ProcessResult(1, "", "Invalid API key · Please run /login")))
-        assertNull("두 번 물러서지는 않는다", invocation.fallbackFor(ProcessResult(1, "", "unknown option '--restricted'"))
-            ?.fallbackFor(ProcessResult(1, "", "error: unknown option '--restricted'")))
+        assertTrue(command.contains("--restricted"))
+    }
+
+    @Test
+    fun `says nothing about the version when the failure was something else`() {
+        assertNull(ClaudeCodeCli.outdated(ProcessResult(1, "", "Invalid API key · Please run /login")))
+        assertNull(ClaudeCodeCli.outdated(ProcessResult(0, """{"result":"{}"}""", "")))
     }
 
 }

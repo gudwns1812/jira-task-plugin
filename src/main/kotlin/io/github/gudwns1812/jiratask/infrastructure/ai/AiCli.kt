@@ -30,20 +30,13 @@ class Invocation(
     val readText: (ProcessResult) -> String?,
     val cleanUp: () -> Unit = {},
     /**
-     * CLI가 **종료 코드 0으로** 실패를 알렸을 때 그 이유. 실패가 아니면 null.
+     * 이 결과가 실패라면 **사용자가 무엇을 하면 되는지** 담은 문구. 실패가 아니면 null.
      *
-     * 로그인 만료가 이 자리로 온다 — 프로세스는 멀쩡히 끝나고 봉투 안에만 "OAuth session expired"가
-     * 적혀 있다. 이것을 읽지 않으면 사용자는 "초안을 읽지 못했습니다"만 보고 무엇을 고쳐야 하는지
-     * 알 수 없다.
+     * 두 가지가 이 자리로 온다. 하나는 종료 코드 0으로 끝나는 실패(로그인 만료가 그렇다 —
+     * 프로세스는 멀쩡히 끝나고 봉투 안에만 이유가 적힌다). 다른 하나는 CLI가 뱉은 말이 그대로는
+     * 쓸모없는 경우(`unknown option`이 그렇다 — 그 말만으로는 버전을 올리라는 뜻인 줄 알 수 없다).
      */
     val errorIn: (ProcessResult) -> String? = { null },
-    /**
-     * 실패한 결과를 보고 **다시 해볼 값이 있으면** 그 호출. 없으면 null.
-     *
-     * CLI 버전마다 받아 주는 옵션이 다르다 — 실제로 어떤 버전은 `--restricted`를 모른다고 답한다.
-     * 버전을 미리 알아낼 방법이 마땅치 않고 알아낸다 해도 곧 낡으므로, 거절당한 뒤에 물러선다.
-     */
-    val fallbackFor: (ProcessResult) -> Invocation? = { null },
 )
 
 /**

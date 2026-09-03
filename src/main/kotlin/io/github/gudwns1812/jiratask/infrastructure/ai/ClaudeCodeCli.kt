@@ -60,25 +60,20 @@ object ClaudeCodeCli : AiCli {
     override fun isSessionVariable(name: String): Boolean =
         name == "CLAUDECODE" || name.startsWith("CLAUDE_CODE_")
 
-    override fun invocationOf(executable: String, model: String?): Invocation =
-        invocationOf(executable, model, restricted = true)
-
     /**
-     * [restricted]가 true면 도구를 막고 부른다 — 글만 써 달라는 일이라 명령 실행도 WebFetch도 필요 없다.
+     * **도구를 막고 부른다**(`--restricted`) — 글만 써 달라는 일이라 명령 실행도 WebFetch도 필요 없다.
      *
-     * 그런데 그 옵션을 **모르는 버전이 있다**(`unknown option '--restricted'`). 버전을 미리 알아내는
-     * 대신 거절당하면 옵션 없이 한 번 더 부른다. 도구를 막지 못하는 것과 초안을 아예 못 쓰는 것 중에는
-     * 앞이 낫다 — 프롬프트는 어차피 JSON 한 줄만 요구한다.
+     * 그 옵션을 모르는 낮은 버전이 있다. 그때 옵션을 빼고 다시 부르지 않는다 — 사용자 저장소에서
+     * 명령을 돌릴 수 있는 채로 모델을 부르는 것은 초안 하나와 바꿀 일이 아니다. 대신 [outdated]가
+     * 버전을 올리라고 알린다.
      */
-    private fun invocationOf(executable: String, model: String?, restricted: Boolean): Invocation {
+    override fun invocationOf(executable: String, model: String?): Invocation {
         val command = buildList {
             add(executable)
             add("-p")
             add("--output-format")
             add("json")
-            if (restricted) {
-                add(RESTRICTED)
-            }
+            add(RESTRICTED)
             model?.trim()?.takeIf { it.isNotEmpty() }?.let {
                 add("--model")
                 add(it)
@@ -88,16 +83,24 @@ object ClaudeCodeCli : AiCli {
         return Invocation(
             command = command,
             readText = { textOf(it.stdout) },
-            errorIn = { errorOf(it.stdout) },
-            fallbackFor = { result ->
-                invocationOf(executable, model, restricted = false).takeIf { restricted && rejects(result) }
-            },
+            errorIn = { outdated(it) ?: errorOf(it.stdout) },
         )
     }
 
-    /** 이 실패가 `--restricted`를 몰라서 난 것인가. 다른 이유로 물러서지 않는다. */
-    private fun rejects(result: ProcessResult): Boolean =
-        listOf(result.stderr, result.stdout).any { it.contains(RESTRICTED) && it.contains("unknown option") }
+    /**
+     * 낮은 버전이라 거절당했으면 무엇을 하면 되는지. 아니면 null.
+     *
+     * CLI가 하는 말은 `unknown option '--restricted'`뿐이라, 그대로 올리면 사용자는 우리 코드가
+     * 잘못됐다고 읽는다. 실제로 할 일은 CLI를 올리는 것 하나다.
+     */
+    fun outdated(result: ProcessResult): String? {
+        val said = result.stderr + result.stdout
+        if (!said.contains(RESTRICTED) || !said.contains("unknown option")) {
+            return null
+        }
+
+        return OUTDATED
+    }
 
     /**
      * `--output-format json`의 봉투에서 모델이 낸 글만 꺼낸다.
@@ -161,4 +164,7 @@ object ClaudeCodeCli : AiCli {
     const val FAILED_WITHOUT_REASON: String = "Claude Code가 이유를 밝히지 않고 실패했습니다."
 
     private const val RESTRICTED: String = "--restricted"
+
+    const val OUTDATED: String =
+        "Claude Code 버전이 낮습니다. 터미널에서 `claude update`를 실행해 올린 뒤 다시 시도하세요."
 }

@@ -53,21 +53,12 @@ class AiCliRunner(
     private fun answerOf(invocation: Invocation, prompt: String): AiAnswer {
         val result = run(invocation.command, prompt, timeout)
             ?: return AiAnswer.Failed("${cli.displayName}이(가) 제때 답하지 않았습니다.")
+        // 실패했든 아니든 CLI에게 먼저 묻는다. 종료 코드가 0이어도 실패일 수 있고(로그인 만료),
+        // 0이 아닐 때도 CLI가 한 말보다 나은 안내가 있을 수 있다(버전을 올리세요).
+        invocation.errorIn(result)?.let { return AiAnswer.Failed(it) }
         if (result.exitCode != 0) {
-            // 옵션 하나 때문에 거절당했을 수 있다. CLI가 물러설 자리를 알려 주면 한 번만 다시 부른다.
-            invocation.fallbackFor(result)?.let { retry ->
-                return try {
-                    answerOf(retry, prompt)
-                } finally {
-                    runCatching(retry.cleanUp)
-                }
-            }
             return AiAnswer.Failed(result.complaint(cli.displayName))
         }
-
-        // 종료 코드가 0이어도 실패일 수 있다. CLI가 한 말을 그대로 올린다 —
-        // 우리가 지어낸 문구보다 "로그인이 만료됐습니다"가 언제나 낫다.
-        invocation.errorIn(result)?.let { return AiAnswer.Failed(it) }
 
         return invocation.readText(result)?.takeIf { it.isNotBlank() }?.let(AiAnswer::Said)
             ?: AiAnswer.Failed(unreadable(cli))
