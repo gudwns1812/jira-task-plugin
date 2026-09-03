@@ -44,14 +44,14 @@ $ErrorActionPreference = 'Stop'
 
 # 설명서의 슬롯과 같은 목록이다. 한쪽만 고치면 서로 어긋난다.
 $slots = [ordered]@{
-    '01' = '터미널에서 claude --version 이 버전을 답하는 화면'
+    '01' = '터미널에서 claude --version 또는 codex --version 이 버전을 답하는 화면'
     '02' = 'Settings > Plugins > 톱니바퀴 > Install Plugin from Disk 메뉴'
     '03' = 'Tools > Jira Task 메뉴가 펼쳐진 화면(항목 6개)'
     '04' = '설정 마법사 1단계 - Jira 연결 정보 창'
     '05' = '설정 마법사 마지막 - 설정 내용 확인 창'
     '06' = 'Settings | Tools | Jira Task 설정 화면 전체'
     '07' = 'GitLab 연결 테스트를 눌러 성공 문구가 뜬 상태'
-    '08' = 'AI 초안 (Claude Code) 그룹 - 체크박스 2개와 모델·경로 칸'
+    '08' = 'AI 초안 그룹 - 체크박스 2개, 사용할 AI 콤보와 탐지 결과, 모델·경로 칸'
     '09' = 'Start Jira Task 창 - 현재 스프린트 작업 목록'
     '10' = '상태 표시줄의 현재 작업 위젯'
     '11' = '오른쪽 Jira Task 툴 윈도우 - 현재 작업/스프린트/설정 요약'

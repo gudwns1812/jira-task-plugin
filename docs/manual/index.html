@@ -6,7 +6,7 @@
 <title>Jira Task 플러그인 사용 설명서</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
 <style>
   :root {
     --ground: #f2f4f8;
@@ -89,10 +89,16 @@
 
   code, kbd, .mono { font-family: "IBM Plex Mono", ui-monospace, Consolas, monospace; }
 
+  /*
+   * 제목도 본문과 같은 가족이다. 한국어 세리프(Noto Serif KR)는 14MB짜리 한 덩어리로 와서
+   * 화면에서도 PDF에서도 제때 못 들어온다 — 그 사이 제목만 다른 글꼴로 그려진다.
+   * 굵기와 자간으로 가르는 편이 언제나 같은 모양을 낸다.
+   */
   h1, h2, h3 {
-    font-family: "Noto Serif KR", "Nanum Myeongjo", serif;
-    font-weight: 600;
-    line-height: 1.35;
+    font-family: "IBM Plex Sans KR", system-ui, "Malgun Gothic", sans-serif;
+    font-weight: 700;
+    line-height: 1.3;
+    letter-spacing: -0.02em;
     text-wrap: balance;
     margin: 0;
   }
@@ -541,9 +547,6 @@
     <ol>
       <li><a href="#s15"><span>15</span><span>이슈 검색·수정</span></a></li>
       <li><a href="#s16"><span>16</span><span>이슈 키로 이동</span></a></li>
-      <li><a href="#a1"><span>A</span><span>AI에게 나가는 것</span></a></li>
-      <li><a href="#a2"><span>B</span><span>문제 해결</span></a></li>
-      <li><a href="#a3"><span>C</span><span>캡처하는 법</span></a></li>
     </ol>
 
     <div class="progress">
@@ -574,17 +577,21 @@
           <ul>
             <li>IntelliJ IDEA 2024.2 이상</li>
             <li><code>git</code> 명령이 PATH에 있을 것</li>
-            <li>Claude Code CLI 설치 + 로그인 — AI로 커밋 메시지·MR 초안을 쓸 때만 필요합니다</li>
+            <li><b>Claude Code</b> 또는 <b>Codex</b> CLI 설치 + 로그인 — AI로 커밋 메시지·MR 초안을 쓸 때만 필요합니다. 둘 중 하나만 있으면 됩니다</li>
           </ul>
-          <div class="sample">claude --version
-claude /login   # 로그인하지 않았다면</div>
+          <div class="sample"># 둘 중 쓰는 쪽만 확인하면 됩니다
+claude --version
+claude /login        # 로그인하지 않았다면
+
+codex --version
+codex login          # 로그인하지 않았다면</div>
           <figure class="shot" data-slot="01">
             <div class="shot__frame">
               <img src="images/01.png" alt="claude --version 실행 결과">
               <div class="shot__slot">
                 <div>
                   <div class="shot__id">01</div>
-                  <p class="shot__need">터미널에서 <code>claude --version</code> 이 버전을 답하는 화면</p>
+                  <p class="shot__need">터미널에서 <code>claude --version</code> 또는 <code>codex --version</code> 이 버전을 답하는 화면</p>
                   <button class="shot__cmd" type="button" data-cmd=".\capture.ps1 1">.\capture.ps1 1 <span aria-hidden="true">⧉</span></button>
                 </div>
               </div>
@@ -592,7 +599,7 @@ claude /login   # 로그인하지 않았다면</div>
           </figure>
           <div class="note note--plain">
             <span class="note__label">요금</span>
-            <p>API 키를 넣는 칸은 없습니다. 이미 로그인해 둔 Claude Code를 그대로 쓰므로 Pro/Max 구독으로 동작합니다.</p>
+            <p>API 키를 넣는 칸은 없습니다. 이미 로그인해 둔 CLI를 그대로 쓰므로 구독으로 동작합니다 — Claude Code는 Pro/Max, Codex는 ChatGPT 구독입니다.</p>
           </div>
         </div>
       </article>
@@ -746,22 +753,27 @@ claude /login   # 로그인하지 않았다면</div>
           <span class="step__num">05</span>
           <h3>AI 초안 켜기</h3>
         </div>
-        <p class="step__where">Settings | Tools | Jira Task → AI 초안 (Claude Code)</p>
+        <p class="step__where">Settings | Tools | Jira Task → AI 초안</p>
         <div class="step__body">
           <p><b>기본값은 꺼짐</b>입니다. 켜야 커밋 메시지와 MR 초안을 AI가 씁니다.</p>
           <ul>
             <li><b>MR 제목·본문과 커밋 메시지를 AI에게 맡기기</b> — 이 기능 전체의 스위치</li>
-            <li><b>커밋 초안에 변경 내용(diff)까지 보내기</b> — 켜져 있음이 기본. 자세한 내용은 <a href="#a1">부록 A</a></li>
-            <li><b>모델</b> — 비워 두면 Claude Code에 설정된 모델을 그대로 씁니다</li>
-            <li><b>실행 파일 경로</b> — 비워 두면 PATH에서 찾습니다. Windows에서는 <code>claude.cmd</code>를 씁니다</li>
+            <li><b>사용할 AI</b> — <b>Claude Code</b>와 <b>Codex</b> 중에서 고릅니다. 고르면 옆에 <code>찾음: …</code>으로 어디에 깔려 있는지 보여 주고, 없으면 설치 방법을 알려 줍니다. 방금 설치했다면 <b>다시 탐지</b>를 누릅니다</li>
+            <li><b>커밋 초안에 변경 내용(diff)까지 보내기</b> — 켜져 있음이 기본.</li>
+            <li><b>모델</b> — 비워 두면 그 CLI에 설정된 모델을 그대로 씁니다. 고른 AI마다 따로 저장하므로, AI를 바꿔도 서로의 모델이 섞이지 않습니다</li>
+            <li><b>실행 파일 경로</b> — <b>비워 두세요.</b> PATH와 npm·homebrew·공식 인스톨러가 쓰는 자리를 알아서 찾습니다. 탐지가 실패했을 때만 터미널의 <code>where claude</code>(macOS는 <code>which claude</code>) 결과를 넣습니다</li>
           </ul>
+          <div class="note note--plain">
+            <span class="note__label">둘 다 깔려 있다면</span>
+            <p>아무 때나 <b>사용할 AI</b>만 바꾸면 됩니다. 그 뒤의 커밋 초안과 MR 초안이 모두 바뀐 쪽으로 갑니다.</p>
+          </div>
           <figure class="shot" data-slot="08">
             <div class="shot__frame">
               <img src="images/08.png" alt="AI 초안 설정 그룹">
               <div class="shot__slot">
                 <div>
                   <div class="shot__id">08</div>
-                  <p class="shot__need">AI 초안 (Claude Code) 그룹 — 체크박스 2개와 모델·경로 칸</p>
+                  <p class="shot__need">AI 초안 그룹 — 체크박스 2개, 사용할 AI 콤보와 탐지 결과, 모델·경로 칸</p>
                   <button class="shot__cmd" type="button" data-cmd=".\capture.ps1 8">.\capture.ps1 8 <span aria-hidden="true">⧉</span></button>
                 </div>
               </div>
@@ -1008,9 +1020,10 @@ claude /login   # 로그인하지 않았다면</div>
               <thead><tr><th>문구</th><th>할 일</th></tr></thead>
               <tbody>
                 <tr><td>AI 초안이 꺼져 있습니다</td><td><a href="#s05">단계 05</a>에서 켭니다</td></tr>
-                <tr><td>Claude Code CLI를 찾을 수 없습니다</td><td>설치하거나 설정에 실행 파일 경로를 지정합니다</td></tr>
+                <tr><td>… CLI를 찾을 수 없습니다</td><td>설치한 뒤 설정에서 <b>다시 탐지</b>를 누릅니다. 그래도 못 찾으면 실행 파일 경로를 지정합니다</td></tr>
+                <tr><td>설정에 적어 둔 경로로 …을(를) 부를 수 없습니다</td><td>그 칸을 비우면 알아서 찾습니다</td></tr>
                 <tr><td>커밋할 변경이 없습니다</td><td>파일을 고친 뒤 다시 누릅니다</td></tr>
-                <tr><td>Claude Code가 제때 답하지 않았습니다</td><td>잠시 뒤 다시 누르거나 직접 씁니다</td></tr>
+                <tr><td>…이(가) 제때 답하지 않았습니다</td><td>잠시 뒤 다시 누르거나 직접 씁니다</td></tr>
               </tbody>
             </table>
           </div>
@@ -1130,121 +1143,6 @@ claude /login   # 로그인하지 않았다면</div>
       </article>
     </section>
 
-    <!-- ================= 부록 ================= -->
-    <section class="phase">
-      <div class="phase__head">
-        <span class="phase__num">부록</span>
-        <h2>알아 둘 것</h2>
-      </div>
-
-      <article class="step" id="a1">
-        <div class="step__head">
-          <span class="step__num">A</span>
-          <h3>AI에게 무엇이 나가는가</h3>
-        </div>
-        <div class="step__body">
-          <p>이 표가 전부입니다.</p>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>기능</th><th>보내는 것</th><th>보내지 않는 것</th></tr></thead>
-              <tbody>
-                <tr>
-                  <td>MR 초안</td>
-                  <td>브랜치 이름, 커밋 제목, 변경된 파일 경로, 고른 템플릿</td>
-                  <td>파일 내용 일체</td>
-                </tr>
-                <tr>
-                  <td>커밋 초안</td>
-                  <td>브랜치 이름, 작업 키, 커밋할 파일 경로, 쓰던 메시지, <b>변경 내용(diff)</b></td>
-                  <td>새로 만든 파일의 내용, 커밋 대상이 아닌 파일</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <ul>
-            <li>커밋 초안의 diff는 설정에서 끌 수 있습니다. 끄면 파일 경로만 나갑니다.</li>
-            <li>변경이 아주 크면 앞부분만 보냅니다.</li>
-          </ul>
-        </div>
-      </article>
-
-      <article class="step" id="a2">
-        <div class="step__head">
-          <span class="step__num">B</span>
-          <h3>문제 해결</h3>
-        </div>
-        <div class="step__body">
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>증상</th><th>원인과 해결</th></tr></thead>
-              <tbody>
-                <tr>
-                  <td>메뉴 항목이 회색</td>
-                  <td>프로젝트를 열지 않았거나 프로젝트 키가 없습니다. 툴팁에 이유가 적힙니다.</td>
-                </tr>
-                <tr>
-                  <td>커밋 메시지에 키가 안 붙음</td>
-                  <td>작업 번호가 없습니다. <a href="#s06">Start Jira Task</a>로 저장하세요.</td>
-                </tr>
-                <tr>
-                  <td>"커밋할 변경이 없습니다"</td>
-                  <td>정말 변경이 없는 경우입니다. 새로 만든 파일도 <code>git add</code> 없이 인식하며,
-                      저장하지 않은 편집기 내용은 누를 때 자동으로 저장합니다.</td>
-                </tr>
-                <tr>
-                  <td>"Claude Code CLI를 찾을 수 없습니다"</td>
-                  <td>PATH에 없습니다. 설정에 실행 파일 경로를 넣으세요(Windows는 <code>claude.cmd</code>).</td>
-                </tr>
-                <tr>
-                  <td>"GitLab 액세스 토큰이 없습니다"</td>
-                  <td>설정 화면에 넣거나 <code>GITLAB_TOKEN</code> 환경 변수를 씁니다.</td>
-                </tr>
-                <tr>
-                  <td>MR 생성만 403</td>
-                  <td>토큰 스코프가 <code>read_api</code>입니다. <code>api</code> 스코프가 필요합니다.</td>
-                </tr>
-                <tr>
-                  <td>"브랜치를 아직 원격에 올리지 않았습니다"</td>
-                  <td>먼저 푸시하세요. 확인하지 못한 경우에는 막지 않습니다.</td>
-                </tr>
-                <tr>
-                  <td>스프린트 목록이 비어 있음</td>
-                  <td>Jira 조회에 실패했을 수 있습니다. 툴 윈도우의 <b>새로 고침</b>을 누르거나,
-                      작업 번호를 직접 입력해 계속 진행하세요.</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </article>
-
-      <article class="step" id="a3">
-        <div class="step__head">
-          <span class="step__num">C</span>
-          <h3>캡처를 채우는 법</h3>
-        </div>
-        <div class="step__body">
-          <p>이 문서의 빈 자리는 <code>docs/manual/capture.ps1</code> 로 채웁니다. 슬롯 번호로 저장하면
-            문서가 알아서 그 자리에 넣습니다 — HTML은 손대지 않습니다.</p>
-          <div class="sample">cd docs\manual
-.\capture.ps1 -List          # 남은 슬롯과 담을 화면 보기
-.\capture.ps1 14             # 5초 뒤 화면 전체를 14번 자리에 저장
-.\capture.ps1 16 -Window     # 그때 앞에 있는 창만 (다이얼로그에 좋음)
-.\capture.ps1 5 -Delay 10    # 준비할 시간이 더 필요할 때</div>
-          <ul>
-            <li>저장 위치는 <code>docs/manual/images/&lt;번호&gt;.png</code> 입니다. 직접 찍은 파일을
-              그 이름으로 넣어도 똑같이 동작합니다.</li>
-            <li>다시 찍으면 덮어씁니다. 브라우저는 <kbd>Ctrl</kbd>+<kbd>F5</kbd>로 새로 고칩니다.</li>
-            <li>토큰·주소처럼 가려야 할 것이 찍혔다면 지우고 다시 찍으세요.</li>
-          </ul>
-          <div class="note note--plain">
-            <span class="note__label">PDF로 넘기기</span>
-            <p>브라우저에서 <kbd>Ctrl</kbd>+<kbd>P</kbd> → 대상을 <b>PDF로 저장</b>. 색인과 캡처 명령은
-              인쇄에서 자동으로 빠집니다.</p>
-          </div>
-        </div>
-      </article>
-    </section>
   </main>
 </div>
 
