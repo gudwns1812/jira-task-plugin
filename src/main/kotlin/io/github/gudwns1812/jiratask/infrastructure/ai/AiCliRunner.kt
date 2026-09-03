@@ -54,6 +54,14 @@ class AiCliRunner(
         val result = run(invocation.command, prompt, timeout)
             ?: return AiAnswer.Failed("${cli.displayName}이(가) 제때 답하지 않았습니다.")
         if (result.exitCode != 0) {
+            // 옵션 하나 때문에 거절당했을 수 있다. CLI가 물러설 자리를 알려 주면 한 번만 다시 부른다.
+            invocation.fallbackFor(result)?.let { retry ->
+                return try {
+                    answerOf(retry, prompt)
+                } finally {
+                    runCatching(retry.cleanUp)
+                }
+            }
             return AiAnswer.Failed(result.complaint(cli.displayName))
         }
 

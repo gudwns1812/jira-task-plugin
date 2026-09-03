@@ -37,6 +37,13 @@ class Invocation(
      * 알 수 없다.
      */
     val errorIn: (ProcessResult) -> String? = { null },
+    /**
+     * 실패한 결과를 보고 **다시 해볼 값이 있으면** 그 호출. 없으면 null.
+     *
+     * CLI 버전마다 받아 주는 옵션이 다르다 — 실제로 어떤 버전은 `--restricted`를 모른다고 답한다.
+     * 버전을 미리 알아낼 방법이 마땅치 않고 알아낸다 해도 곧 낡으므로, 거절당한 뒤에 물러선다.
+     */
+    val fallbackFor: (ProcessResult) -> Invocation? = { null },
 )
 
 /**

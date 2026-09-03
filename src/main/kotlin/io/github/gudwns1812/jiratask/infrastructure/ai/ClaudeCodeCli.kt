@@ -60,14 +60,25 @@ object ClaudeCodeCli : AiCli {
     override fun isSessionVariable(name: String): Boolean =
         name == "CLAUDECODE" || name.startsWith("CLAUDE_CODE_")
 
-    override fun invocationOf(executable: String, model: String?): Invocation {
+    override fun invocationOf(executable: String, model: String?): Invocation =
+        invocationOf(executable, model, restricted = true)
+
+    /**
+     * [restricted]가 true면 도구를 막고 부른다 — 글만 써 달라는 일이라 명령 실행도 WebFetch도 필요 없다.
+     *
+     * 그런데 그 옵션을 **모르는 버전이 있다**(`unknown option '--restricted'`). 버전을 미리 알아내는
+     * 대신 거절당하면 옵션 없이 한 번 더 부른다. 도구를 막지 못하는 것과 초안을 아예 못 쓰는 것 중에는
+     * 앞이 낫다 — 프롬프트는 어차피 JSON 한 줄만 요구한다.
+     */
+    private fun invocationOf(executable: String, model: String?, restricted: Boolean): Invocation {
         val command = buildList {
             add(executable)
             add("-p")
             add("--output-format")
             add("json")
-            // 글만 써 달라는 일이라 명령 실행 도구와 WebFetch는 필요 없다.
-            add("--restricted")
+            if (restricted) {
+                add(RESTRICTED)
+            }
             model?.trim()?.takeIf { it.isNotEmpty() }?.let {
                 add("--model")
                 add(it)
@@ -78,8 +89,15 @@ object ClaudeCodeCli : AiCli {
             command = command,
             readText = { textOf(it.stdout) },
             errorIn = { errorOf(it.stdout) },
+            fallbackFor = { result ->
+                invocationOf(executable, model, restricted = false).takeIf { restricted && rejects(result) }
+            },
         )
     }
+
+    /** 이 실패가 `--restricted`를 몰라서 난 것인가. 다른 이유로 물러서지 않는다. */
+    private fun rejects(result: ProcessResult): Boolean =
+        listOf(result.stderr, result.stdout).any { it.contains(RESTRICTED) && it.contains("unknown option") }
 
     /**
      * `--output-format json`의 봉투에서 모델이 낸 글만 꺼낸다.
@@ -141,4 +159,6 @@ object ClaudeCodeCli : AiCli {
             ?.takeIf { it.isNotBlank() }
 
     const val FAILED_WITHOUT_REASON: String = "Claude Code가 이유를 밝히지 않고 실패했습니다."
+
+    private const val RESTRICTED: String = "--restricted"
 }

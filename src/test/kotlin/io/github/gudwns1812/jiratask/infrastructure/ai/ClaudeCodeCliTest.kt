@@ -1,6 +1,7 @@
 package io.github.gudwns1812.jiratask.infrastructure.ai
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -145,6 +146,29 @@ class ClaudeCodeCliTest {
         val silent = """{"type":"result","is_error":true,"session_id":"abc"}"""
 
         assertEquals(ClaudeCodeCli.FAILED_WITHOUT_REASON, ClaudeCodeCli.errorOf(silent))
+    }
+
+
+    @Test
+    fun `drops the restricted flag when the cli does not know it`() {
+        // 맥에서 실제로 본 답이다: error: unknown option '--restricted'
+        val invocation = ClaudeCodeCli.invocationOf("claude", null)
+        val rejected = ProcessResult(1, "", "error: unknown option '--restricted'")
+
+        val retry = invocation.fallbackFor(rejected)
+
+        assertNotNull(retry)
+        assertTrue("도구를 막지 못하는 것과 초안을 못 쓰는 것 중에는 앞이 낫다", !retry!!.command.contains("--restricted"))
+        assertTrue(retry.command.containsAll(listOf("claude", "-p", "--output-format", "json")))
+    }
+
+    @Test
+    fun `does not retry when the failure was something else`() {
+        val invocation = ClaudeCodeCli.invocationOf("claude", null)
+
+        assertNull(invocation.fallbackFor(ProcessResult(1, "", "Invalid API key · Please run /login")))
+        assertNull("두 번 물러서지는 않는다", invocation.fallbackFor(ProcessResult(1, "", "unknown option '--restricted'"))
+            ?.fallbackFor(ProcessResult(1, "", "error: unknown option '--restricted'")))
     }
 
 }
