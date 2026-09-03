@@ -1,4 +1,4 @@
-package io.github.gudwns1812.jiratask.infrastructure
+package io.github.gudwns1812.jiratask.infrastructure.ai
 
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
@@ -7,44 +7,20 @@ import io.github.gudwns1812.jiratask.domain.commit.WrittenCommitMessage
 import io.github.gudwns1812.jiratask.domain.mr.WrittenDraft
 
 /**
- * Claude Code가 돌려준 것을 초안으로 읽는다. 껍질이 두 겹이다.
+ * 모델이 낸 글을 초안으로 읽는다.
  *
- * 1. `--output-format json`의 봉투 — CLI가 씌운다. 모델이 낸 글은 `result` 안에 있다.
- * 2. 그 안의 JSON — 모델이 낸다. 지시해도 코드펜스로 감싸 오는 일이 있어 벗겨 낸다.
+ * 껍질이 두 겹인데 **여기는 안쪽 한 겹만** 맡는다. 바깥 겹(CLI가 씌운 봉투)은 CLI마다 모양이 달라
+ * 각 [AiCli]가 벗긴다. 안쪽 겹 — 모델이 낸 JSON과 지시해도 가끔 씌워 오는 코드펜스 — 은
+ * 어느 모델이든 똑같아서 한 자리에 둔다.
  *
  * 도메인이 아니라 여기 두는 이유는 도메인이 JDK 말고는 아무것도 import하지 않기 때문이다
- * (ARCHITECTURE.md 114-119). JSON 파서를 도메인에 들이지 않는다.
+ * (ARCHITECTURE.md). JSON 파서를 도메인에 들이지 않는다.
  */
-object ClaudeDraftResponse {
-
-    /**
-     * CLI 봉투에서 모델이 낸 글만 꺼낸다.
-     *
-     * **줄 단위로 찾는다.** stdout에는 봉투 말고도 다른 줄이 섞여 나온다 — 실제로
-     * `Client.listTools() called but server does not advertise tools capability` 같은
-     * MCP 서버 경고가 함께 찍힌다. 통째로 파싱하면 그 한 줄 때문에 전부 실패한다.
-     */
-    fun textOf(cliOutput: String): String? {
-        val envelope = cliOutput.lineSequence()
-            .map { it.trim() }
-            .filter { it.startsWith("{") }
-            .mapNotNull { runCatching { JsonParser.parseString(it) }.getOrNull() as? JsonObject }
-            .firstOrNull { it.has("result") || it.has("error") }
-
-        if (envelope != null) {
-            // CLI가 오류를 봉투에 담아 주면 그것을 그대로 위로 올린다.
-            envelope.text("result")?.let { return it }
-            envelope.text("error")?.let { return it }
-        }
-
-        // 봉투를 못 찾았다. 모델이 낸 JSON이 바로 왔을 수도 있으니 한 번은 더 읽어 본다.
-        return cliOutput.trim().ifEmpty { null }
-    }
+object AiDraftResponse {
 
     /** 모델이 낸 글에서 제목과 본문을 읽는다. 읽어 낼 수 없으면 null — 규칙 기반 초안이 그대로 남는다. */
     fun parse(text: String?): WrittenDraft? {
-        val json = unwrapFence(text.orEmpty()).ifBlank { return null }
-        val obj = runCatching { JsonParser.parseString(json) }.getOrNull() as? JsonObject ?: return null
+        val obj = objectIn(text) ?: return null
 
         val title = obj.text("title")?.lineSequence()?.firstOrNull()?.trim().orEmpty()
         if (title.isEmpty()) {
@@ -66,8 +42,7 @@ object ClaudeDraftResponse {
      * 아무거나 골라 붙이면 잘못된 분류가 커밋 기록에 그대로 남는다.
      */
     fun commit(text: String?): WrittenCommitMessage? {
-        val json = unwrapFence(text.orEmpty()).ifBlank { return null }
-        val obj = runCatching { JsonParser.parseString(json) }.getOrNull() as? JsonObject ?: return null
+        val obj = objectIn(text) ?: return null
 
         val line = obj.text("summary")?.lineSequence()?.firstOrNull()?.trim().orEmpty()
         val repeated = CommitType.of(line.substringBefore(':', ""))
@@ -85,6 +60,11 @@ object ClaudeDraftResponse {
         return WrittenCommitMessage(type, summary)
     }
 
+    private fun objectIn(text: String?): JsonObject? {
+        val json = unwrapFence(text.orEmpty()).ifBlank { return null }
+        return runCatching { JsonParser.parseString(json) }.getOrNull() as? JsonObject
+    }
+
     /** ```json … ``` 로 감싸 온 경우 안쪽만 꺼낸다. 감싸지 않았으면 그대로 둔다. */
     private fun unwrapFence(text: String): String {
         val trimmed = text.trim()
@@ -96,6 +76,21 @@ object ClaudeDraftResponse {
             .substringAfter('\n', "")
             .substringBeforeLast("```")
             .trim()
+    }
+
+    /**
+     * 앞뒤에 다른 말이 섞여 있어도 JSON 객체만 건져 낸다.
+     *
+     * 봉투를 씌우지 않는 CLI에서 쓰는 뒷받침이다. 우리 프롬프트는 객체 하나만 내라고 지시하므로
+     * 첫 `{`부터 마지막 `}`까지가 곧 그 객체다.
+     */
+    fun objectBlockIn(output: String): String? {
+        val start = output.indexOf('{')
+        val end = output.lastIndexOf('}')
+        if (start < 0 || end <= start) {
+            return null
+        }
+        return output.substring(start, end + 1)
     }
 
     private fun JsonObject.text(key: String): String? =

@@ -18,6 +18,9 @@ import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.ValidationInfo
 import com.intellij.ui.DocumentAdapter
+import com.intellij.ui.dsl.builder.AlignY
+import io.github.gudwns1812.jiratask.domain.mr.DraftWriter
+import io.github.gudwns1812.jiratask.domain.mr.GitLabUser
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
@@ -31,12 +34,12 @@ import io.github.gudwns1812.jiratask.application.DraftRewrite
 import io.github.gudwns1812.jiratask.application.MergeRequestPrepare
 import io.github.gudwns1812.jiratask.application.MergeRequestProposal
 import io.github.gudwns1812.jiratask.application.MergeRequestResult
-import io.github.gudwns1812.jiratask.infrastructure.ClaudeCliDraftWriter
 import io.github.gudwns1812.jiratask.infrastructure.GitLabClient
 import io.github.gudwns1812.jiratask.infrastructure.GitRepository
 import io.github.gudwns1812.jiratask.ui.JiraTaskAvailability
 import io.github.gudwns1812.jiratask.ui.JiraTaskCommand
 import io.github.gudwns1812.jiratask.ui.JiraTaskNotifications
+import io.github.gudwns1812.jiratask.ui.AiWriters
 import io.github.gudwns1812.jiratask.ui.JiraTaskSettings
 import io.github.gudwns1812.jiratask.ui.MergeRequestSettings
 import io.github.gudwns1812.jiratask.ui.OpenJiraTaskSettingsAction
@@ -82,6 +85,10 @@ class MergeRequestDialog(
     private val rewrite: (MergeRequestProposal) -> DraftRewrite = {
         DraftRewrite.Refused(CreateMergeRequestUseCase.DISABLED)
     },
+    /** 리뷰어 후보. 창을 열 때 한 쪽만 받아 둔다. */
+    private val candidates: List<GitLabUser> = proposal.availableReviewers,
+    /** 후보에 없는 사람을 GitLab에 물어보는 방법. 네트워크를 타므로 고르기 창이 백그라운드에서 부른다. */
+    private val findUsers: (String) -> List<GitLabUser> = { emptyList() },
 ) : DialogWrapper(project, false) {
 
     private var proposal: MergeRequestProposal = proposal
@@ -105,6 +112,18 @@ class MergeRequestDialog(
         .apply { selectedItem = proposal.templateName ?: NO_TEMPLATE }
 
     val descriptionArea: JBTextArea = JBTextArea(proposal.description, 10, 60)
+
+    private val assigneesLabel = JBLabel()
+
+    private val reviewersLabel = JBLabel()
+
+    private val labelsLabel = JBLabel()
+
+    private var assignees: List<GitLabUser> = proposal.assignees
+
+    private var reviewers: List<GitLabUser> = proposal.reviewers
+
+    private var labels: List<String> = proposal.labels
 
     private val issueKeysLabel = JBLabel()
 
@@ -136,6 +155,7 @@ class MergeRequestDialog(
         })
         templateBox.addActionListener { onTemplateChanged() }
         rewriteButton.addActionListener { onRewrite() }
+        showPeople()
         showKeys()
         refreshState()
     }
@@ -176,29 +196,108 @@ class MergeRequestDialog(
     fun rewriteText(): String = rewriteLabel.text.orEmpty()
 
     override fun createCenterPanel(): JComponent = panel {
-        row("원본 브랜치:") { cell(JBLabel(proposal.sourceBranch)) }
-        row("대상 브랜치:") {
-            cell(targetBox).columns(COLUMNS_LARGE)
-        }.rowComment("이 브랜치가 대상 브랜치에 더한 커밋만 본문에 담깁니다. 바꾸면 본문을 다시 만듭니다.")
-        if (proposal.templates.isNotEmpty()) {
-            row("템플릿:") {
-                cell(templateBox).columns(COLUMNS_LARGE)
-            }.rowComment("팀 템플릿을 그대로 두고 관련 이슈 절에만 작업을 채웁니다. 그 절이 없으면 뒤에 붙입니다.")
+        row {
+            panel {
+                row("원본 브랜치:") { cell(JBLabel(proposal.sourceBranch)) }
+                row("대상 브랜치:") {
+                    cell(targetBox).columns(COLUMNS_LARGE)
+                }
+                if (proposal.templates.isNotEmpty()) {
+                    row("템플릿:") {
+                        cell(templateBox).columns(COLUMNS_LARGE)
+                    }
+                }
+            }.align(AlignY.TOP)
+
+            // 오른쪽 열. GitLab 웹에서 MR을 만든 뒤 따로 손보던 것들을 여기서 끝낸다.
+            panel {
+                row("담당자:") {
+                    cell(assigneesLabel)
+                    button(PICK) { pickAssignee() }
+                }
+                row("리뷰어:") {
+                    cell(reviewersLabel)
+                    button(PICK) { pickReviewers() }
+                }
+                row("라벨:") {
+                    cell(labelsLabel)
+                    button(PICK) { pickLabels() }
+                }
+            }.align(AlignY.TOP)
         }
         row("제목:") { cell(titleField).columns(COLUMNS_LARGE) }
         row("본문:") { cell(JBScrollPane(descriptionArea)).resizableColumn() }
         row {
             cell(issueKeysLabel)
-        }.rowComment("연결된 작업 키는 본문에 적혀 Jira가 이 MR을 작업에 붙일 수 있게 합니다.")
+        }
         // 꺼져 있어도 보인다. 숨기면 기능이 있다는 것도, 켜러 가야 한다는 것도 알 길이 없다.
         row {
             cell(rewriteButton)
             cell(rewriteLabel)
-        }.rowComment("브랜치 이름·커밋 제목·변경된 파일 경로만 보냅니다. 파일 내용은 보내지 않습니다.")
+        }
         row { cell(warningLabel) }
     }
 
     override fun getPreferredFocusedComponent(): JComponent = titleField
+
+    private fun pickAssignee() {
+        // 담당자는 한 명이다 — GitLab 무료 요금제가 그렇다.
+        val dialog = MultiPickDialog(
+            project = null,
+            dialogTitle = "담당자 고르기",
+            items = candidates,
+            selected = assignees,
+            labelOf = GitLabUser::label,
+            search = findUsers,
+            single = true,
+        )
+        if (dialog.showAndGet()) {
+            assignees = dialog.picked().take(1)
+            showPeople()
+        }
+    }
+
+    private fun pickReviewers() {
+        val dialog = MultiPickDialog(
+            project = null,
+            dialogTitle = "리뷰어 고르기",
+            items = candidates,
+            selected = reviewers,
+            labelOf = GitLabUser::label,
+            search = findUsers,
+        )
+        if (dialog.showAndGet()) {
+            reviewers = dialog.picked()
+            showPeople()
+        }
+    }
+
+    private fun pickLabels() {
+        val dialog = MultiPickDialog(
+            project = null,
+            dialogTitle = "라벨 고르기",
+            items = proposal.availableLabels,
+            selected = labels,
+            labelOf = { it },
+        )
+        if (dialog.showAndGet()) {
+            labels = dialog.picked()
+            showPeople()
+        }
+    }
+
+    private fun showPeople() {
+        assigneesLabel.text = assignees.joinToString(", ") { it.label() }.ifEmpty { NONE }
+        reviewersLabel.text = reviewers.joinToString(", ") { it.label() }.ifEmpty { NONE }
+        labelsLabel.text = labels.joinToString(", ").ifEmpty { NONE }
+    }
+
+    /** 화면이 지금 들고 있는 담당자·리뷰어·라벨. 창을 뒤지지 않고 확인하려고 열어 둔다. */
+    fun assignees(): List<GitLabUser> = assignees
+
+    fun reviewers(): List<GitLabUser> = reviewers
+
+    fun labels(): List<String> = labels
 
     fun target(): String = (targetBox.editor.item ?: targetBox.selectedItem)?.toString()?.trim().orEmpty()
 
@@ -216,7 +315,12 @@ class MergeRequestDialog(
 
     fun problem(): String? = doValidate()?.message
 
-    fun values(): MergeRequestProposal = proposal.copy(targetBranch = target())
+    fun values(): MergeRequestProposal = proposal.copy(
+        targetBranch = target(),
+        assignees = assignees,
+        reviewers = reviewers,
+        labels = labels,
+    )
 
     fun warningText(): String = warningLabel.text.orEmpty()
 
@@ -285,6 +389,8 @@ class MergeRequestDialog(
     }
 
     companion object {
+        const val PICK: String = "고르기"
+        const val NONE: String = "없음"
         const val NO_ISSUE_KEYS: String = "커밋에서 Jira 작업 키를 찾지 못했습니다. 본문에 직접 적어 두세요."
         const val REWRITE_BUTTON: String = "AI로 다시 쓰기"
         const val NO_TEMPLATE: String = "템플릿 없음"
@@ -296,6 +402,8 @@ class MergeRequestDialog(
 class CreateMergeRequestAction @JvmOverloads constructor(
     private val settings: JiraTaskSettings = JiraTaskSettings(),
     private val availability: JiraTaskAvailability = JiraTaskAvailability(),
+    /** 어느 AI로 초안을 쓸지. 커밋 창과 한 자리에서 정한다. */
+    private val ai: AiWriters = AiWriters(settings),
 ) : AnAction() {
 
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
@@ -346,6 +454,10 @@ class CreateMergeRequestAction @JvmOverloads constructor(
                                     useCase.redraft(state, prepared.proposal, target, templateName)
                                 },
                                 rewrite = { current -> useCase.rewrite(state, current) },
+                                findUsers = { query ->
+                                    GitLabClient(mr.gitLabBaseUrl, mr.gitLabToken)
+                                        .findUsers(prepared.proposal.projectPath, query)
+                                },
                             )
                     }
                 }, project.disposed)
@@ -360,8 +472,9 @@ class CreateMergeRequestAction @JvmOverloads constructor(
         proposal: MergeRequestProposal,
         redraft: (String, String?) -> MergeRequestProposal,
         rewrite: (MergeRequestProposal) -> DraftRewrite,
+        findUsers: (String) -> List<GitLabUser>,
     ) {
-        val dialog = MergeRequestDialog(project, proposal, redraft, rewrite = rewrite)
+        val dialog = MergeRequestDialog(project, proposal, redraft, rewrite = rewrite, findUsers = findUsers)
         if (!dialog.showAndGet()) {
             return
         }
@@ -413,18 +526,11 @@ class CreateMergeRequestAction @JvmOverloads constructor(
             tokenOrigin = mr.tokenSource.describe(),
             // 꺼져 있으면 아예 만들지 않는다 — 그래야 다이얼로그에 버튼도 나오지 않는다.
             draftWriter = draftWriterFor(workingDirectory),
+            defaultReviewers = mr.defaultReviewers,
         )
 
-    /** 설정에서 AI를 켰을 때만 만든다. 기본값은 꺼짐이다. */
-    private fun draftWriterFor(workingDirectory: File): ClaudeCliDraftWriter? {
-        val ai = (settings.forAiDraft() as? SettingsLookup.Ready)?.value ?: return null
-
-        return ClaudeCliDraftWriter(
-            workingDirectory = workingDirectory,
-            executablePath = ai.executablePath,
-            model = ai.model,
-        )
-    }
+    /** 설정에서 AI를 켰을 때만 만든다. 기본값은 꺼짐이고, 어느 CLI로 쓸지는 [AiWriters]가 정한다. */
+    private fun draftWriterFor(workingDirectory: File): DraftWriter? = ai.of(workingDirectory)?.draftWriter
 
     /**
      * 커밋 제목에서 **이 프로젝트의** 이슈 키만 모은다.

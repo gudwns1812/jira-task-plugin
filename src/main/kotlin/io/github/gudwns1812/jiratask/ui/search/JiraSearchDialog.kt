@@ -86,7 +86,6 @@ class JiraSearchDialog(
     override fun createCenterPanel(): JComponent = panel {
         row {
             cell(searchField).columns(COLUMNS_LARGE)
-                .comment("이슈 키(PROJ-81), 번호(81), 또는 제목의 일부")
         }
         row { cell(JBScrollPane(resultList)).resizableColumn() }
         row { cell(statusLabel) }
@@ -94,7 +93,7 @@ class JiraSearchDialog(
         row { cell(metaLabel) }
         row("제목:") { cell(summaryField).columns(COLUMNS_LARGE) }
         row("설명:") { cell(JBScrollPane(descriptionArea)).resizableColumn() }
-            .rowComment("상태와 스프린트는 여기서 바꾸지 않습니다. Jira automation과 스프린트 계획이 정합니다.")
+            
     }
 
     override fun getPreferredFocusedComponent(): JComponent = searchField

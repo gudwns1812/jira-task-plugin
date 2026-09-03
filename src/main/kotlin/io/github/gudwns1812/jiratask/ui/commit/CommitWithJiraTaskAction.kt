@@ -86,15 +86,12 @@ class CommitMessageDialog(
 
     override fun createCenterPanel(): JComponent = panel {
         row("커밋 메시지:") { cell(JBScrollPane(messageArea)) }
-            .rowComment(
-                issueKeyHint?.let { "커밋 메시지는 '$it <메시지>'로 만들어집니다." }
-                    ?: "저장된 작업 번호로 이슈 키를 붙입니다. 작업 번호가 없으면 커밋할 수 없습니다.",
-            )
+            
         // 꺼져 있어도 보인다. 숨기면 기능이 있다는 것도, 켜러 가야 한다는 것도 알 길이 없다.
         row {
             cell(draftButton)
             cell(draftLabel)
-        }.rowComment(DRAFT_NOTICE)
+        }
     }
 
     override fun getPreferredFocusedComponent(): JComponent = messageArea
@@ -144,8 +141,6 @@ class CommitMessageDialog(
     companion object {
         const val DRAFT_BUTTON: String = "AI로 쓰기"
         const val WRITING: String = "AI가 쓰는 중…"
-        const val DRAFT_NOTICE: String =
-            "커밋할 변경의 파일 경로와 내용(diff)을 보냅니다. 설정에서 diff 전송을 끌 수 있습니다."
     }
 }
 

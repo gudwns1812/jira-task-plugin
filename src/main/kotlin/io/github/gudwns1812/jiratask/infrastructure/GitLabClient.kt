@@ -11,6 +11,7 @@ import io.github.gudwns1812.jiratask.domain.mr.GitLabIdentity
 import io.github.gudwns1812.jiratask.domain.mr.GitLabNetworkError
 import io.github.gudwns1812.jiratask.domain.mr.GitLabPermissionError
 import io.github.gudwns1812.jiratask.domain.mr.GitLabProjectInfo
+import io.github.gudwns1812.jiratask.domain.mr.GitLabUser
 import io.github.gudwns1812.jiratask.domain.mr.MergeRequestCommand
 import io.github.gudwns1812.jiratask.domain.mr.MergeRequestPort
 import io.github.gudwns1812.jiratask.domain.mr.OpenMergeRequest
@@ -88,12 +89,16 @@ class GitLabClient(
     }
 
     override fun create(command: MergeRequestCommand): CreatedMergeRequest {
-        val payload = mapOf(
-            "source_branch" to command.sourceBranch,
-            "target_branch" to command.targetBranch,
-            "title" to command.title,
-            "description" to command.description,
-        )
+        val payload = buildMap<String, Any> {
+            put("source_branch", command.sourceBranch)
+            put("target_branch", command.targetBranch)
+            put("title", command.title)
+            put("description", command.description)
+            // 비어 있으면 아예 보내지 않는다. 빈 배열을 보내면 GitLab이 "전부 지우라"로 읽는다.
+            command.assigneeIds.takeIf { it.isNotEmpty() }?.let { put("assignee_ids", it) }
+            command.reviewerIds.takeIf { it.isNotEmpty() }?.let { put("reviewer_ids", it) }
+            command.labels.takeIf { it.isNotEmpty() }?.let { put("labels", it.joinToString(",")) }
+        }
         val body = request(
             "/projects/${encode(command.projectPath)}/merge_requests",
             method = "POST",
@@ -101,6 +106,55 @@ class GitLabClient(
         )
         // 여기까지 왔으면 MR은 이미 만들어졌다. 주소를 못 읽었다고 실패로 돌리지 않는다.
         return CreatedMergeRequest(parseObject(body).text("web_url"))
+    }
+
+    /** 지금 토큰의 주인. `verifyIdentity`와 같은 곳을 보지만 여기서는 id가 필요하다. */
+    override fun me(): GitLabUser? = try {
+        userOf(parseObject(request("/user")))
+    } catch (error: Exception) {
+        // 담당자를 못 정할 뿐이다. MR 생성을 막지 않는다.
+        null
+    }
+
+    override fun labels(projectPath: String): List<String> = try {
+        parse(request("/projects/${encode(projectPath)}/labels?per_page=$PAGE_SIZE"))
+            .takeIf { it.isJsonArray }?.asJsonArray
+            ?.mapNotNull { it.takeIf { label -> label.isJsonObject }?.asJsonObject?.text("name") }
+            ?.distinct()
+            .orEmpty()
+    } catch (error: Exception) {
+        emptyList()
+    }
+
+    /**
+     * 고를 수 있는 사람들. `/projects/:id/users`는 그룹에서 상속받은 멤버까지 포함해
+     * 실제로 지정 가능한 사람을 준다 — `/members`보다 이 자리에 맞다.
+     */
+    override fun findUsers(projectPath: String, query: String): List<GitLabUser> = try {
+        val search = query.trim().takeIf { it.isNotEmpty() }?.let { "&search=${encode(it)}" }.orEmpty()
+        parse(request("/projects/${encode(projectPath)}/users?per_page=$PAGE_SIZE$search"))
+            .takeIf { it.isJsonArray }?.asJsonArray
+            ?.mapNotNull { it.takeIf { user -> user.isJsonObject }?.asJsonObject?.let(::userOf) }
+            .orEmpty()
+    } catch (error: Exception) {
+        emptyList()
+    }
+
+    override fun searchUsers(query: String): List<GitLabUser> = try {
+        val search = query.trim().takeIf { it.isNotEmpty() } ?: return emptyList()
+        parse(request("/users?per_page=$PAGE_SIZE&search=${encode(search)}"))
+            .takeIf { it.isJsonArray }?.asJsonArray
+            ?.mapNotNull { it.takeIf { user -> user.isJsonObject }?.asJsonObject?.let(::userOf) }
+            .orEmpty()
+    } catch (error: Exception) {
+        emptyList()
+    }
+
+    private fun userOf(json: JsonObject): GitLabUser? {
+        val id = json.get("id")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }?.asInt ?: return null
+        val username = json.text("username") ?: return null
+
+        return GitLabUser(id = id, username = username, name = json.text("name").orEmpty())
     }
 
     private fun request(path: String, method: String = "GET", body: String? = null): String {
@@ -160,6 +214,9 @@ class GitLabClient(
     private companion object {
         /** MR 생성(POST)에 필요한 스코프. `read_api`는 조회만 되고 생성에서 403으로 죽는다. */
         const val API_SCOPE = "api"
+
+        /** 한 번에 읽어 올 최대 개수. 더 있으면 사용자가 이름을 쳐서 좁힌다. */
+        const val PAGE_SIZE = 100
     }
 }
 

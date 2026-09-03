@@ -25,7 +25,7 @@
                                 order="last"/>
         <toolWindow id="Jira Task"
                     anchor="right"
-                    icon="AllIcons.Vcs.Branch"
+                    icon="/icons/toolWindowJiraGit.svg"
                     factoryClass="io.github.gudwns1812.jiratask.ui.toolwindow.JiraTaskToolWindowFactory"/>
         <postStartupActivity implementation="io.github.gudwns1812.jiratask.ui.JiraTaskSetupStartupActivity"/>
         <applicationConfigurable id="io.github.gudwns1812.jiratask.settings"
@@ -63,7 +63,7 @@
                     class="io.github.gudwns1812.jiratask.ui.OpenJiraTaskSettingsAction"
                     text="Jira Task Settings"
                     description="Jira 주소·프로젝트 키와 GitLab 주소·토큰을 설정합니다"
-                    icon="AllIcons.General.GearPlain"/>
+                    icon="AllIcons.Nodes.Plugin"/>
             <action id="JiraTask.RunSetupWizard"
                     class="io.github.gudwns1812.jiratask.ui.RunSetupWizardAction"
                     text="Run Setup Wizard"
@@ -78,7 +78,7 @@
         <action id="JiraTask.DraftCommitMessage"
                 class="io.github.gudwns1812.jiratask.ui.commit.DraftCommitMessageAction"
                 text="AI로 커밋 메시지 쓰기"
-                description="커밋할 변경을 보고 Claude Code가 커밋 메시지 초안을 씁니다"
+                description="커밋할 변경을 보고 설정에서 고른 AI가 커밋 메시지 초안을 씁니다"
                 icon="AllIcons.Actions.IntentionBulb">
             <add-to-group group-id="Vcs.MessageActionGroup" anchor="first"/>
         </action>

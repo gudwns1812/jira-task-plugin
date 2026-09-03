@@ -3,11 +3,15 @@ package io.github.gudwns1812.jiratask.application
 import io.github.gudwns1812.jiratask.domain.jira.JiraNamedValue
 import io.github.gudwns1812.jiratask.domain.policy.JiraProjectRef
 import io.github.gudwns1812.jiratask.domain.policy.JiraSettings
+import io.github.gudwns1812.jiratask.domain.policy.AiCliSettings
+import io.github.gudwns1812.jiratask.domain.policy.AiProvider
+import io.github.gudwns1812.jiratask.domain.policy.AiSettings
 import io.github.gudwns1812.jiratask.domain.policy.JiraTaskConfig
 import io.github.gudwns1812.jiratask.domain.policy.PolicyConfigurationError
 import io.github.gudwns1812.jiratask.domain.policy.default
 import io.github.gudwns1812.jiratask.domain.policy.mergeWith
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -199,12 +203,59 @@ class EditSettingsTest {
             SettingsEdit("", "", aiEnabled = true).toConfigUpdate(),
         )
         assertEquals(
-            mapOf("ai" to mapOf("enabled" to false, "model" to "sonnet")),
-            SettingsEdit("", "", aiEnabled = false, aiModel = " sonnet ").toConfigUpdate(),
-        )
-        assertEquals(
             mapOf("ai" to mapOf("enabled" to true, "sendDiff" to false)),
             SettingsEdit("", "", aiEnabled = true, aiSendDiff = false).toConfigUpdate(),
+        )
+    }
+
+    @Test
+    fun `files the model under the ai it belongs to`() {
+        // 모델 이름은 provider 사이에서 옮겨지지 않는다. 어느 CLI의 것인지 함께 실어야 한다.
+        assertEquals(
+            mapOf("ai" to mapOf("provider" to "claude", "claude" to mapOf("model" to "sonnet"))),
+            SettingsEdit("", "", aiProvider = AiProvider.CLAUDE, aiModel = " sonnet ").toConfigUpdate(),
+        )
+        assertEquals(
+            mapOf(
+                "ai" to mapOf(
+                    "enabled" to true,
+                    "provider" to "codex",
+                    "codex" to mapOf("model" to "gpt-5-codex", "executablePath" to "/usr/local/bin/codex"),
+                ),
+            ),
+            SettingsEdit(
+                "",
+                "",
+                aiEnabled = true,
+                aiProvider = AiProvider.CODEX,
+                aiModel = "gpt-5-codex",
+                aiExecutablePath = " /usr/local/bin/codex ",
+            ).toConfigUpdate(),
+        )
+    }
+
+    @Test
+    fun `will not file a model when it does not know whose it is`() {
+        // provider를 모르는 채로 저장하면 엉뚱한 CLI의 칸에 들어간다. 그러느니 싣지 않는다.
+        assertEquals(
+            mapOf("ai" to mapOf("enabled" to true)),
+            SettingsEdit("", "", aiEnabled = true, aiModel = "opus").toConfigUpdate(),
+        )
+    }
+
+    @Test
+    fun `reads the default reviewers people type in one line`() {
+        val edit = SettingsEdit("", "", gitLabReviewers = " gudwns1812, @jimin  hyungjun , jimin ")
+
+        assertEquals(listOf("gudwns1812", "jimin", "hyungjun"), edit.gitLabReviewersOrNull())
+        assertNull("빈 칸은 고치지 않겠다는 뜻이다", SettingsEdit("", "", gitLabReviewers = "   ").gitLabReviewersOrNull())
+    }
+
+    @Test
+    fun `saves the reviewers with the gitlab address`() {
+        assertEquals(
+            mapOf("gitlab" to mapOf("defaultReviewers" to listOf("jimin"))),
+            SettingsEdit("", "", gitLabReviewers = "jimin").toConfigUpdate(),
         )
     }
 
@@ -214,10 +265,52 @@ class EditSettingsTest {
 
         assertFalse(SettingsEdit("", "", aiEnabled = false).changes(snapshot))
         assertTrue(SettingsEdit("", "", aiEnabled = true).changes(snapshot))
-        assertTrue(SettingsEdit("", "", aiModel = "opus").changes(snapshot))
-        assertFalse("빈 칸은 변경이 아니다", SettingsEdit("", "", aiModel = "  ").changes(snapshot))
+        assertTrue(SettingsEdit("", "", aiProvider = AiProvider.CLAUDE, aiModel = "opus").changes(snapshot))
+        assertFalse(
+            "빈 칸은 변경이 아니다",
+            SettingsEdit("", "", aiProvider = AiProvider.CLAUDE, aiModel = "  ").changes(snapshot),
+        )
+        assertTrue("AI를 바꾸는 것도 변경이다", SettingsEdit("", "", aiProvider = AiProvider.CODEX).changes(snapshot))
+        assertFalse(SettingsEdit("", "", aiProvider = AiProvider.CLAUDE).changes(snapshot))
         assertTrue("diff를 끄는 것도 변경이다", SettingsEdit("", "", aiSendDiff = false).changes(snapshot))
         assertFalse(SettingsEdit("", "", aiSendDiff = true).changes(snapshot))
+    }
+
+    @Test
+    fun `compares the model with what that ai has saved, not another's`() {
+        // Claude에 opus를 저장해 둔 상태에서 Codex를 골라 같은 글자를 쳐도, 그것은 Codex 쪽의 변경이다.
+        val snapshot = SettingsSnapshot.from(
+            JiraTaskConfig(
+                ai = AiSettings(
+                    enabled = true,
+                    provider = AiProvider.CLAUDE,
+                    clis = mapOf(AiProvider.CLAUDE to AiCliSettings(model = "opus")),
+                ),
+            ),
+        )
+
+        assertFalse(SettingsEdit("", "", aiProvider = AiProvider.CLAUDE, aiModel = "opus").changes(snapshot))
+        assertTrue(SettingsEdit("", "", aiProvider = AiProvider.CODEX, aiModel = "opus").changes(snapshot))
+    }
+
+    @Test
+    fun `keeps every ai's saved values so the screen can switch without saving`() {
+        val snapshot = SettingsSnapshot.from(
+            JiraTaskConfig(
+                ai = AiSettings(
+                    provider = AiProvider.CODEX,
+                    clis = mapOf(
+                        AiProvider.CLAUDE to AiCliSettings(model = "opus"),
+                        AiProvider.CODEX to AiCliSettings(executablePath = "/opt/homebrew/bin/codex"),
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals("codex", snapshot.aiProvider)
+        assertEquals("opus", snapshot.aiCli("claude").model)
+        assertEquals("/opt/homebrew/bin/codex", snapshot.aiExecutablePath)
+        assertEquals("고른 쪽의 모델은 비어 있다", "", snapshot.aiModel)
     }
 
     @Test

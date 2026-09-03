@@ -6,7 +6,7 @@ package io.github.gudwns1812.jiratask.domain.mr
  * 인프라가 아니라 도메인에 두는 이유는 **CLI를 부르지 않고 검증하기 위해서**다. 프로세스를 띄워야만
  * 확인할 수 있는 자리에 프롬프트를 두면, 무엇을 보내고 있는지 아무도 시험해 볼 수 없다.
  */
-object ClaudeDraftPrompt {
+object MergeRequestDraftPrompt {
 
     /**
      * 모델에게 늘 같게 주는 지시.

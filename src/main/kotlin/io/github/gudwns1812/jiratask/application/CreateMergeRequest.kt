@@ -9,6 +9,7 @@ import io.github.gudwns1812.jiratask.domain.mr.GitLabError
 import io.github.gudwns1812.jiratask.domain.mr.GitLabNetworkError
 import io.github.gudwns1812.jiratask.domain.mr.GitLabPermissionError
 import io.github.gudwns1812.jiratask.domain.mr.GitLabProject
+import io.github.gudwns1812.jiratask.domain.mr.GitLabUser
 import io.github.gudwns1812.jiratask.domain.mr.GitLabProjectInfo
 import io.github.gudwns1812.jiratask.domain.mr.MergeRequestCommand
 import io.github.gudwns1812.jiratask.domain.mr.MergeRequestDraft
@@ -61,6 +62,16 @@ data class MergeRequestProposal(
     val templates: Map<String, String> = emptyMap(),
     /** 고른 템플릿 이름. null이면 템플릿을 쓰지 않는다. */
     val templateName: String? = null,
+    /** 이 MR을 맡을 사람. 기본은 나 하나다. */
+    val assignees: List<GitLabUser> = emptyList(),
+    /** 리뷰를 부탁할 사람들. 설정의 기본 리뷰어가 먼저 들어온다. */
+    val reviewers: List<GitLabUser> = emptyList(),
+    /** 붙일 라벨. [availableLabels] 안에서만 고른다. */
+    val labels: List<String> = emptyList(),
+    /** 이 프로젝트에 이미 있는 라벨들. 못 읽었으면 비어 있다. */
+    val availableLabels: List<String> = emptyList(),
+    /** 리뷰어로 고를 수 있는 사람들의 첫 쪽. 그 밖의 사람은 창에서 검색해 찾는다. */
+    val availableReviewers: List<GitLabUser> = emptyList(),
 )
 
 sealed interface MergeRequestPrepare {
@@ -100,6 +111,8 @@ class CreateMergeRequestUseCase(
     private val tokenOrigin: String? = null,
     /** 제목·본문을 AI에게 맡길 때 쓸 것. 없으면 [rewrite]가 쓸 수 없다고 답한다. */
     private val draftWriter: DraftWriter? = null,
+    /** 설정에 적어 둔 기본 리뷰어의 GitLab 아이디. 창을 열 때 리뷰어로 미리 넣는다. */
+    private val defaultReviewers: List<String> = emptyList(),
 ) {
 
     /**
@@ -169,6 +182,9 @@ class CreateMergeRequestUseCase(
         val target = project.defaultBranch ?: fallbackTarget
         val templates = templatesOf(project.mergeRequestTemplate, state.templates)
 
+        // 사람·라벨은 있으면 좋은 것이다. 못 읽어도 MR은 만들 수 있어야 하므로 실패를 삼킨다.
+        val people = runCatching { gitlab.findUsers(remote.projectPath) }.getOrDefault(emptyList())
+
         val skeleton = MergeRequestProposal(
             projectPath = remote.projectPath,
             sourceBranch = branch,
@@ -180,6 +196,10 @@ class CreateMergeRequestUseCase(
             targetCandidates = candidatesOf(state.remoteBranches, target, branch),
             templates = templates,
             templateName = templates.keys.firstOrNull(),
+            assignees = listOfNotNull(runCatching { gitlab.me() }.getOrNull()),
+            reviewers = reviewersFrom(remote.projectPath, people),
+            availableLabels = runCatching { gitlab.labels(remote.projectPath) }.getOrDefault(emptyList()),
+            availableReviewers = people,
         )
 
         return MergeRequestPrepare.Ready(redraft(state, skeleton, target))
@@ -191,6 +211,20 @@ class CreateMergeRequestUseCase(
      * 프로젝트 설정의 기본 템플릿이 저장소의 `Default.md`보다 우선한다(GitLab 문서). 저장소 파일 중에서는
      * `Default`가 앞이고, 나머지는 이름순으로 뒤따른다.
      */
+    /**
+     * 설정에 적어 둔 아이디를 실제 사람으로 바꾼다.
+     *
+     * 먼저 받아 둔 [people] 한 쪽에서 찾고, 거기 없는 사람만 이름을 넣어 다시 묻는다 —
+     * 프로젝트에 사람이 많으면 첫 쪽에 없을 수 있다. 끝내 못 찾은 아이디는 조용히 버린다:
+     * 팀을 떠난 사람 하나 때문에 MR 창이 열리지 않으면 안 된다.
+     */
+    private fun reviewersFrom(projectPath: String, people: List<GitLabUser>): List<GitLabUser> =
+        defaultReviewers.mapNotNull { wanted ->
+            people.firstOrNull { it.username.equals(wanted, ignoreCase = true) }
+                ?: runCatching { gitlab.findUsers(projectPath, wanted) }.getOrDefault(emptyList())
+                    .firstOrNull { it.username.equals(wanted, ignoreCase = true) }
+        }
+
     private fun templatesOf(projectTemplate: String?, files: Map<String, String>): Map<String, String> {
         val ordered = LinkedHashMap<String, String>()
 
@@ -250,6 +284,9 @@ class CreateMergeRequestUseCase(
                     targetBranch = proposal.targetBranch,
                     title = title.trim(),
                     description = description,
+                    assigneeIds = proposal.assignees.map { it.id },
+                    reviewerIds = proposal.reviewers.map { it.id },
+                    labels = proposal.labels,
                 ),
             )
             MergeRequestResult.Created(created.webUrl)

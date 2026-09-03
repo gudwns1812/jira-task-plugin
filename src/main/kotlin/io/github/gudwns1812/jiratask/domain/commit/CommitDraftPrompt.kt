@@ -3,7 +3,7 @@ package io.github.gudwns1812.jiratask.domain.commit
 /**
  * 커밋 메시지를 써 달라는 지시와 재료를 글로 만든다.
  *
- * [io.github.gudwns1812.jiratask.domain.mr.ClaudeDraftPrompt]와 같은 이유로 도메인에 둔다 —
+ * [io.github.gudwns1812.jiratask.domain.mr.MergeRequestDraftPrompt]와 같은 이유로 도메인에 둔다 —
  * 프로세스를 띄우지 않고도 **무엇을 보내고 있는지** 시험해 볼 수 있어야 한다.
  * diff를 함께 보내는 기능이라 그 확인이 MR 초안보다 더 중요하다.
  */

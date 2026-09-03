@@ -5,10 +5,9 @@ import com.intellij.openapi.project.Project
 import io.github.gudwns1812.jiratask.application.CommitDraftResult
 import io.github.gudwns1812.jiratask.application.CommitDraftState
 import io.github.gudwns1812.jiratask.application.DraftCommitMessageUseCase
-import io.github.gudwns1812.jiratask.infrastructure.ClaudeCliCommitMessageWriter
 import io.github.gudwns1812.jiratask.infrastructure.GitRepository
+import io.github.gudwns1812.jiratask.ui.AiWriters
 import io.github.gudwns1812.jiratask.ui.JiraTaskSettings
-import io.github.gudwns1812.jiratask.ui.SettingsLookup
 import java.io.File
 
 /**
@@ -21,6 +20,8 @@ import java.io.File
 class CommitDrafts(
     private val settings: JiraTaskSettings = JiraTaskSettings(),
     private val issueKey: CommitIssueKey = CommitIssueKey(settings),
+    /** 어느 AI로 쓸지는 MR 창과 한 자리에서 정한다. */
+    private val ai: AiWriters = AiWriters(settings),
 ) {
 
     /**
@@ -30,17 +31,9 @@ class CommitDrafts(
      * 숨기면 기능이 있다는 것도, 켜러 가야 한다는 것도 알 길이 없다(MR 창과 같은 판단).
      */
     fun useCaseFor(workingDirectory: File): DraftCommitMessageUseCase {
-        val ai = (settings.forAiDraft() as? SettingsLookup.Ready)?.value
-            ?: return DraftCommitMessageUseCase(writer = null)
+        val chosen = ai.of(workingDirectory) ?: return DraftCommitMessageUseCase(writer = null)
 
-        return DraftCommitMessageUseCase(
-            writer = ClaudeCliCommitMessageWriter(
-                workingDirectory = workingDirectory,
-                executablePath = ai.executablePath,
-                model = ai.model,
-            ),
-            sendDiff = ai.sendDiff,
-        )
+        return DraftCommitMessageUseCase(writer = chosen.commitWriter, sendDiff = chosen.sendDiff)
     }
 
     /**

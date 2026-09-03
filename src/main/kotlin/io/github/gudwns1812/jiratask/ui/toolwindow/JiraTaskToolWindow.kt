@@ -140,7 +140,7 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
             row {
                 link(START_TASK) { startSelected() }
                 link(REFRESH) { refreshInBackground(force = true) }
-            }.rowComment("작업을 두 번 클릭해도 됩니다. Jira에서 바꾼 내용은 새로 고침해야 보입니다.")
+            }
         }.expanded = true
     }
 
@@ -376,7 +376,7 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
     private inner class OpenSettingsAction : DumbAwareAction(
         "설정 열기",
         "Settings | Tools | Jira Task를 엽니다",
-        AllIcons.General.Settings,
+        AllIcons.Nodes.Plugin,
     ) {
         override fun actionPerformed(event: AnActionEvent) = openSettings()
     }

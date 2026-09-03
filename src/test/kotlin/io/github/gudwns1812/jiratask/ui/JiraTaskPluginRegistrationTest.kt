@@ -2,6 +2,7 @@ package io.github.gudwns1812.jiratask.ui
 
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.openapi.actionSystem.ActionManager
+import com.intellij.openapi.util.IconLoader
 import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.actionSystem.Separator
 import com.intellij.openapi.extensions.ExtensionPointName
@@ -80,6 +81,18 @@ class JiraTaskPluginRegistrationTest : BasePlatformTestCase() {
         assertNull("자리표시자 액션도 남아 있으면 안 된다", manager.getAction("JiraTask.CreateIssue"))
         // 브랜치 이름에 규칙이 없다(RULE.md 5.1). 브랜치는 IDE의 기본 Git 기능으로 만든다.
         assertNull("스토리 브랜치 액션은 제거돼야 한다", manager.getAction("JiraTask.CreateStoryBranch"))
+    }
+
+    fun `test the tool window icon is bundled with a dark twin`() {
+        // 경로를 잘못 적으면 IDE는 오류 없이 빈 자리를 그린다. 여기서 잡지 않으면 아무도 모른다.
+        val loader = javaClass.classLoader
+
+        assertNotNull("아이콘이 jar에 들어 있어야 한다", loader.getResource("icons/toolWindowJiraGit.svg"))
+        assertNotNull(
+            "어두운 테마에서 묻히지 않으려면 짝이 있어야 한다",
+            loader.getResource("icons/toolWindowJiraGit_dark.svg"),
+        )
+        assertNotNull(IconLoader.findIcon("/icons/toolWindowJiraGit.svg", javaClass))
     }
 
     fun `test the notification group is registered`() {

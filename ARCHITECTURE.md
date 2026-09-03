@@ -102,10 +102,18 @@ src/main/kotlin/io/github/gudwns1812/jiratask/
 │  ├─ JiraTaskConfigStorage.kt # PersistentStateComponent 설정 저장소
 │  ├─ PolicyConfigRepository.kt
 │  ├─ GitRepository.kt         # git 실행 어댑터
-│  ├─ ClaudeCli.kt             # Claude Code CLI 실행(MR·커밋 초안이 함께 쓴다)
+│  ├─ ai/                      # AI CLI 실행. provider가 늘어도 여기만 는다
+│  │  ├─ AiCli.kt              # 부를 수 있는 CLI 하나(인터페이스)
+│  │  ├─ ClaudeCodeCli.kt      # Claude Code — 명령줄과 JSON 봉투
+│  │  ├─ CodexCli.kt           # Codex — 명령줄과 최종 답 파일
+│  │  ├─ AiCliRunner.kt        # 프로세스 실행(교착·시한·중첩 세션), provider와 무관
+│  │  ├─ AiCliDiscovery.kt     # 설치된 실행 파일 찾기(+ AiCliLocations 캐시)
+│  │  ├─ OperatingSystem.kt    # OS를 값으로 — 두 갈래를 한 기계에서 시험하려고
+│  │  └─ AiDraftResponse.kt    # 모델이 낸 JSON 읽기(어느 CLI든 같다)
 │  └─ JsonSupport.kt
 └─ ui/                         # 액션·다이얼로그·설정 패널·툴 윈도우·위젯·알림
    ├─ task/                    # 작업 선택, 현재 작업 캐시, 스프린트 작업 캐시
+   ├─ AiWriters.kt             # 설정에서 고른 AI로 초안 작성자 만들기(MR·커밋이 함께 쓴다)
    ├─ commit/                  # 커밋 메시지 채우기, 커밋 가드, 커밋 메시지 AI 초안
    ├─ mr/  search/  navigation/  setup/  toolwindow/
 src/main/resources/META-INF/plugin.xml
@@ -195,10 +203,28 @@ automation에도 커밋을 계기로 하는 같은 전환이 있어 두 경로�
 
 - **기본값은 꺼짐이고 자동으로 부르지 않는다.** 다만 꺼져 있어도 버튼은 보인다 — 누르면
   "설정에서 켜세요"라고 답한다. 숨기면 기능이 있다는 것도, 켜러 가야 한다는 것도 알 길이 없다.
-- **API 키를 받지 않는다.** 사용자가 설치해 로그인해 둔 **Claude Code CLI**를 비대화형(`-p`)으로
-  부른다. Messages API는 언제나 API 키로 사용량 과금되고 Pro/Max 구독이 그것을 덮지 않기 때문이다 —
+- **API 키를 받지 않는다.** 사용자가 설치해 로그인해 둔 **AI CLI**를 비대화형으로 부른다.
+  제공사의 API는 언제나 API 키로 사용량 과금되고 구독이 그것을 덮지 않기 때문이다 —
   구독으로 쓰려면 이 길뿐이고, 그 덕에 플러그인은 어떤 자격 증명도 갖지 않는다.
-  `--bare`는 쓰지 않는다. OAuth와 키체인을 읽지 않아 구독 인증을 건너뛴다.
+  Claude Code에서 `--bare`는 쓰지 않는다. OAuth와 키체인을 읽지 않아 구독 인증을 건너뛴다.
+- **Claude Code와 Codex 중에서 고른다**(`ai.provider`). 갈라지는 것은 **명령줄과 봉투 두 가지뿐**이라
+  그 둘만 `AiCli` 구현이 알고, 나머지(프로세스 교착·시한·중첩 세션·실패 문구·모델이 낸 JSON 읽기)는
+  한 자리에 남는다. 새 provider를 붙이는 일은 `AiCli` 하나를 구현해 `AiClis.all`에 더하는 일이다.
+  - Claude Code: `claude -p --output-format json --restricted`, 답은 stdout의 JSON 봉투 `result`에 있다.
+  - Codex: `codex exec --skip-git-repo-check --sandbox read-only --output-last-message <파일> -`,
+    답은 그 파일에서 읽는다. `--json`의 이벤트 이름은 버전마다 움직여 훨씬 잘 깨진다.
+  - **모델과 실행 파일 경로는 provider별로 저장한다**(`ai.claude`, `ai.codex`). `opus`는 Codex에,
+    `gpt-5-codex`는 Claude Code에 아무 뜻이 없어서, 한 칸에 담으면 AI를 바꾸는 순간 조용히 틀린 값이 된다.
+    provider가 없던 시절 파일의 최상위 `model`·`executablePath`는 Claude 것으로 읽고, 다시 쓸 때는 새 자리에만 쓴다.
+- **실행 파일 경로를 사용자에게 외워 적게 하지 않는다.** PATH와 알려진 설치 자리를 훑어 찾고
+  (`AiCliDiscovery`), 찾은 자리를 설정 화면에 그대로 보여 준다. 경로 칸은 탐지가 실패했을 때의 덮어쓰기다.
+  - **macOS에서는 `EnvironmentUtil`의 PATH를 쓴다.** Dock·Spotlight로 띄운 IDE의 PATH에는
+    `/opt/homebrew/bin`도 `~/.local/bin`도 없어서, 그러지 않으면 터미널에서 잘 도는 CLI를 두고
+    "찾을 수 없습니다"만 보게 된다. 이것이 mac 지원에서 가장 실질적인 문제였다.
+  - 찾은 자리는 세션 동안 기억한다(`AiCliLocations`). 탐지는 후보마다 `--version`을 부르는 일이라
+    기억하지 않으면 초안을 만들 때마다 그 값을 치른다. 설정 화면의 `다시 탐지`가 그것을 지운다.
+  - **깔려 있지 않은 CLI도 목록에서 지우지 않는다.** 숨기면 그런 선택지가 있다는 것도, 설치하면
+    쓸 수 있다는 것도 알 길이 없다 — AI가 꺼져 있어도 버튼을 남겨 두는 것과 같은 판단이다.
 - **MR 초안이 보내는 것은 브랜치 이름·커밋 제목·변경된 파일 경로뿐이다. 파일 내용은 보내지 않는다.**
   `GitRepository.changedFilesSince`가 `--name-only`를 쓰는 것과 `DraftRequest`에 내용 필드가 없는 것이
   그 경계다. 설정 화면에도 무엇이 나가는지 그대로 적는다.
@@ -209,15 +235,33 @@ automation에도 커밋을 계기로 하는 같은 전환이 있어 두 경로�
   된다. 번호는 Jira 안에서 스토리를 가리키는 것이라 MR 목록에서 알려주는 바가 없지만,
   앞의 이름은 어느 기능 갈래인지를 말해 준다. AI가 다시 쓴
   제목에도 같은 태그를 도구가 다시 붙인다. 커밋의 이슈 키를 도구가 붙이는 것과 같은 이유다.
-- 제목·본문만 바꾸고 이슈 키·대상 브랜치는 그대로 둔다. 키는 커밋에서 뽑은 사실이라 AI가 바꾸면
+- 제목·본문만 바꾸고 이슈 키·대상 브랜치는 그대로 둔다.
+
+### 담당자·리뷰어·라벨
+
+- MR 창 오른쪽에서 셋을 정한다. GitLab 웹에서 MR을 만든 뒤 따로 손보던 일을 여기서 끝낸다.
+- **담당자는 기본이 나다**(`GET /user`). 체크 하나로 끝나고, 못 읽으면 그 칸만 꺼진다.
+- **기본 리뷰어는 설정에 아이디로 저장한다**(`gitlab.defaultReviewers`). 이름은 겹치고 바뀌지만
+  아이디는 그렇지 않다. 창을 열 때 사람으로 풀어 미리 넣고, 팀을 떠나 못 찾은 아이디는 조용히 버린다.
+  **아이디를 외워 적게 하지 않는다** — 설정 화면에서도 이름으로 찾아 고른다(`searchUsers`).
+  거기서는 아직 어느 저장소인지 모르므로 프로젝트가 아니라 GitLab 전체에서 찾는다.
+- 담당자·리뷰어·라벨은 **같은 모양**이다 — 값 옆에 `고르기` 하나. 하나만 다르게 생기면
+  사용자는 그 한 줄에서 매번 멈칫한다. 담당자만 한 명으로 제한한다(무료 요금제가 그렇다).
+- **사람 목록을 통째로 끌어오지 않는다.** 첫 쪽(100명)만 받고, 그 밖의 사람은 고르기 창에서 검색어를
+  GitLab에 넘겨 찾는다 — 수백 명짜리 프로젝트에서 창이 열리다 멈추지 않게.
+- **라벨은 이미 있는 것만 고른다.** 새로 만들지 않는다 — 오타 하나가 프로젝트에 영구히 남는다.
+- 셋 중 무엇을 못 읽어도 MR 생성은 그대로 간다. 빈 값은 요청에 아예 싣지 않는다 —
+  빈 배열을 보내면 GitLab이 "전부 지우라"로 읽는다. 키는 커밋에서 뽑은 사실이라 AI가 바꾸면
   Jira 연결이 어긋난다(`RULE.md` 5.3).
 - **실패해도 규칙 기반 초안이 그대로 남는다.** CLI가 없거나 로그인하지 않았거나 사용량 한도에 걸리면
   그 이유를 창 안에 적고 MR 생성은 계속 갈 수 있게 둔다.
 - 템플릿을 골랐으면 AI에게도 그 템플릿을 넘기고 양식을 지키라고 지시한다.
-- 프롬프트는 인자가 아니라 **stdin**으로 넘긴다. Windows에서 `claude`는 npm 셈이라 `claude.cmd`가
-  `cmd.exe`를 거치는데, 인자 안의 줄바꿈이 명령줄을 끊고 큰따옴표는 따로 이스케이프해야 한다.
+- 프롬프트는 인자가 아니라 **stdin**으로 넘긴다(두 CLI 모두). Windows에서 `claude`는 npm 셈이라
+  `claude.cmd`가 `cmd.exe`를 거치는데, 인자 안의 줄바꿈이 명령줄을 끊고 큰따옴표는 따로 이스케이프해야 한다.
 - CLI stdout에는 봉투 말고 다른 줄이 섞여 나온다(MCP 서버 경고 등). 봉투는 **줄 단위로** 찾는다.
-- 모델은 사용자가 설정에 넣었을 때만 지정한다. 비우면 Claude Code에 설정된 사용자 자신의 선택을 따른다.
+- 모델은 사용자가 설정에 넣었을 때만 지정한다. 비우면 CLI에 정해 둔 사용자 자신의 선택을 따른다.
+- 중첩 세션 표시 변수는 자식 환경에서 지운다. **어느 변수인지는 CLI가 안다** — Codex의 `CODEX_HOME`은
+  로그인 정보가 들어 있어 지우면 안 되고, 끊어야 하는 것은 `CODEX_SANDBOX*`뿐이다.
 
 ### 커밋 메시지 초안
 

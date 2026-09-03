@@ -1,0 +1,12 @@
+<svg width="13" height="13" viewBox="0 0 13 13" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Jira ticket card -->
+  <rect x="1.5" y="1.5" width="6" height="10" rx="1.5" stroke="#CED0D6"/>
+  <!-- check mark inside ticket -->
+  <path d="M3 6.5L4.25 7.75L6.25 5.25" stroke="#CED0D6" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Git branch: main line + nodes -->
+  <path d="M11 4V9" stroke="#CED0D6" stroke-linecap="round"/>
+  <!-- connector: ticket -> branch -->
+  <path d="M7.5 6.5C9.5 6.5 11 7 11 9" stroke="#CED0D6" stroke-linecap="round"/>
+  <circle cx="11" cy="2.5" r="1.5" fill="#CED0D6"/>
+  <circle cx="11" cy="10.5" r="1.5" fill="#CED0D6"/>
+</svg>

@@ -24,7 +24,27 @@ data class MergeRequestCommand(
     val targetBranch: String,
     val title: String,
     val description: String,
+    /** 맡을 사람. 기본은 나 하나다. */
+    val assigneeIds: List<Int> = emptyList(),
+    /** 리뷰를 부탁할 사람들. 설정에 적어 둔 기본 리뷰어가 먼저 들어온다. */
+    val reviewerIds: List<Int> = emptyList(),
+    /** 붙일 라벨 이름들. **이미 있는 라벨만** 쓴다 — 여기서 새로 만들지 않는다. */
+    val labels: List<String> = emptyList(),
 )
+
+/**
+ * GitLab 사람 하나.
+ *
+ * 이름과 아이디를 함께 들고 다닌다. 이름만 보이면 동명이인을 가를 수 없고,
+ * 아이디만 보이면 누구인지 알아보기 어렵다.
+ */
+data class GitLabUser(val id: Int, val username: String, val name: String = "") {
+
+    fun label(): String = when {
+        name.isBlank() || name == username -> username
+        else -> "$name ($username)"
+    }
+}
 
 /**
  * 토큰이 통하는지 확인한 결과.
@@ -85,4 +105,31 @@ interface MergeRequestPort {
     fun projectInfo(projectPath: String): GitLabProjectInfo
 
     fun create(command: MergeRequestCommand): CreatedMergeRequest
+
+    /**
+     * 지금 토큰의 주인. 담당자 기본값이다.
+     *
+     * 못 읽으면 null이다 — 담당자를 못 정하는 것과 MR을 못 만드는 것은 다르다.
+     * 아래 둘도 같은 이유로 빈 값을 돌려준다. 이 셋 때문에 MR 생성이 막히지 않는다.
+     */
+    fun me(): GitLabUser? = null
+
+    /** 이 프로젝트에 **이미 있는** 라벨 이름들. 새로 만들지 않는다. */
+    fun labels(projectPath: String): List<String> = emptyList()
+
+    /**
+     * 이 프로젝트에서 담당자·리뷰어로 고를 수 있는 사람들.
+     *
+     * [query]가 비어 있으면 앞에서부터 한 쪽 분량만 준다. 사람이 수백 명인 프로젝트에서
+     * 전체를 끌어오면 창이 열리다 멈추므로, 이름을 치면 그 검색어를 GitLab에 넘긴다.
+     */
+    fun findUsers(projectPath: String, query: String = ""): List<GitLabUser> = emptyList()
+
+    /**
+     * GitLab 전체에서 사람을 찾는다. 설정 화면이 쓴다 — 거기서는 아직 어느 프로젝트인지 모른다.
+     *
+     * 프로젝트 안에서 고를 때는 [findUsers]를 쓴다. 그쪽이 실제로 지정 가능한 사람만 주므로
+     * 이 저장소와 상관없는 사람을 리뷰어로 앉히는 일이 없다.
+     */
+    fun searchUsers(query: String): List<GitLabUser> = emptyList()
 }

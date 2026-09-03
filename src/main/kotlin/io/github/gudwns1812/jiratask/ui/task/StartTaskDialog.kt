@@ -96,7 +96,7 @@ class StartTaskDialog(
         row { cell(JBScrollPane(taskList)).resizableColumn() }
         row { cell(statusLabel) }
         row("작업 번호:") { cell(taskNumberField).columns(COLUMNS_MEDIUM) }
-            .rowComment("목록을 못 불러와도 번호를 직접 입력할 수 있습니다.")
+            
         row { cell(noticeLabel) }
     }
 

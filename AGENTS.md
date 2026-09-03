@@ -22,4 +22,16 @@
 최소 실행 검증에는 `Tools > Jira Task` 메뉴 노출과 변경한 기능의 정상 입력·오류 입력이 포함되어야 한다. Jira API나 Git 원격처럼 외부 상태를 변경할 수 있는 동작은 실제 변경 대신 초안 미리보기, 테스트 프로젝트 또는 안전한 격리 환경을 우선 사용한다.
 
 이 환경의 `JAVA_HOME`이 JDK 21이 아니면 Gradle 8.10.2가 실행되지 않는다. JDK 21을 명시해 실행한다.
-예: `JAVA_HOME="<JDK 21 경로>" ./gradlew.bat test`
+
+- Windows: `JAVA_HOME="<JDK 21 경로>" ./gradlew.bat test`
+- macOS·Linux: `JAVA_HOME="<JDK 21 경로>" ./gradlew test`
+
+## 두 운영체제
+
+이 플러그인은 Windows와 macOS 양쪽에서 쓴다. OS에 따라 달라지는 것은 **값으로 받아 넘긴다**
+(`infrastructure/ai/OperatingSystem.kt`). `System.getProperty("os.name")`을 코드 안에서 바로 읽으면
+개발기가 아닌 쪽의 갈래를 시험할 방법이 사라진다 — 그래서 새로 OS 분기를 만들 때는 그 값을 인자로
+받아 두 갈래를 모두 단위 테스트한다.
+
+한쪽 OS에서만 확인한 변경은 그렇게 밝힌다. macOS 실기에서만 드러나는 것들(로그인 셸 PATH,
+Dock 실행)은 Windows에서 대신 확인했다고 말하지 않는다.

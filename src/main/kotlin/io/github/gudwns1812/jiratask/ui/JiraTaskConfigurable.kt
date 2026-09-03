@@ -14,15 +14,24 @@ import com.intellij.ui.dsl.builder.panel
 import io.github.gudwns1812.jiratask.application.EditSettingsUseCase
 import io.github.gudwns1812.jiratask.application.SettingsEdit
 import io.github.gudwns1812.jiratask.application.SettingsLoad
+import io.github.gudwns1812.jiratask.application.AiCliSnapshot
 import io.github.gudwns1812.jiratask.application.SettingsSnapshot
 import io.github.gudwns1812.jiratask.application.empty
+import io.github.gudwns1812.jiratask.domain.mr.GitLabUser
+import io.github.gudwns1812.jiratask.ui.mr.MultiPickDialog
 import io.github.gudwns1812.jiratask.domain.mr.MergeRequestPort
+import io.github.gudwns1812.jiratask.domain.policy.AiProvider
 import io.github.gudwns1812.jiratask.domain.policy.PolicyConfigurationError
 import io.github.gudwns1812.jiratask.infrastructure.CredentialStorageError
 import io.github.gudwns1812.jiratask.infrastructure.GitLabClient
 import io.github.gudwns1812.jiratask.infrastructure.GitLabTokenStore
 import io.github.gudwns1812.jiratask.infrastructure.PolicyConfigRepository
+import io.github.gudwns1812.jiratask.infrastructure.ai.AiCli
+import io.github.gudwns1812.jiratask.infrastructure.ai.AiCliLocations
+import io.github.gudwns1812.jiratask.infrastructure.ai.AiCliRunner
+import io.github.gudwns1812.jiratask.infrastructure.ai.AiClis
 import io.github.gudwns1812.jiratask.ui.setup.SetupWizardLauncher
+import java.io.File
 import javax.swing.JComponent
 
 /**
@@ -40,12 +49,12 @@ class JiraTaskConfigurable @JvmOverloads constructor(
     private val createClient: (String, String) -> MergeRequestPort = { baseUrl, token ->
         GitLabClient(baseUrl, token)
     },
-    private val background: (() -> Unit) -> Unit = {
-        ApplicationManager.getApplication().executeOnPooledThread(Runnable(it))
-    },
-    private val onEdt: (() -> Unit) -> Unit = {
-        ApplicationManager.getApplication().invokeLater(Runnable(it), ModalityState.any())
-    },
+    /** CLI 설정 파일이 있는 자리. 테스트가 가짜 홈을 끼운다. */
+    private val userHome: File = File(System.getProperty("user.home")),
+    private val background: (() -> Unit) -> Unit = POOLED,
+    private val onEdt: (() -> Unit) -> Unit = ON_EDT,
+    /** 이 CLI가 어디에 깔려 있는지. 프로세스를 띄우므로 테스트는 가짜를 끼운다. */
+    private val locate: (AiCli) -> String? = AiCliRunner::locate,
 ) : Configurable {
 
     private val projectKeyField = JBTextField()
@@ -56,6 +65,13 @@ class JiraTaskConfigurable @JvmOverloads constructor(
     private val epicIssueTypeLabel = JBLabel()
     private val gitLabBaseUrlField = JBTextField()
     private val gitLabTokenField = com.intellij.ui.components.JBPasswordField()
+
+    /**
+     * MR 창을 열 때 리뷰어로 미리 넣어 둘 사람들. 쉼표로 나눠 적는다.
+     *
+     * 이름이 아니라 GitLab 아이디를 받는다 — 이름은 겹치고 바뀌지만 아이디는 그렇지 않다.
+     */
+    private val gitLabReviewersField = JBTextField()
     private val problemLabel = JBLabel().apply { isVisible = false }
     private val connectionLabel = JBLabel()
     private val aiEnabledBox = com.intellij.ui.components.JBCheckBox("MR 제목·본문과 커밋 메시지를 AI에게 맡기기")
@@ -74,10 +90,30 @@ class JiraTaskConfigurable @JvmOverloads constructor(
      * 전체 이름(`claude-opus-5`)으로 직접 칠 수 있도록 편집을 열어 둔다 — 없는 별칭을 지어내면
      * 사용자는 고르기만 했는데 실행에서 거부당한다.
      */
-    private val aiModelBox = ComboBox(arrayOf(MODEL_DEFAULT, "fable", "opus", "sonnet")).apply {
-        isEditable = true
-    }
+    private val aiModelBox = ComboBox(arrayOf(MODEL_DEFAULT)).apply { isEditable = true }
     private val aiExecutablePathField = JBTextField()
+
+    /**
+     * 어느 AI에게 맡길지.
+     *
+     * **깔려 있지 않은 것도 목록에서 지우지 않는다.** 숨기면 그런 선택지가 있다는 것도, 설치하면
+     * 쓸 수 있다는 것도 알 길이 없다 — AI가 꺼져 있어도 버튼을 남겨 두는 것과 같은 판단이다.
+     * 고르면 [aiLocationLabel]이 설치 방법을 알려 준다.
+     */
+    private val aiProviderBox = ComboBox(AiClis.all.map { it.displayName }.toTypedArray())
+
+    /** 탐지 결과. 찾았으면 어디서 찾았는지, 못 찾았으면 어떻게 까는지 적는다. */
+    private val aiLocationLabel = JBLabel()
+
+    /**
+     * 화면이 들고 있는 provider별 모델·경로.
+     *
+     * 저장하지 않고 AI를 바꿔 보는 일이 흔한데, 그때 방금 친 값을 잃지 않으려면 화면이 기억해야 한다.
+     */
+    private val aiClis: MutableMap<String, AiCliSnapshot> = mutableMapOf()
+
+    /** 지금 칸에 보이고 있는 provider. 콤보를 바꿀 때 **직전 값**을 어디에 넣을지 알아야 한다. */
+    private var shownProvider: String = AiProvider.CLAUDE.id
 
     private var saved: SettingsSnapshot = SettingsSnapshot.empty()
 
@@ -87,52 +123,56 @@ class JiraTaskConfigurable @JvmOverloads constructor(
         val component = panel {
             row("Jira 프로젝트 키:") {
                 cell(projectKeyField).columns(COLUMNS_MEDIUM)
-            }.rowComment("대문자 영문으로 시작하고 대문자 영문·숫자·밑줄만 사용합니다. 비워 두면 기존 값을 유지합니다.")
+            }
 
             row("Jira 주소:") {
                 cell(baseUrlField).columns(COLUMNS_LARGE)
-            }.rowComment("예: https://your-team.atlassian.net. 비워 두면 기존 값을 유지합니다.")
+            }
 
             group("연결된 Jira 정보") {
                 row("프로젝트:") { cell(projectNameLabel) }
                 row("스토리 유형:") { cell(storyIssueTypeLabel) }
                 row("작업 유형:") { cell(taskIssueTypeLabel) }
                 row("에픽 유형:") { cell(epicIssueTypeLabel) }
-                row {
-                    comment("이메일과 API 토큰은 이 화면에 표시하지 않습니다. 토큰은 IDE 비밀번호 저장소(PasswordSafe)에만 보관됩니다.")
-                }
             }
 
             group("GitLab (Merge Request)") {
                 row("GitLab 주소:") {
                     cell(gitLabBaseUrlField).columns(COLUMNS_LARGE)
-                }.rowComment("예: https://lab.ssafy.com. 비워 두면 기존 값을 유지합니다.")
+                }
 
                 row("액세스 토큰:") {
                     cell(gitLabTokenField).columns(COLUMNS_LARGE)
-                }.rowComment(
-                    "입력하면 IDE 비밀번호 저장소에만 저장하고 다시 표시하지 않습니다. " +
-                        "여기 저장한 토큰이 GITLAB_TOKEN 환경 변수보다 우선합니다.",
-                )
+                }
+
+                row("기본 리뷰어:") {
+                    cell(gitLabReviewersField).columns(COLUMNS_MEDIUM)
+                    button(PICK_REVIEWERS) { pickReviewers() }
+                }
 
                 row {
                     button(TEST_CONNECTION_BUTTON) { testConnection() }
                     cell(connectionLabel)
-                }.rowComment(
-                    "MR을 만들기 전에 토큰이 통하는지 확인합니다. api 스코프가 없으면 조회만 되고 생성에서 막힙니다.",
-                )
+                }
             }
 
             // GitLab 그룹 **뒤에** 둔다. 앞에 끼우면 편집 칸의 순서가 밀린다.
-            group("AI 초안 (Claude Code)") {
+            group("AI 초안") {
                 row {
                     cell(aiEnabledBox)
-                }.rowComment(
-                    "설치해 로그인해 둔 Claude Code를 그대로 씁니다. API 키를 받지 않으며 구독 요금제로 동작합니다.",
-                )
+                }
 
                 row {
                     comment(PRIVACY_NOTICE)
+                }
+
+                row("사용할 AI:") {
+                    cell(aiProviderBox).columns(COLUMNS_MEDIUM)
+                    button(DETECT_AGAIN) { detectAgain() }
+                }
+
+                row("") {
+                    cell(aiLocationLabel)
                 }
 
                 row {
@@ -141,24 +181,23 @@ class JiraTaskConfigurable @JvmOverloads constructor(
 
                 row("모델:") {
                     cell(aiModelBox).columns(COLUMNS_MEDIUM)
-                }.rowComment(
-                    "고르지 않으면 Claude Code에 설정된 모델을 그대로 씁니다. " +
-                        "목록에 없는 모델은 전체 이름으로 직접 적을 수 있습니다(예: claude-opus-5).",
-                )
+                }
 
                 row("실행 파일 경로:") {
                     cell(aiExecutablePathField).columns(COLUMNS_LARGE)
-                }.rowComment("비워 두면 PATH에서 찾습니다. Windows에서는 claude.cmd 를 씁니다.")
+                }.rowComment(PATH_NOTICE)
             }
 
             row {
                 button(RUN_WIZARD_BUTTON) { launchSetupWizard() }
-            }.rowComment("Jira 연결·프로젝트·이슈 유형·상태를 마법사로 처음부터 다시 설정합니다.")
+            }
 
             row { cell(problemLabel) }
         }
 
         reset()
+        // 창을 다 만든 뒤에 단다. reset()이 값을 넣는 동안 울리면 아직 없는 값을 옮겨 적는다.
+        aiProviderBox.addActionListener { showChosenAi() }
         // 테마 글꼴에 한글이 없으면 이 화면의 글자가 통째로 네모가 된다.
         component.applyHangulFallback()
         return component
@@ -262,9 +301,128 @@ class JiraTaskConfigurable @JvmOverloads constructor(
         }
     }
 
+    /**
+     * 기본 리뷰어를 이름으로 찾아 고른다.
+     *
+     * 여기서는 아직 어느 저장소인지 모르므로 GitLab 전체에서 찾는다. 고른 사람은 아이디로 저장한다 —
+     * 이름은 겹치고 바뀌지만 아이디는 그렇지 않다.
+     */
+    private fun pickReviewers() {
+        val baseUrl = gitLabBaseUrlField.text.trim().ifBlank { saved.gitLabBaseUrl }
+        val typed = String(gitLabTokenField.password).trim()
+        val token = typed.ifEmpty { runCatching { gitLabTokens.get(baseUrl) }.getOrNull().orEmpty() }
+
+        GitLabConnectionCheck.inputProblem(baseUrl, token.isNotEmpty())?.let { problem ->
+            showConnection(GitLabConnectionReport(problem, isSuccess = false))
+            return
+        }
+
+        val client = createClient(baseUrl, token)
+        val chosen = gitLabReviewersField.text.split(',', ' ')
+            .map { it.trim().removePrefix("@") }
+            .filter { it.isNotEmpty() }
+            .map { GitLabUser(id = 0, username = it) }
+
+        val dialog = MultiPickDialog(
+            project = null,
+            dialogTitle = "기본 리뷰어 고르기",
+            items = chosen,
+            selected = chosen,
+            labelOf = GitLabUser::label,
+            search = client::searchUsers,
+        )
+        if (dialog.showAndGet()) {
+            gitLabReviewersField.text = dialog.picked().joinToString(", ") { it.username }
+        }
+    }
+
     private fun showConnection(report: GitLabConnectionReport) {
         connectionLabel.text = report.message
     }
+
+    /** 콤보에서 고른 AI. 목록에 없는 값이 들어올 일은 없지만, 그때는 기본 CLI로 돌아간다. */
+    fun chosenAi(): AiCli = AiClis.all.firstOrNull { it.displayName == aiProviderBox.selectedItem } ?: AiClis.default
+
+    /**
+     * 칸에 보이는 값을 **지금 보이고 있던** provider 앞으로 적어 둔다.
+     *
+     * 콤보를 바꾸기 직전에 부른다. 이걸 하지 않으면 Codex를 잠깐 눌러 본 것만으로 Claude 칸에 친
+     * 모델 이름이 사라진다.
+     */
+    private fun rememberTypedCli() {
+        aiClis[shownProvider] = AiCliSnapshot(
+            model = aiModelValue(),
+            executablePath = aiExecutablePathField.text.trim(),
+        )
+    }
+
+    /** 고른 AI의 값으로 칸을 갈아 끼우고, 어디 깔려 있는지 다시 알아본다. */
+    private fun showChosenAi() {
+        val cli = chosenAi()
+        if (cli.id == shownProvider) {
+            return
+        }
+
+        rememberTypedCli()
+        shownProvider = cli.id
+        showCli(cli, aiClis[cli.id] ?: AiCliSnapshot())
+    }
+
+    private fun showCli(cli: AiCli, saved: AiCliSnapshot) {
+        fillModels(cli, saved.model)
+        aiExecutablePathField.text = saved.executablePath
+        detect(cli)
+    }
+
+    /**
+     * 모델 후보를 그 CLI의 것으로 갈아 끼운다.
+     *
+     * 목록에 없는 모델도 칠 수 있게 편집을 열어 둔다 — 없는 별칭을 지어내면 사용자는 고르기만
+     * 했는데 실행에서 거부당하지만, 반대로 새로 나온 모델을 못 쓰게 막아서도 안 된다.
+     */
+    /**
+     * 모델 후보를 채운다.
+     *
+     * **CLI 설정에 적힌 모델이 맨 위**다 — 우리가 아는 유일한 진짜 이름이고, 코드에 박아 둔 예시는
+     * 금세 낡는다. 콤보는 편집을 열어 두므로 어떤 이름이든 직접 칠 수 있다.
+     */
+    private fun fillModels(cli: AiCli, chosen: String) {
+        aiModelBox.removeAllItems()
+        aiModelBox.addItem(MODEL_DEFAULT)
+        (listOfNotNull(cli.configuredModel(userHome)) + cli.models).distinct().forEach(aiModelBox::addItem)
+        aiModelBox.selectedItem = chosen.ifEmpty { MODEL_DEFAULT }
+    }
+
+    /**
+     * 이 CLI가 어디 깔려 있는지 알아본다. 프로세스를 띄우므로 백그라운드에서 부른다.
+     *
+     * 답이 돌아왔을 때 사용자가 이미 다른 AI를 골랐을 수 있다. 그때는 버린다 — 늦게 온 답이
+     * 지금 고른 것의 자리를 덮으면 화면이 거짓말을 한다.
+     */
+    private fun detect(cli: AiCli) {
+        aiLocationLabel.text = DETECTING
+        background {
+            val found = runCatching { locate(cli) }.getOrNull()
+            onEdt {
+                if (chosenAi().id == cli.id) {
+                    showLocation(cli, found)
+                }
+            }
+        }
+    }
+
+    private fun showLocation(cli: AiCli, found: String?) {
+        aiLocationLabel.text = found?.let { "$FOUND_AT $it" } ?: "${cli.displayName}을(를) 찾지 못했습니다. ${cli.installHint}"
+    }
+
+    /** 방금 깐 사용자를 위해 기억해 둔 자리를 버리고 다시 찾는다. */
+    private fun detectAgain() {
+        AiCliLocations.forget()
+        detect(chosenAi())
+    }
+
+    /** 탐지 결과 문구. 화면을 뒤지지 않고 확인하려고 열어 둔다. */
+    fun locationText(): String = aiLocationLabel.text.orEmpty()
 
     /** 고른 모델. 기본값 항목은 "정하지 않음"이라 빈 문자열로 되돌린다. */
     private fun aiModelValue(): String =
@@ -292,7 +450,9 @@ class JiraTaskConfigurable @JvmOverloads constructor(
         projectKey = projectKeyField.text,
         baseUrl = baseUrlField.text,
         gitLabBaseUrl = gitLabBaseUrlField.text,
+        gitLabReviewers = gitLabReviewersField.text,
         aiEnabled = aiEnabledBox.isSelected,
+        aiProvider = AiProvider.of(chosenAi().id),
         aiModel = aiModelValue(),
         aiExecutablePath = aiExecutablePathField.text,
         aiSendDiff = aiSendDiffBox.isSelected,
@@ -307,10 +467,17 @@ class JiraTaskConfigurable @JvmOverloads constructor(
         epicIssueTypeLabel.text = snapshot.epicIssueType.orNotConfigured()
         gitLabBaseUrlField.text = snapshot.gitLabBaseUrl
         gitLabTokenField.text = ""
+        gitLabReviewersField.text = snapshot.gitLabReviewers
         aiEnabledBox.isSelected = snapshot.aiEnabled
-        aiModelBox.selectedItem = snapshot.aiModel.ifEmpty { MODEL_DEFAULT }
-        aiExecutablePathField.text = snapshot.aiExecutablePath
         aiSendDiffBox.isSelected = snapshot.aiSendDiff
+
+        aiClis.clear()
+        aiClis.putAll(snapshot.aiClis)
+        // 콤보를 건드리기 **전에** 정한다. 리스너가 울렸을 때 옮겨 적을 자리를 알아야 한다.
+        shownProvider = snapshot.aiProvider
+        val cli = AiClis.byId(snapshot.aiProvider)
+        aiProviderBox.selectedItem = cli.displayName
+        showCli(cli, snapshot.aiCli())
         problemLabel.text = problem.orEmpty()
         problemLabel.isVisible = problem != null
     }
@@ -318,11 +485,25 @@ class JiraTaskConfigurable @JvmOverloads constructor(
     private fun String.orNotConfigured(): String = ifEmpty { NOT_CONFIGURED }
 
     companion object {
+        /** 기본 실행 자리. 테스트가 그 자리에서 결과를 보고 싶을 때 갈아 끼울 수 있게 이름을 붙여 둔다. */
+        val POOLED: (() -> Unit) -> Unit = { ApplicationManager.getApplication().executeOnPooledThread(Runnable(it)) }
+
+        /** 설정 화면도 모달이다. 모달리티를 주지 않으면 창이 닫힌 뒤에야 반영된다. */
+        val ON_EDT: (() -> Unit) -> Unit = {
+            ApplicationManager.getApplication().invokeLater(Runnable(it), ModalityState.any())
+        }
+
         const val NOT_CONFIGURED: String = "설정되지 않음"
         const val RUN_WIZARD_BUTTON: String = "설정 마법사 다시 실행"
         const val TEST_CONNECTION_BUTTON: String = "연결 테스트"
+        const val PICK_REVIEWERS: String = "찾아서 고르기"
         const val TESTING: String = "확인 중…"
-        const val MODEL_DEFAULT: String = "Claude Code 설정 따름"
+        const val MODEL_DEFAULT: String = "CLI에 정해 둔 값 따름"
+        const val DETECT_AGAIN: String = "새로고침"
+        const val DETECTING: String = "찾는 중…"
+        const val FOUND_AT: String = "찾음:"
+        const val PATH_NOTICE: String =
+            "비워 두면 알아서 찾습니다. 탐지에 실패했을 때만 터미널의 `which`(Windows는 `where`) 결과를 넣으세요."
         const val PRIVACY_NOTICE: String =
             "MR 초안은 브랜치 이름, 커밋 제목, 변경된 파일 경로만 보냅니다. 파일 내용은 보내지 않습니다."
         const val DIFF_NOTICE: String =

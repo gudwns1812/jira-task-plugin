@@ -28,7 +28,7 @@ class SetupConnectionForm(initialBaseUrl: String = "", initialEmail: String = ""
         row("Jira 주소:") { cell(baseUrlField).columns(COLUMNS_LARGE) }
         row("Jira 이메일:") { cell(emailField).columns(COLUMNS_LARGE) }
         row("Jira API Token:") { cell(apiTokenField).columns(COLUMNS_LARGE) }
-            .rowComment("토큰은 설정 파일에 저장하지 않고 IDE 비밀번호 저장소(PasswordSafe)에만 보관합니다.")
+            
     }
 
     fun problem(): String? = SetupConnection.problemOf(baseUrlField.text, emailField.text, apiToken())

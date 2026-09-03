@@ -10,6 +10,7 @@ import io.github.gudwns1812.jiratask.domain.mr.GitLabIdentity
 import io.github.gudwns1812.jiratask.domain.mr.GitLabNetworkError
 import io.github.gudwns1812.jiratask.domain.mr.GitLabPermissionError
 import io.github.gudwns1812.jiratask.domain.mr.GitLabProjectInfo
+import io.github.gudwns1812.jiratask.domain.mr.GitLabUser
 import io.github.gudwns1812.jiratask.domain.mr.MergeRequestCommand
 import io.github.gudwns1812.jiratask.domain.mr.MergeRequestPort
 import io.github.gudwns1812.jiratask.domain.mr.OpenMergeRequest
@@ -24,13 +25,20 @@ import org.junit.Test
 /** 브랜치 상태에서 MR 초안까지, 그리고 만들 수 없는 경우를 어떻게 알리는가. */
 class CreateMergeRequestTest {
 
+    private val me = GitLabUser(42, "gudwns1812", "박형준")
+    private val jimin = GitLabUser(7, "jimin", "김지민")
+
     private class FakeGitLab(
         var existing: OpenMergeRequest? = null,
         var default: String? = "develop",
         var failure: Exception? = null,
         var projectTemplate: String? = null,
+        var whoAmI: GitLabUser? = null,
+        var projectLabels: List<String> = emptyList(),
+        var people: List<GitLabUser> = emptyList(),
     ) : MergeRequestPort {
         val created = mutableListOf<MergeRequestCommand>()
+        val searched = mutableListOf<String>()
 
         override fun verifyIdentity(): GitLabIdentity = GitLabIdentity("gudwns1812")
 
@@ -42,6 +50,15 @@ class CreateMergeRequestTest {
             failure?.let { throw it }
             created += command
             return CreatedMergeRequest("https://lab.ssafy.com/a/b/-/merge_requests/7")
+        }
+
+        override fun me(): GitLabUser? = whoAmI
+
+        override fun labels(projectPath: String): List<String> = projectLabels
+
+        override fun findUsers(projectPath: String, query: String): List<GitLabUser> {
+            searched += query
+            return if (query.isEmpty()) people else people.filter { it.username.contains(query, ignoreCase = true) }
         }
     }
 
@@ -235,6 +252,83 @@ class CreateMergeRequestTest {
         assertEquals(before.targetBranch, after.targetBranch)
         assertEquals(before.targetCandidates, after.targetCandidates)
         assertEquals(before.projectPath, after.projectPath)
+    }
+
+    @Test
+    fun `starts with me as the assignee and the team's default reviewers`() {
+        val gitlab = FakeGitLab(whoAmI = me, people = listOf(me, jimin), projectLabels = listOf("backend", "docs"))
+        val useCase = CreateMergeRequestUseCase(
+            gitlab = gitlab,
+            issueKeysOf = { listOf("S15P11A108-257") },
+            defaultReviewers = listOf("jimin"),
+        )
+
+        val proposal = readyOf(useCase.prepare(state()))
+
+        assertEquals(listOf(me), proposal.assignees)
+        assertEquals(listOf(jimin), proposal.reviewers)
+        assertEquals(listOf("backend", "docs"), proposal.availableLabels)
+    }
+
+    @Test
+    fun `looks a default reviewer up by name when the first page missed them`() {
+        // 사람이 많은 프로젝트에서는 첫 쪽에 없을 수 있다. 그 사람만 이름으로 다시 묻는다.
+        val gitlab = FakeGitLab(whoAmI = me, people = listOf(me, jimin))
+        val useCase = CreateMergeRequestUseCase(
+            gitlab = gitlab,
+            issueKeysOf = { listOf("S15P11A108-257") },
+            defaultReviewers = listOf("jimin"),
+        )
+
+        useCase.prepare(state())
+
+        assertEquals("첫 쪽에 있으면 다시 묻지 않는다", listOf(""), gitlab.searched)
+    }
+
+    @Test
+    fun `drops a default reviewer who is no longer on the project`() {
+        val gitlab = FakeGitLab(whoAmI = me, people = listOf(me))
+        val useCase = CreateMergeRequestUseCase(
+            gitlab = gitlab,
+            issueKeysOf = { listOf("S15P11A108-257") },
+            defaultReviewers = listOf("jimin", "gudwns1812"),
+        )
+
+        val proposal = readyOf(useCase.prepare(state()))
+
+        // 팀을 떠난 사람 하나 때문에 창이 열리지 않으면 안 된다.
+        assertEquals(listOf(me), proposal.reviewers)
+    }
+
+    @Test
+    fun `sends the people and labels the user settled on`() {
+        val gitlab = FakeGitLab(whoAmI = me, people = listOf(me, jimin), projectLabels = listOf("backend"))
+        val useCase = CreateMergeRequestUseCase(gitlab = gitlab, issueKeysOf = { listOf("S15P11A108-257") })
+        val proposal = readyOf(useCase.prepare(state()))
+
+        useCase.create(
+            proposal.copy(assignees = listOf(me), reviewers = listOf(jimin), labels = listOf("backend")),
+            "제목",
+            "본문",
+        )
+
+        val command = gitlab.created.single()
+        assertEquals(listOf(42), command.assigneeIds)
+        assertEquals(listOf(7), command.reviewerIds)
+        assertEquals(listOf("backend"), command.labels)
+    }
+
+    @Test
+    fun `makes the merge request even when nobody and no label could be read`() {
+        // 사람·라벨을 못 읽는 것과 MR을 못 만드는 것은 다르다.
+        val gitlab = FakeGitLab()
+        val useCase = CreateMergeRequestUseCase(gitlab = gitlab, issueKeysOf = { listOf("S15P11A108-257") })
+
+        val proposal = readyOf(useCase.prepare(state()))
+        val result = useCase.create(proposal, "제목", "본문")
+
+        assertTrue(result is MergeRequestResult.Created)
+        assertEquals(emptyList<Int>(), gitlab.created.single().assigneeIds)
     }
 
     @Test

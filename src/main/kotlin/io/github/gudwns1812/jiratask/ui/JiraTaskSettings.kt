@@ -1,6 +1,7 @@
 package io.github.gudwns1812.jiratask.ui
 
 import io.github.gudwns1812.jiratask.application.CredentialStore
+import io.github.gudwns1812.jiratask.domain.policy.AiProvider
 import io.github.gudwns1812.jiratask.domain.policy.PolicyConfigurationError
 import io.github.gudwns1812.jiratask.infrastructure.CredentialStorageError
 import io.github.gudwns1812.jiratask.infrastructure.GitLabTokenStore
@@ -18,10 +19,12 @@ data class CommitSettings(val projectKey: String)
 /**
  * AI 초안에 필요한 값.
  *
- * API 키가 없다 — 사용자가 이미 로그인해 둔 Claude Code를 그대로 쓰기 때문이다.
+ * API 키가 없다 — 사용자가 이미 로그인해 둔 CLI를 그대로 쓰기 때문이다.
  * 플러그인이 자격 증명을 갖지 않는 것이 이 기능을 구독 요금제로 쓸 수 있는 이유다.
  */
 data class AiDraftSettings(
+    /** 어느 CLI에게 맡길지. 모델과 실행 파일 경로는 이 provider에 저장된 것이다. */
+    val provider: AiProvider,
     val model: String?,
     val executablePath: String?,
     /** 커밋 초안에 변경 내용(diff)까지 보낼지. 커밋 초안에서만 본다. */
@@ -46,6 +49,8 @@ data class MergeRequestSettings(
     val gitLabToken: String,
     val jiraBaseUrl: String?,
     val tokenSource: GitLabTokenSource = GitLabTokenSource.SETTINGS,
+    /** MR 창을 열 때 리뷰어로 미리 넣어 둘 GitLab 아이디들. */
+    val defaultReviewers: List<String> = emptyList(),
 )
 
 /**
@@ -111,7 +116,15 @@ class JiraTaskSettings(
             else -> return@withConfig SettingsLookup.Missing(NO_GITLAB_TOKEN)
         }
 
-        SettingsLookup.Ready(MergeRequestSettings(baseUrl, token, config.jira?.baseUrl, source))
+        SettingsLookup.Ready(
+            MergeRequestSettings(
+                gitLabBaseUrl = baseUrl,
+                gitLabToken = token,
+                jiraBaseUrl = config.jira?.baseUrl,
+                tokenSource = source,
+                defaultReviewers = config.gitlab?.defaultReviewers.orEmpty(),
+            ),
+        )
     }
 
     /** AI 초안 설정. 꺼져 있으면 왜 쓸 수 없는지 알려준다. */
@@ -120,7 +133,12 @@ class JiraTaskSettings(
             ?: return@withConfig SettingsLookup.Missing(AI_DISABLED)
 
         SettingsLookup.Ready(
-            AiDraftSettings(model = ai.model, executablePath = ai.executablePath, sendDiff = ai.sendDiff),
+            AiDraftSettings(
+                provider = ai.provider,
+                model = ai.model,
+                executablePath = ai.executablePath,
+                sendDiff = ai.sendDiff,
+            ),
         )
     }
 
