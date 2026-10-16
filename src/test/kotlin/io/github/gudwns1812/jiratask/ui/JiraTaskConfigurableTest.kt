@@ -12,9 +12,13 @@ import io.github.gudwns1812.jiratask.domain.mr.GitLabIdentity
 import io.github.gudwns1812.jiratask.domain.mr.GitLabProjectInfo
 import io.github.gudwns1812.jiratask.domain.mr.MergeRequestCommand
 import io.github.gudwns1812.jiratask.domain.mr.MergeRequestPort
+import io.github.gudwns1812.jiratask.domain.policy.AiProvider
 import io.github.gudwns1812.jiratask.domain.policy.PolicyConfigurationError
 import io.github.gudwns1812.jiratask.infrastructure.JiraTaskConfigStorage
 import io.github.gudwns1812.jiratask.infrastructure.PolicyConfigRepository
+import io.github.gudwns1812.jiratask.infrastructure.ai.AiCli
+import io.github.gudwns1812.jiratask.infrastructure.ai.ClaudeCodeCli
+import io.github.gudwns1812.jiratask.infrastructure.ai.CodexCli
 import java.awt.Container
 import javax.swing.JComponent
 import javax.swing.JLabel
@@ -26,8 +30,46 @@ class JiraTaskConfigurableTest : BasePlatformTestCase() {
     /** 애플리케이션 서비스 상태를 건드리지 않도록 테스트마다 독립된 저장소를 쓴다. */
     private fun repository(): PolicyConfigRepository = PolicyConfigRepository(JiraTaskConfigStorage())
 
-    private fun configurableOf(repository: PolicyConfigRepository): JiraTaskConfigurable =
-        JiraTaskConfigurable(EditSettingsUseCase(repository::loadConfig, repository::saveConfig))
+    /**
+     * 탐지는 가짜를 끼운다. 실제로 `--version`을 부르면 테스트 결과가 **그 기계에 무엇이 깔려 있는지**에
+     * 달리게 되고, CLI가 없는 CI에서는 다른 화면을 보게 된다.
+     */
+    private fun configurableOf(
+        repository: PolicyConfigRepository,
+        locate: (AiCli) -> String? = { "/fake/bin/${it.id}" },
+        /** 탐지 결과를 그 자리에서 보고 싶은 테스트만 켠다. 연결 테스트의 "확인 중…"은 그대로 두려고 나눴다. */
+        immediately: Boolean = false,
+    ): JiraTaskConfigurable = JiraTaskConfigurable(
+        settings = EditSettingsUseCase(repository::loadConfig, repository::saveConfig),
+        background = if (immediately) ({ it() }) else JiraTaskConfigurable.POOLED,
+        onEdt = if (immediately) ({ it() }) else JiraTaskConfigurable.ON_EDT,
+        locate = locate,
+    )
+
+    /** 사용할 AI 콤보. 모델 콤보와 달리 편집을 열어 두지 않아 그것으로 가려낸다. */
+    private fun aiProviderBoxOf(container: Container): javax.swing.JComboBox<*> {
+        val found = mutableListOf<javax.swing.JComboBox<*>>()
+        fun walk(c: Container) {
+            if (c is javax.swing.JComboBox<*> && !c.isEditable) {
+                found += c
+            }
+            c.components.filterIsInstance<Container>().forEach(::walk)
+        }
+        walk(container)
+        return found.first()
+    }
+
+    private fun aiModelBoxOf(container: Container): javax.swing.JComboBox<*> {
+        val found = mutableListOf<javax.swing.JComboBox<*>>()
+        fun walk(c: Container) {
+            if (c is javax.swing.JComboBox<*> && c.isEditable) {
+                found += c
+            }
+            c.components.filterIsInstance<Container>().forEach(::walk)
+        }
+        walk(container)
+        return found.single()
+    }
 
     private fun configuredRepository(): PolicyConfigRepository = repository().apply {
         saveConfig(
@@ -337,10 +379,13 @@ class JiraTaskConfigurableTest : BasePlatformTestCase() {
 
     private fun gitLabTokenFieldOf(component: JComponent): JTextComponent = editableFieldsOf(component)[3]
 
-    /** 모델 콤보의 편집 칸. 편집을 열어 뒀으므로 목록에 없는 이름도 여기 적을 수 있다. */
-    private fun aiModelFieldOf(component: JComponent): JTextComponent = editableFieldsOf(component)[4]
+    private fun gitLabReviewersFieldOf(component: JComponent): JTextComponent = editableFieldsOf(component)[4]
 
-    private fun aiEnabledBoxOf(container: Container): javax.swing.JCheckBox {
+    /** 모델 콤보의 편집 칸. 편집을 열어 뒀으므로 목록에 없는 이름도 여기 적을 수 있다. */
+    private fun aiModelFieldOf(component: JComponent): JTextComponent = editableFieldsOf(component)[5]
+
+    /** AI 그룹의 체크박스들. 화면에 놓인 순서 그대로다 — 켜기, 그리고 diff 보내기. */
+    private fun checkBoxesOf(container: Container): List<javax.swing.JCheckBox> {
         val found = mutableListOf<javax.swing.JCheckBox>()
         fun walk(c: Container) {
             if (c is javax.swing.JCheckBox) {
@@ -349,8 +394,12 @@ class JiraTaskConfigurableTest : BasePlatformTestCase() {
             c.components.filterIsInstance<Container>().forEach(::walk)
         }
         walk(container)
-        return found.single()
+        return found
     }
+
+    private fun aiEnabledBoxOf(container: Container): javax.swing.JCheckBox = checkBoxesOf(container)[0]
+
+    private fun aiSendDiffBoxOf(container: Container): javax.swing.JCheckBox = checkBoxesOf(container)[1]
 
 
     private fun editableFieldsOf(component: JComponent): List<JTextComponent> {
@@ -371,13 +420,14 @@ class JiraTaskConfigurableTest : BasePlatformTestCase() {
 
         val values = textFieldValues(configurable.createComponent())
 
-        // 프로젝트 키, Jira 주소, GitLab 주소, GitLab 토큰, 그리고 AI 모델·실행 파일 경로.
+        // 프로젝트 키, Jira 주소, GitLab 주소·토큰·기본 리뷰어, 그리고 AI 모델·실행 파일 경로.
         // AI 그룹은 맨 뒤에 둔다 — 앞에 끼우면 위 필드를 인덱스로 찾는 헬퍼들이 어긋난다.
         // 모델 칸은 콤보라 "정하지 않음"을 글로 보여 준다.
         assertEquals(
             listOf(
                 "S15P11A108",
                 "https://team.atlassian.net",
+                "",
                 "",
                 "",
                 JiraTaskConfigurable.MODEL_DEFAULT,
@@ -400,6 +450,32 @@ class JiraTaskConfigurableTest : BasePlatformTestCase() {
         assertNull(repository.loadConfig().ai?.model)
     }
 
+    fun `test the commit draft sends the diff until the user turns it off`() {
+        val repository = configuredRepository()
+        val configurable = configurableOf(repository)
+        val component = configurable.createComponent()
+
+        assertTrue("켜 둔 채로 보여 준다", aiSendDiffBoxOf(component).isSelected)
+
+        aiEnabledBoxOf(component).isSelected = true
+        aiSendDiffBoxOf(component).isSelected = false
+        configurable.apply()
+
+        assertEquals(false, repository.loadConfig().ai?.sendDiff)
+        assertFalse("저장한 뒤에도 끈 채로 보여야 한다", aiSendDiffBoxOf(component).isSelected)
+    }
+
+    fun `test saves the default reviewers for the merge request window`() {
+        val repository = configuredRepository()
+        val configurable = configurableOf(repository)
+        val component = configurable.createComponent()
+
+        gitLabReviewersFieldOf(component).text = "gudwns1812, jimin"
+        configurable.apply()
+
+        assertEquals(listOf("gudwns1812", "jimin"), repository.loadConfig().gitlab?.defaultReviewers)
+    }
+
     fun `test saves the model the user picked`() {
         val repository = configuredRepository()
         val configurable = configurableOf(repository)
@@ -410,5 +486,65 @@ class JiraTaskConfigurableTest : BasePlatformTestCase() {
         configurable.apply()
 
         assertEquals("opus", repository.loadConfig().ai?.model)
+    }
+
+    fun `test saves which ai the user picked, and its model under that ai`() {
+        val repository = configuredRepository()
+        val configurable = configurableOf(repository)
+        val component = configurable.createComponent()
+
+        aiEnabledBoxOf(component).isSelected = true
+        aiProviderBoxOf(component).selectedItem = CodexCli.displayName
+        aiModelFieldOf(component).text = "gpt-5-codex"
+        configurable.apply()
+
+        val ai = repository.loadConfig().ai
+        assertEquals(AiProvider.CODEX, ai?.provider)
+        assertEquals("gpt-5-codex", ai?.model)
+        assertNull("다른 CLI의 모델이 되어서는 안 된다", ai?.cliSettings(AiProvider.CLAUDE)?.model)
+    }
+
+    fun `test offers current Codex model tiers and saves the chosen tier`() {
+        val repository = configuredRepository()
+        val configurable = configurableOf(repository)
+        val component = configurable.createComponent()
+
+        aiEnabledBoxOf(component).isSelected = true
+        aiProviderBoxOf(component).selectedItem = CodexCli.displayName
+        val models = aiModelBoxOf(component)
+        val choices = (0 until models.itemCount).map { models.getItemAt(it) }
+
+        assertTrue(choices.containsAll(listOf("gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna")))
+        models.selectedItem = "gpt-5.6-luna"
+        configurable.apply()
+
+        assertEquals("gpt-5.6-luna", repository.loadConfig().ai?.model)
+    }
+
+    fun `test keeps what was typed for the other ai while switching between them`() {
+        val repository = configuredRepository()
+        val configurable = configurableOf(repository)
+        val component = configurable.createComponent()
+
+        aiModelFieldOf(component).text = "opus"
+        aiProviderBoxOf(component).selectedItem = CodexCli.displayName
+        assertEquals("고른 쪽에 저장해 둔 것이 없으면 기본값을 보인다", JiraTaskConfigurable.MODEL_DEFAULT, aiModelFieldOf(component).text)
+
+        aiProviderBoxOf(component).selectedItem = ClaudeCodeCli.displayName
+        assertEquals("잠깐 눌러 봤다고 쳐 둔 값이 사라지면 안 된다", "opus", aiModelFieldOf(component).text)
+    }
+
+    fun `test shows where it found the cli, or how to install it`() {
+        val repository = configuredRepository()
+        val component = configurableOf(repository, locate = { "/opt/homebrew/bin/claude" }, immediately = true)
+            .createComponent()
+
+        assertTrue(textsOf(component).any { it.contains("/opt/homebrew/bin/claude") })
+
+        val missing = configurableOf(repository, locate = { null }, immediately = true)
+        val missingComponent = missing.createComponent()
+
+        assertTrue("설치 방법을 알려 준다", missing.locationText().contains("npm install"))
+        assertTrue(textsOf(missingComponent).any { it.contains("찾지 못했습니다") })
     }
 }

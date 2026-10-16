@@ -30,10 +30,10 @@ class CreateCommitTest {
         val result = CreateCommitUseCase(git).execute(CreateCommitCommand("S15P11A108", "이메일 회원가입 화면 구현"))
 
         assertEquals(
-            CreateCommitResult.Success("S15P11A108-257", "S15P11A108-257 이메일 회원가입 화면 구현"),
+            CreateCommitResult.Success("S15P11A108-257", "[S15P11A108-257] 이메일 회원가입 화면 구현"),
             result,
         )
-        assertEquals("S15P11A108-257 이메일 회원가입 화면 구현", git.committedMessage)
+        assertEquals("[S15P11A108-257] 이메일 회원가입 화면 구현", git.committedMessage)
     }
 
     @Test

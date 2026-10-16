@@ -13,7 +13,6 @@ import io.github.gudwns1812.jiratask.domain.task.TaskNumbers
 import io.github.gudwns1812.jiratask.infrastructure.GitRepository
 import java.io.File
 
-/** "Start Jira Task" 다이얼로그의 입력값. 검증은 도메인 규칙([TaskNumbers])을 그대로 쓴다. */
 data class TaskFormInput(val taskNumber: String) {
 
     fun problem(): String? = try {
@@ -26,7 +25,6 @@ data class TaskFormInput(val taskNumber: String) {
     fun trimmed(): TaskFormInput = TaskFormInput(taskNumber.trim())
 }
 
-/** 상태 표시줄에 보여줄 문구. */
 object CurrentTaskText {
     const val NONE: String = "Jira: 작업 없음"
 
@@ -35,7 +33,6 @@ object CurrentTaskText {
 
 data class TaskReport(val type: NotificationType, val message: String)
 
-/** [StartTaskResult]를 알림 한 줄로 옮긴다. */
 object StartTaskReports {
     fun of(result: StartTaskResult): TaskReport = when (result) {
         is StartTaskResult.Success -> TaskReport(
@@ -46,10 +43,6 @@ object StartTaskReports {
     }
 }
 
-/**
- * 현재 작업 번호의 캐시. 값의 정본은 CLI와 같은 로컬 git 설정(`jira-task.current-task`)이지만,
- * 상태 표시줄이 그릴 때마다 git을 호출하면 EDT를 막으므로 읽은 값을 여기 담아둔다.
- */
 @Service(Service.Level.PROJECT)
 class CurrentTaskState(private val project: Project) {
 
@@ -57,16 +50,13 @@ class CurrentTaskState(private val project: Project) {
     var taskNumber: String? = null
         private set
 
-    /** 저장된 값을 그대로 반영한다(작업 시작 직후처럼 이미 아는 값이 있을 때). */
     fun apply(taskNumber: String?) {
         this.taskNumber = taskNumber
         refreshWidget()
     }
 
-    /** git 설정을 읽어 캐시를 갱신한다. 호출한 쪽이 백그라운드 스레드를 보장해야 한다. */
     fun refresh() = apply(readFromGit())
 
-    /** 백그라운드에서 갱신한다. */
     fun refreshInBackground() {
         ApplicationManager.getApplication().executeOnPooledThread { refresh() }
     }

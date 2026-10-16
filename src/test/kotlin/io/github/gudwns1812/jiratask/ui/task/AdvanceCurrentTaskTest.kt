@@ -130,6 +130,10 @@ class AdvanceCurrentTaskTest : BasePlatformTestCase() {
             AdvanceTaskReports.of(AdvanceTaskResult.AlreadyThere("S15P11A108-257", "완료")).type,
         )
 
+        val leftAlone = AdvanceTaskReports.of(AdvanceTaskResult.LeftAlone("S15P11A108-257", "완료"))
+        assertEquals("손대지 않은 것은 실패가 아니다", NotificationType.INFORMATION, leftAlone.type)
+        assertTrue(leftAlone.message.contains("이미 완료된 작업"))
+
         val failure = AdvanceTaskReports.of(AdvanceTaskResult.Failure(4, "Jira 서버와 통신할 수 없습니다."))
         assertEquals("커밋은 이미 끝났으므로 오류가 아니라 경고다", NotificationType.WARNING, failure.type)
         assertTrue(failure.message.contains("Jira 서버와 통신할 수 없습니다."))

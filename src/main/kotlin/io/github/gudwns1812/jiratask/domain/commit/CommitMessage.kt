@@ -9,6 +9,6 @@ object CommitMessages {
             throw CommitMessageError("커밋 메시지를 입력하세요.")
         }
 
-        return "$issueKey $trimmed"
+        return "[$issueKey] $trimmed"
     }
 }

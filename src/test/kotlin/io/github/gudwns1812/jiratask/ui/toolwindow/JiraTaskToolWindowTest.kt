@@ -401,7 +401,8 @@ class JiraTaskToolWindowTest : BasePlatformTestCase() {
 
         assertSize(2, titleActions)
         assertEquals(AllIcons.Actions.Refresh, titleActions[0].templatePresentation.icon)
-        assertEquals(AllIcons.General.Settings, titleActions[1].templatePresentation.icon)
+        // 연결 설정은 플러그다. 톱니바퀴가 여럿이면 어느 것이 무엇인지 알 수 없다.
+        assertEquals(AllIcons.Nodes.Plugin, titleActions[1].templatePresentation.icon)
 
         titleActions[1].actionPerformed(TestActionEvent.createTestEvent(titleActions[1]))
         assertEquals(1, settings)

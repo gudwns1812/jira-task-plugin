@@ -32,8 +32,6 @@ class CreateCommitUseCase(private val gitRepository: CommitRepositoryPort) {
             issueKey = TaskNumbers.createTaskKey(command.projectKey, taskNumber)
             commitMessage = CommitMessages.create(issueKey, command.message)
         } catch (error: Exception) {
-            // createTaskKey/create는 TaskNumberError/CommitMessageError만 던지지만,
-            // CLI와 동일하게 이 단계의 어떤 실패든 입력값 오류(exit 1)로 다룬다.
             return CreateCommitResult.Failure(1, messageOf(error))
         }
 

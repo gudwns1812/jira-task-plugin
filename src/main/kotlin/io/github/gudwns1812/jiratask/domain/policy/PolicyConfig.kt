@@ -21,22 +21,39 @@ data class JiraSettings(
     )
 }
 
-/** MR을 만들 GitLab. 토큰은 여기 두지 않고 자격 증명 저장소에 보관한다. */
-data class GitLabSettings(val baseUrl: String? = null)
+data class GitLabSettings(val baseUrl: String? = null, val defaultReviewers: List<String> = emptyList())
 
-/**
- * MR 제목·본문을 AI에게 맡길지, 무엇으로 맡길지.
- *
- * API 키는 여기에도 자격 증명 저장소에도 두지 않는다. 사용자가 이미 로그인해 둔 Claude Code를
- * 그대로 쓰기 때문이다 — 구독 요금제로 쓰려면 그 길뿐이다.
- */
+enum class AiProvider(val id: String) {
+    CLAUDE("claude"),
+    CODEX("codex"),
+    ;
+
+    companion object {
+
+        fun of(id: String?): AiProvider? = entries.firstOrNull { it.id == id }
+
+        fun ids(): List<String> = entries.map { it.id }
+    }
+}
+
+data class AiCliSettings(val model: String? = null, val executablePath: String? = null) {
+
+    fun isEmpty(): Boolean = model == null && executablePath == null
+}
+
 data class AiSettings(
     val enabled: Boolean = false,
-    /** 비어 있으면 Claude Code에 설정된 사용자 자신의 모델을 따른다. */
-    val model: String? = null,
-    /** PATH에서 찾지 못할 때만 쓴다. */
-    val executablePath: String? = null,
-)
+    val provider: AiProvider = AiProvider.CLAUDE,
+    val sendDiff: Boolean = true,
+    val clis: Map<AiProvider, AiCliSettings> = emptyMap(),
+) {
+
+    fun cliSettings(which: AiProvider = provider): AiCliSettings = clis[which] ?: AiCliSettings()
+
+    val model: String? get() = cliSettings().model
+
+    val executablePath: String? get() = cliSettings().executablePath
+}
 
 data class JiraTaskConfig(
     val projectKey: String? = null,
@@ -49,11 +66,6 @@ data class JiraTaskConfig(
 
 private val PROJECT_KEY_PATTERN = Regex("""^[A-Z][A-Z0-9_]*$""")
 
-/**
- * 업무 정책(영역·업무 분류·스토리 포인트·레이블)을 저장하던 키들이다. 이슈를 만들 때만 쓰였으므로
- * 더는 읽지 않지만, 예전 버전이 저장해 둔 설정 파일이 이 키를 갖고 있다. 허용 목록에는 남겨
- * 그런 파일이 "허용되지 않는 필드" 오류로 막히지 않게 하고, 값은 읽지도 다시 쓰지도 않는다.
- */
 private val LEGACY_POLICY_KEYS = setOf("areas", "workCategories", "storyPoints", "labels")
 
 fun JiraTaskConfig.Companion.default(): JiraTaskConfig = JiraTaskConfig()
@@ -68,7 +80,6 @@ fun JiraTaskConfig.Companion.resolve(rawConfig: Any?): JiraTaskConfig {
     val gitlab = readGitLabSettings(obj, errors)
     val ai = readAiSettings(obj, errors)
 
-    // projectKey 오류와 jira 오류를 한 번에 모아 던진다.
     if (errors.isNotEmpty()) {
         throw PolicyConfigurationError("설정 형식이 올바르지 않습니다. ${errors.joinToString("; ")}")
     }
@@ -84,45 +95,116 @@ private fun readAiSettings(obj: Map<*, *>, errors: MutableList<String>): AiSetti
         errors += "ai: 값 형식이 올바르지 않습니다."
         return null
     }
-    rejectUnknownKeys(raw, setOf("enabled", "model", "executablePath"), "ai", errors)
+    rejectUnknownKeys(raw, AI_KEYS, "ai", errors)
 
     return AiSettings(
         enabled = readOptionalBoolean(raw, "enabled", "ai.enabled", errors) ?: false,
-        model = readOptionalText(raw, "model", "ai.model", errors),
-        executablePath = readOptionalText(raw, "executablePath", "ai.executablePath", errors),
+        provider = readProvider(raw, errors) ?: AiProvider.CLAUDE,
+        sendDiff = readOptionalBoolean(raw, "sendDiff", "ai.sendDiff", errors) ?: true,
+        clis = AiProvider.entries.mapNotNull { provider ->
+            readCliSettings(raw, provider, errors)?.let { provider to it }
+        }.toMap(),
     )
 }
 
+private fun readProvider(raw: Map<*, *>, errors: MutableList<String>): AiProvider? {
+    val text = readOptionalText(raw, "provider", "ai.provider", errors) ?: return null
+
+    return AiProvider.of(text) ?: run {
+        errors += "ai.provider: ${AiProvider.ids().joinToString(", ")} 중 하나여야 합니다."
+        null
+    }
+}
+
+private fun readCliSettings(
+    raw: Map<*, *>,
+    provider: AiProvider,
+    errors: MutableList<String>,
+): AiCliSettings? {
+    val path = "ai.${provider.id}"
+    val section = raw[provider.id]
+    if (section != null) {
+        val obj = section as? Map<*, *> ?: run {
+            errors += "$path: 값 형식이 올바르지 않습니다."
+            return null
+        }
+        rejectUnknownKeys(obj, setOf("model", "executablePath"), path, errors)
+
+        return AiCliSettings(
+            model = readOptionalText(obj, "model", "$path.model", errors),
+            executablePath = readOptionalText(obj, "executablePath", "$path.executablePath", errors),
+        ).takeIf { !it.isEmpty() }
+    }
+
+    if (provider != AiProvider.CLAUDE) {
+        return null
+    }
+
+    return AiCliSettings(
+        model = readOptionalText(raw, "model", "ai.model", errors),
+        executablePath = readOptionalText(raw, "executablePath", "ai.executablePath", errors),
+    ).takeIf { !it.isEmpty() }
+}
+
+private val AI_KEYS: Set<String> =
+    setOf("enabled", "provider", "sendDiff", "model", "executablePath") + AiProvider.ids()
+
 private fun readGitLabSettings(obj: Map<*, *>, errors: MutableList<String>): GitLabSettings? {
     val raw = obj["gitlab"] as? Map<*, *> ?: return null
-    rejectUnknownKeys(raw, setOf("baseUrl"), "gitlab", errors)
+    rejectUnknownKeys(raw, setOf("baseUrl", "defaultReviewers"), "gitlab", errors)
 
-    val baseUrl = readOptionalText(raw, "baseUrl", "gitlab.baseUrl", errors) ?: return null
-    if (!isHttpUrl(baseUrl)) {
+    val reviewers = readUniqueStrings(raw, "defaultReviewers", errors).orEmpty()
+    val baseUrl = readOptionalText(raw, "baseUrl", "gitlab.baseUrl", errors)
+    if (baseUrl != null && !isHttpUrl(baseUrl)) {
         errors += "gitlab.baseUrl: http 또는 https 주소여야 합니다."
         return null
     }
-    return GitLabSettings(baseUrl)
+
+    if (baseUrl == null && reviewers.isEmpty()) {
+        return null
+    }
+
+    return GitLabSettings(baseUrl, reviewers)
 }
 
-/** [JiraTaskConfig.resolve]가 다시 읽을 수 있는 원시 구조로 되돌린다(설정 파일 저장용). */
 fun JiraTaskConfig.toRawMap(): Map<String, Any?> {
     val result = mutableMapOf<String, Any?>()
     projectKey?.let { result["projectKey"] = it }
     jira?.let { result["jira"] = it.toRawMap() }
-    gitlab?.baseUrl?.let { result["gitlab"] = mapOf("baseUrl" to it) }
+    gitlab?.let { settings ->
+        val section = buildMap<String, Any> {
+            settings.baseUrl?.let { put("baseUrl", it) }
+            settings.defaultReviewers.takeIf { it.isNotEmpty() }?.let { put("defaultReviewers", it) }
+        }
+        if (section.isNotEmpty()) {
+            result["gitlab"] = section
+        }
+    }
     ai?.let { result["ai"] = it.toRawMap() }
     return result
 }
 
 private fun AiSettings.toRawMap(): Map<String, Any?> {
-    val result = mutableMapOf<String, Any?>("enabled" to enabled)
-    model?.let { result["model"] = it }
-    executablePath?.let { result["executablePath"] = it }
+    val result = mutableMapOf<String, Any?>(
+        "enabled" to enabled,
+        "provider" to provider.id,
+        "sendDiff" to sendDiff,
+    )
+
+    for (which in AiProvider.entries) {
+        val settings = clis[which] ?: continue
+        val section = buildMap<String, Any> {
+            settings.model?.let { put("model", it) }
+            settings.executablePath?.let { put("executablePath", it) }
+        }
+        if (section.isNotEmpty()) {
+            result[which.id] = section
+        }
+    }
+
     return result
 }
 
-/** 설정 저장소가 다시 읽을 수 있는 원시 구조로 되돌린다(초기 설정 마법사가 저장할 때 사용). */
 fun JiraSettings.toRawMap(): Map<String, Any?> {
     val result = mutableMapOf<String, Any?>()
     baseUrl?.let { result["baseUrl"] = it }
@@ -140,19 +222,13 @@ private fun JiraSettings.IssueTypes.toRawMap(): Map<String, Any?> {
     return result
 }
 
-/**
- * 이 설정에 [update]를 얕게 병합한 뒤 다시 검증한다. `jira`는 한 단계만 병합해
- * (예: baseUrl만 갱신해도 issueTypes는 유지) `config set`과 같은 동작이다.
- */
 fun JiraTaskConfig.mergeWith(update: Map<String, Any?>): JiraTaskConfig {
     val merged = toRawMap().toMutableMap()
 
-    // 키가 여럿인 절은 한 겹 깊이로 합친다. 통째로 덮으면 이번에 건드리지 않은 값이 사라진다 —
-    // `ai.enabled`만 저장했다고 `ai.model`이 없어지면 안 된다.
     for (section in DEEP_MERGED_SECTIONS) {
         val incoming = update[section] as? Map<*, *> ?: continue
         val current = merged[section] as? Map<*, *> ?: emptyMap<String, Any?>()
-        merged[section] = current + incoming
+        merged[section] = deepMerge(current, incoming)
     }
     merged.putAll(update.filterKeys { it !in DEEP_MERGED_SECTIONS })
 
@@ -266,8 +342,6 @@ private fun readJiraSettings(obj: Map<*, *>, errors: MutableList<String>): JiraS
     val email = readOptionalText(raw, "email", "jira.email", errors)
     val project = readProjectRef(raw, errors)
     val issueTypes = readIssueTypes(raw, errors)
-    // `statuses`는 어느 상태가 "진행 중"인지 저장하던 자리다. 이제 Jira의 상태 카테고리로
-    // 그때그때 고르므로 읽지 않는다. 예전 설정 파일에 남아 있어도 오류로 막지 않는다.
     readStatuses(raw, errors)
 
     if (listOf(baseUrl, email, project, issueTypes).all { it == null }) {
@@ -301,12 +375,6 @@ private fun readOptionalText(obj: Map<*, *>, key: String, path: String, errors: 
     return readRequiredText(obj, key, path, errors)
 }
 
-/**
- * 없거나 null이면 null, 참·거짓이 아니면 오류.
- *
- * `toString().toBoolean()`을 쓰지 않는다 — 그건 `"maybe"`를 조용히 `false`로 삼켜서,
- * 잘못 적은 설정이 "꺼 둔 것"처럼 보이게 만든다.
- */
 private fun readOptionalBoolean(obj: Map<*, *>, key: String, path: String, errors: MutableList<String>): Boolean? {
     if (!obj.containsKey(key) || obj[key] == null) {
         return null
@@ -379,11 +447,18 @@ private fun readOptionalNamedValue(obj: Map<*, *>, key: String, path: String, er
     return readNamedValue(raw, path, errors)
 }
 
-/** 예전 설정의 `jira.statuses` 형식만 확인하고 값은 버린다. 오류로 막지 않기 위해 남겨 둔 자리다. */
 private fun readStatuses(obj: Map<*, *>, errors: MutableList<String>) {
     val raw = obj["statuses"] as? Map<*, *> ?: return
     rejectUnknownKeys(raw, setOf("story", "task"), "jira.statuses", errors)
 }
 
-/** 한 겹 깊이로 합칠 절들. 키가 하나뿐인 절은 통째로 덮여도 잃을 것이 없다. */
-private val DEEP_MERGED_SECTIONS = setOf("jira", "ai")
+private fun deepMerge(current: Map<*, *>, incoming: Map<*, *>): Map<Any?, Any?> {
+    val merged = current.toMutableMap<Any?, Any?>()
+    for ((key, value) in incoming) {
+        val existing = merged[key]
+        merged[key] = if (existing is Map<*, *> && value is Map<*, *>) deepMerge(existing, value) else value
+    }
+    return merged
+}
+
+private val DEEP_MERGED_SECTIONS = setOf("jira", "ai", "gitlab")

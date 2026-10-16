@@ -32,7 +32,6 @@ data class SetupSummary(
     val epicIssueType: JiraNamedValue,
 )
 
-/** API 토큰을 설정 파일과 분리해 보관하는 저장소의 경계다. 실제 구현은 인프라 계층이 제공한다. */
 interface CredentialStore {
     fun save(baseUrl: String, email: String, apiToken: String)
     fun get(baseUrl: String, email: String): String?
@@ -152,10 +151,6 @@ class RunInitialSetupUseCase(
 
 class SetupInputError(message: String) : Exception(message)
 
-/**
- * 연결 입력값의 문제를 사람이 읽을 문구로 돌려준다. 문제가 없으면 null.
- * 마법사 폼이 입력 중에도 같은 규칙으로 안내할 수 있도록 검증만 분리했다(CLI 프롬프트의 validate와 동일).
- */
 fun SetupConnection.Companion.problemOf(baseUrl: String, email: String, apiToken: String): String? = when {
     baseUrl.isBlank() -> "Jira 주소를 입력하세요."
     !isHttpUrl(baseUrl.trim()) -> "https://team.atlassian.net 형식으로 입력하세요."
@@ -164,13 +159,11 @@ fun SetupConnection.Companion.problemOf(baseUrl: String, email: String, apiToken
     else -> null
 }
 
-/** 검증한 뒤 정규화(주소 끝 슬래시 제거, 공백 제거)한 연결 정보를 만든다. */
 fun SetupConnection.Companion.of(baseUrl: String, email: String, apiToken: String): SetupConnection {
     SetupConnection.problemOf(baseUrl, email, apiToken)?.let { throw SetupInputError(it) }
     return SetupConnection(baseUrl.trim().trimEnd('/'), email.trim(), apiToken)
 }
 
-/** 최종 확인 화면에 보여줄 항목들. 이메일과 API 토큰은 담지 않는다. */
 fun SetupSummary.toDisplayLines(): List<Pair<String, String>> = listOf(
     "Jira 주소" to baseUrl,
     "프로젝트" to "${project.key} - ${project.name}",

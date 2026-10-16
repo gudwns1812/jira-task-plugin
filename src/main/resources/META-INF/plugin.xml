@@ -4,10 +4,16 @@
     <vendor url="https://github.com/gudwns1812/jira-task-plugin">gudwns1812</vendor>
 
     <description><![CDATA[
-        Fits the RULE.md based Jira workflow into the IDE's Git flow.
-        Provides a first-run setup wizard, a picker for the tasks in the current sprint,
-        automatic Jira issue keys in Git commit messages with a pre-commit check,
-        and a search that reads and edits an issue without leaving the IDE.
+        IDE의 Git 흐름에 Jira를 끼워 넣습니다.
+        <ul>
+            <li>현재 스프린트의 내 작업을 고르면 커밋 메시지에 이슈 키가 자동으로 붙습니다.</li>
+            <li>커밋 전에 키 누락·오타·스프린트 이탈을 경고합니다. 막지는 않습니다.</li>
+            <li>커밋 메시지와 GitLab MR 초안을 AI가 씁니다. 이미 로그인해 둔 Claude Code나 Codex를
+                그대로 쓰므로 API 키를 받지 않습니다.</li>
+            <li>브랜치의 커밋에서 작업 키를 모아 MR을 만들고, 담당자·리뷰어·라벨까지 그 창에서 정합니다.</li>
+            <li>이슈를 검색해 제목과 설명을 고치고, 커밋의 이슈 키를 눌러 Jira로 이동합니다.</li>
+        </ul>
+        Jira를 대신 조작하지 않습니다. 에픽·스토리·작업은 사람이 만들고, 상태는 대부분 automation이 옮깁니다.
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
@@ -15,17 +21,15 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <notificationGroup id="Jira Task" displayType="BALLOON"/>
-        <!-- 커밋 창이 열릴 때의 기본 메시지. 모달 다이얼로그와 커밋 툴 윈도우가 함께 쓰는 경로다. -->
         <vcs.commitMessageProvider
             implementation="io.github.gudwns1812.jiratask.ui.commit.JiraTaskCommitMessageProvider"/>
-        <!-- 커밋 직전에 이슈 키를 한 번 더 보정하는 안전망. -->
         <checkinHandlerFactory implementation="io.github.gudwns1812.jiratask.ui.commit.JiraTaskCheckinHandlerFactory"/>
         <statusBarWidgetFactory id="JiraTask.CurrentTask"
                                 implementation="io.github.gudwns1812.jiratask.ui.task.CurrentTaskWidgetFactory"
                                 order="last"/>
         <toolWindow id="Jira Task"
                     anchor="right"
-                    icon="AllIcons.Vcs.Branch"
+                    icon="/icons/toolWindowJiraGit.svg"
                     factoryClass="io.github.gudwns1812.jiratask.ui.toolwindow.JiraTaskToolWindowFactory"/>
         <postStartupActivity implementation="io.github.gudwns1812.jiratask.ui.JiraTaskSetupStartupActivity"/>
         <applicationConfigurable id="io.github.gudwns1812.jiratask.settings"
@@ -63,7 +67,7 @@
                     class="io.github.gudwns1812.jiratask.ui.OpenJiraTaskSettingsAction"
                     text="Jira Task Settings"
                     description="Jira 주소·프로젝트 키와 GitLab 주소·토큰을 설정합니다"
-                    icon="AllIcons.General.GearPlain"/>
+                    icon="AllIcons.Nodes.Plugin"/>
             <action id="JiraTask.RunSetupWizard"
                     class="io.github.gudwns1812.jiratask.ui.RunSetupWizardAction"
                     text="Run Setup Wizard"
@@ -71,7 +75,14 @@
                     icon="AllIcons.General.Settings"/>
         </group>
 
-        <!-- 툴 윈도우 상단 아이콘 툴바. 메뉴와 같은 액션을 참조해 동작이 갈라지지 않게 한다. -->
+        <action id="JiraTask.DraftCommitMessage"
+                class="io.github.gudwns1812.jiratask.ui.commit.DraftCommitMessageAction"
+                text="AI로 커밋 메시지 쓰기"
+                description="커밋할 변경을 보고 설정에서 고른 AI가 커밋 메시지 초안을 씁니다"
+                icon="AllIcons.Actions.IntentionBulb">
+            <add-to-group group-id="Vcs.MessageActionGroup" anchor="first"/>
+        </action>
+
         <group id="JiraTask.ToolWindowToolbar">
             <reference id="JiraTask.StartTask"/>
             <reference id="JiraTask.Commit"/>

@@ -6,7 +6,6 @@ import io.github.gudwns1812.jiratask.application.from
 import io.github.gudwns1812.jiratask.domain.policy.PolicyConfigurationError
 import io.github.gudwns1812.jiratask.infrastructure.PolicyConfigRepository
 
-/** 툴바·메뉴에서 액션을 쓸 수 있는지와, 쓸 수 없으면 그 이유(툴팁에 보인다). */
 data class ActionAvailability(val isEnabled: Boolean, val reason: String?) {
     companion object {
         val ENABLED: ActionAvailability = ActionAvailability(true, null)
@@ -15,7 +14,6 @@ data class ActionAvailability(val isEnabled: Boolean, val reason: String?) {
     }
 }
 
-/** 활성 여부를 따로 판단해야 하는 명령들. */
 enum class JiraTaskCommand {
     START_TASK,
     COMMIT,
@@ -23,13 +21,6 @@ enum class JiraTaskCommand {
     MERGE_REQUEST,
 }
 
-/**
- * 액션의 `update()`에서 쓰는 가벼운 확인.
- *
- * 일부러 하지 않는 것 두 가지: **git 호출**과 **자격 증명 저장소 접근**. `update()`는 툴바가 보이는 동안
- * 반복 호출되므로(백그라운드 스레드라도) 프로세스 실행이나 OS 키체인 조회를 넣으면 IDE가 느려진다.
- * 그래서 API 토큰과 Git 저장소 여부는 여기서 보지 않고, 실행할 때 확인해 알림으로 안내한다.
- */
 class JiraTaskAvailability(private val repository: PolicyConfigRepository = PolicyConfigRepository()) {
 
     fun of(command: JiraTaskCommand, hasProject: Boolean): ActionAvailability {
@@ -50,7 +41,6 @@ class JiraTaskAvailability(private val repository: PolicyConfigRepository = Poli
         JiraTaskCommand.START_TASK -> ActionAvailability.ENABLED
         JiraTaskCommand.COMMIT, JiraTaskCommand.SEARCH ->
             if (snapshot.projectKey.isEmpty()) ActionAvailability.disabled(NO_PROJECT_KEY) else ActionAvailability.ENABLED
-        // MR은 Jira 설정과 무관하다. GitLab 설정이 없으면 실행할 때 안내한다.
         JiraTaskCommand.MERGE_REQUEST -> ActionAvailability.ENABLED
     }
 
@@ -61,7 +51,6 @@ class JiraTaskAvailability(private val repository: PolicyConfigRepository = Poli
     }
 }
 
-/** 판단 결과를 프레젠테이션에 반영한다. 쓸 수 있을 때는 plugin.xml의 원래 설명을 그대로 둔다. */
 fun AnActionEvent.applyAvailability(availability: ActionAvailability) {
     presentation.isEnabled = availability.isEnabled
     availability.reason?.let { presentation.description = it }

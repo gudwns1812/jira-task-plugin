@@ -1,14 +1,11 @@
 package io.github.gudwns1812.jiratask.infrastructure
 
 import io.github.gudwns1812.jiratask.domain.commit.CommitRepositoryPort
+import io.github.gudwns1812.jiratask.domain.commit.PendingChanges
 import io.github.gudwns1812.jiratask.domain.commit.GitRepositoryError
 import java.io.File
 import java.util.concurrent.TimeUnit
 
-/**
- * IDE의 Git4Idea 서비스 대신 `git` 실행 파일을 직접 호출한다. 하는 일이 rev-parse/config/commit 같은
- * 단순한 명령 조합뿐이라, Git4Idea의 무거운 캐시·리프레시 계층 없이도 같은 동작을 얻을 수 있다.
- */
 class GitRepository(
     private val workingDirectory: File = File(System.getProperty("user.dir")),
 ) : CommitRepositoryPort {
@@ -58,10 +55,6 @@ class GitRepository(
         return result
     }
 
-    /**
-     * 현재 브랜치 이름. 툴 윈도우 표시용으로만 쓰는 읽기 전용 정보이므로 도메인 포트에는 두지 않았다.
-     * 저장소가 아니거나 커밋이 없는 상태(detached/unborn)면 null.
-     */
     fun currentBranch(): String? {
         val result = run("branch", "--show-current") ?: return null
         if (result.exitCode != 0) {
@@ -70,7 +63,6 @@ class GitRepository(
         return result.stdout.trim().ifEmpty { null }
     }
 
-    /** `origin` remote 주소. 없으면 null. MR을 만들 프로젝트를 여기서 알아낸다. */
     fun remoteUrl(remote: String = "origin"): String? {
         val result = run("remote", "get-url", remote) ?: return null
         if (result.exitCode != 0) {
@@ -79,13 +71,6 @@ class GitRepository(
         return result.stdout.trim().ifEmpty { null }
     }
 
-    /**
-     * [target] 브랜치를 원격에서 가리키는 ref. MR 본문에 넣을 커밋을 어디서부터 셀지 정하는 값이다.
-     *
-     * `origin/main`을 가정하면 기본 브랜치가 `master`나 `develop`인 저장소에서 `git log`가 실패해
-     * 커밋이 하나도 없는 것처럼 보이고, 커밋에서 뽑는 이슈 키도 함께 사라진다.
-     * 그래서 실제로 있는 ref만 고른다 — 요청받은 브랜치, `origin/HEAD`가 가리키는 곳, 흔한 이름 순.
-     */
     fun baseRef(target: String?, remote: String = "origin"): String? {
         val requested = target?.trim()?.ifEmpty { null }?.let { "$remote/${it.removePrefix("$remote/")}" }
         val candidates = listOfNotNull(requested, remoteHead(remote)) + FALLBACK_BRANCHES.map { "$remote/$it" }
@@ -93,7 +78,6 @@ class GitRepository(
         return candidates.firstOrNull(::hasRef)
     }
 
-    /** `origin/HEAD`가 가리키는 브랜치. 클론이 아니라 `git init`으로 시작한 저장소에는 없다. */
     private fun remoteHead(remote: String): String? {
         val result = run("symbolic-ref", "--short", "refs/remotes/$remote/HEAD") ?: return null
         if (result.exitCode != 0) {
@@ -107,15 +91,8 @@ class GitRepository(
         return result.exitCode == 0
     }
 
-    /**
-     * 원격에 있는 브랜치 이름들(`origin/` 접두 없이). MR 대상으로 고를 수 있는 후보다.
-     *
-     * `origin/HEAD`는 브랜치가 아니라 다른 브랜치를 가리키는 표지라 뺀다.
-     */
     fun remoteBranches(remote: String = "origin"): List<String> {
         val prefix = "refs/remotes/$remote/"
-        // 짧은 이름이 아니라 전체 refname으로 거른다 — `origin/HEAD`의 짧은 이름은 `origin`이라
-        // 이름만 보고는 브랜치와 구분되지 않는다.
         val result = run("for-each-ref", "--format=%(refname)", "refs/remotes/$remote") ?: return emptyList()
         if (result.exitCode != 0) {
             return emptyList()
@@ -130,13 +107,6 @@ class GitRepository(
             .toList()
     }
 
-    /**
-     * [base]에는 없고 현재 브랜치에만 있는 커밋 제목들. 오래된 것부터.
-     * base를 모르거나 관계가 없으면 빈 목록 — MR을 못 만들 이유는 아니다.
-     *
-     * 머지 커밋은 뺀다. `Merge branch ... into ...`는 이 브랜치가 한 일이 아니라
-     * 기준 브랜치가 지나온 자국이라, MR 본문에 적으면 읽는 사람을 방해한다.
-     */
     fun commitSubjectsSince(base: String): List<String> {
         val result = run("log", "--format=%s", "--reverse", "--no-merges", "$base..HEAD") ?: return emptyList()
         if (result.exitCode != 0) {
@@ -145,12 +115,6 @@ class GitRepository(
         return result.stdout.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toList()
     }
 
-    /**
-     * 이 작업 트리의 뿌리. 알아내지 못하면 [workingDirectory] 그대로.
-     *
-     * 다른 메서드들은 이것을 물을 일이 없다 — `git`이 알아서 위로 올라가 저장소를 찾아 준다.
-     * 파일을 직접 읽는 자리에서만 필요하다.
-     */
     private fun repositoryRoot(): File {
         val result = run("rev-parse", "--show-toplevel") ?: return workingDirectory
         if (result.exitCode != 0) {
@@ -159,17 +123,6 @@ class GitRepository(
         return result.stdout.trim().ifEmpty { null }?.let(::File) ?: workingDirectory
     }
 
-    /**
-     * 저장소가 들고 있는 MR 템플릿들. 이름 → 내용.
-     *
-     * GitLab이 정한 자리는 [TEMPLATE_DIRECTORY] 아래의 `.md` 파일들이다. 작업 트리에서 읽는다 —
-     * 엄밀히는 기본 브랜치의 것이지만, 작업 브랜치는 거기서 갈라져 나왔으니 대개 같고,
-     * 이번 브랜치에서 템플릿을 손봤다면 그 손본 것을 쓰는 편이 덜 놀랍다.
-     *
-     * **여는 폴더가 아니라 저장소 뿌리에서 찾는다.** IDE는 `proj/backend`처럼 하위 폴더만 열어 두는 일이
-     * 흔한데, GitLab은 템플릿을 저장소 루트에서만 읽는다. 여기서 열어 둔 폴더만 보면 브랜치·커밋 조회는
-     * 다 되는데 템플릿만 조용히 비어, 기능이 아예 없는 것처럼 보인다.
-     */
     fun mergeRequestTemplates(): Map<String, String> {
         val directory = File(repositoryRoot(), TEMPLATE_DIRECTORY)
         val files = directory.listFiles { file -> file.isFile && file.extension.equals("md", ignoreCase = true) }
@@ -183,12 +136,6 @@ class GitRepository(
             .toMap()
     }
 
-    /**
-     * [base] 이후 이 브랜치가 건드린 파일들. **경로만 읽는다 — 내용은 읽지 않는다.**
-     *
-     * AI에게 무엇을 보낼지가 이 메서드에 걸려 있다. `--name-only`를 `-p`로 바꾸는 순간
-     * 소스 코드가 밖으로 나가므로, 그 결정은 여기를 고치는 일로만 할 수 있어야 한다.
-     */
     fun changedFilesSince(base: String): List<String> {
         val result = run("diff", "--name-only", "$base..HEAD") ?: return emptyList()
         if (result.exitCode != 0) {
@@ -197,12 +144,37 @@ class GitRepository(
         return result.stdout.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.distinct().toList()
     }
 
-    /**
-     * 현재 브랜치가 원격에 올라가 있는가. **확인하지 못하면 null** — 올라가지 않은 것과 다르다.
-     *
-     * `ls-remote`는 네트워크가 끊겼거나 SSH 키가 없어도 실패한다. 그것을 "안 올렸다"로 읽으면
-     * 이미 푸시한 브랜치에 대고 "먼저 푸시하세요"라고 말하게 된다(ARCHITECTURE.md 4장).
-     */
+    fun pendingChanges(includeDiff: Boolean = false): PendingChanges {
+        val staged = linesOf("diff", "--cached", "--name-only")
+        if (staged.isNotEmpty()) {
+            return PendingChanges(staged, diffOf(includeDiff, "--cached"), staged = true)
+        }
+
+        val modified = linesOf("diff", "--name-only", "HEAD")
+        val created = linesOf("ls-files", "--others", "--exclude-standard")
+        return PendingChanges(
+            files = (modified + created).distinct(),
+            diff = diffOf(includeDiff, "HEAD"),
+            staged = false,
+        )
+    }
+
+    private fun diffOf(includeDiff: Boolean, vararg range: String): String {
+        if (!includeDiff) {
+            return ""
+        }
+        val result = run(*QUOTE_PATH_OFF, "diff", "--no-color", *range) ?: return ""
+        return if (result.exitCode == 0) result.stdout else ""
+    }
+
+    private fun linesOf(vararg args: String): List<String> {
+        val result = run(*QUOTE_PATH_OFF, *args) ?: return emptyList()
+        if (result.exitCode != 0) {
+            return emptyList()
+        }
+        return result.stdout.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.distinct().toList()
+    }
+
     fun isPushed(branch: String, remote: String = "origin"): Boolean? {
         val result = run("ls-remote", "--heads", remote, branch) ?: return null
         if (result.exitCode != 0) {
@@ -226,10 +198,10 @@ class GitRepository(
     private data class ProcessResult(val exitCode: Int, val stdout: String)
 
     private companion object {
-        /** `origin/HEAD`가 없을 때 기본 브랜치일 법한 이름들. 앞에서부터 실제로 있는 것을 쓴다. */
         val FALLBACK_BRANCHES = listOf("main", "master", "develop")
 
-        /** GitLab이 MR 템플릿을 찾는 자리. */
         const val TEMPLATE_DIRECTORY = ".gitlab/merge_request_templates"
+
+        val QUOTE_PATH_OFF = arrayOf("-c", "core.quotepath=false")
     }
 }

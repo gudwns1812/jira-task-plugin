@@ -48,6 +48,105 @@ class GitLabClientTest {
     }
 
     @Test
+    fun `reads who the token belongs to, with the id the api needs`() {
+        val (client, transport) = clientOf(ok("""{"id":42,"username":"gudwns1812","name":"박형준"}"""))
+
+        val me = client.me()
+
+        assertEquals(42, me?.id)
+        assertEquals("박형준 (gudwns1812)", me?.label())
+        assertTrue(transport.calls.single().url.endsWith("/api/v4/user"))
+    }
+
+    @Test
+    fun `reads the labels the project already has`() {
+        val (client, transport) = clientOf(
+            ok("""[{"name":"backend"},{"name":"review-needed"},{"name":"backend"}]"""),
+        )
+
+        assertEquals(listOf("backend", "review-needed"), client.labels("s15/A403"))
+        assertTrue(transport.calls.single().url.contains("/projects/s15%2FA403/labels"))
+    }
+
+    @Test
+    fun `asks gitlab to narrow the people down when a name is given`() {
+        // 사람이 수백 명인 프로젝트에서 전체를 끌어오지 않는다. 검색어를 그대로 넘긴다.
+        val (client, transport) = clientOf(ok("""[{"id":7,"username":"jimin","name":"김지민"}]"""))
+
+        val found = client.findUsers("s15/A403", "지민")
+
+        assertEquals(listOf("김지민 (jimin)"), found.map { it.label() })
+        assertTrue(transport.calls.single().url.contains("search="))
+    }
+
+    @Test
+    fun `searches the whole gitlab when no project is known yet`() {
+        // 설정 화면은 아직 어느 저장소인지 모른다. 이름만으로 사람을 찾을 수 있어야 한다.
+        val (client, transport) = clientOf(ok("""[{"id":7,"username":"jimin","name":"김지민"}]"""))
+
+        val found = client.searchUsers("지민")
+
+        assertEquals(listOf("김지민 (jimin)"), found.map { it.label() })
+        assertTrue(transport.calls.single().url.contains("/api/v4/users?"))
+    }
+
+    @Test
+    fun `does not ask gitlab for everyone when the query is empty`() {
+        val (client, transport) = clientOf()
+
+        assertEquals(emptyList<Any>(), client.searchUsers("   "))
+        assertTrue("빈 검색어로 인스턴스 전체를 끌어오지 않는다", transport.calls.isEmpty())
+    }
+
+    @Test
+    fun `has nobody and no labels to offer when gitlab refuses`() {
+        // 사람·라벨을 못 읽는 것과 MR을 못 만드는 것은 다르다. 여기서 실패를 던지지 않는다.
+        val (client, _) = clientOf(JiraHttpResponse(403, """{"message":"403 Forbidden"}"""))
+        assertEquals(emptyList<String>(), client.labels("s15/A403"))
+
+        val (other, _) = clientOf(JiraHttpResponse(500, "nope"))
+        assertNull(other.me())
+    }
+
+    @Test
+    fun `sends assignees, reviewers and labels along with the merge request`() {
+        val (client, transport) = clientOf(ok("""{"web_url":"https://lab.ssafy.com/a/b/-/merge_requests/7"}"""))
+
+        client.create(
+            MergeRequestCommand(
+                projectPath = "s15/A403",
+                sourceBranch = "feat/signup",
+                targetBranch = "backend-dev",
+                title = "[AUTH] 회원가입",
+                description = "### 연결된 작업",
+                assigneeIds = listOf(42),
+                reviewerIds = listOf(7, 9),
+                labels = listOf("backend", "review-needed"),
+            ),
+        )
+
+        val body = transport.calls.single().body.orEmpty()
+        assertTrue(body.contains(""""assignee_ids":[42]"""))
+        assertTrue(body.contains(""""reviewer_ids":[7,9]"""))
+        assertTrue("라벨은 쉼표로 이어 붙여 보낸다", body.contains(""""labels":"backend,review-needed""""))
+    }
+
+    @Test
+    fun `leaves out the people and labels it was not given`() {
+        // 빈 배열을 보내면 GitLab이 "전부 지우라"로 읽는다. 아예 보내지 않는다.
+        val (client, transport) = clientOf(ok("""{"web_url":"https://lab.ssafy.com/a/b/-/merge_requests/8"}"""))
+
+        client.create(
+            MergeRequestCommand("s15/A403", "feat/x", "main", "제목", "본문"),
+        )
+
+        val body = transport.calls.single().body.orEmpty()
+        assertTrue(!body.contains("assignee_ids"))
+        assertTrue(!body.contains("reviewer_ids"))
+        assertTrue(!body.contains("labels"))
+    }
+
+    @Test
     fun `warns about a token that can read but cannot create`() {
         // `read_api` 토큰은 조회를 전부 통과하고 MR 생성에서만 403으로 죽는다. 미리 잡아야 한다.
         val (client, _) = clientOf(ok("""{"username":"reader"}"""), ok("""{"scopes":["read_api"]}"""))

@@ -2,6 +2,7 @@ package io.github.gudwns1812.jiratask.ui
 
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.openapi.actionSystem.ActionManager
+import com.intellij.openapi.util.IconLoader
 import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.actionSystem.Separator
 import com.intellij.openapi.extensions.ExtensionPointName
@@ -12,6 +13,7 @@ import com.intellij.openapi.vcs.checkin.CheckinHandlerFactory
 import com.intellij.openapi.wm.StatusBarWidgetFactory
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import io.github.gudwns1812.jiratask.ui.commit.CommitWithJiraTaskAction
+import io.github.gudwns1812.jiratask.ui.commit.DraftCommitMessageAction
 import io.github.gudwns1812.jiratask.ui.commit.JiraTaskCheckinHandlerFactory
 import io.github.gudwns1812.jiratask.ui.commit.JiraTaskCommitMessageProvider
 import io.github.gudwns1812.jiratask.ui.mr.CreateMergeRequestAction
@@ -50,6 +52,27 @@ class JiraTaskPluginRegistrationTest : BasePlatformTestCase() {
         assertTrue(group.isPopup)
     }
 
+    fun `test the commit message draft action sits by the commit message field`() {
+        val manager = ActionManager.getInstance()
+
+        val action = manager.getAction("JiraTask.DraftCommitMessage")
+        assertTrue("초안 액션이 등록되어 있어야 한다", action is DraftCommitMessageAction)
+
+        // IDE 커밋 창의 메시지 칸 옆 툴바다. 여기 붙지 않으면 커밋 창에서는 부를 방법이 없다.
+        val group = manager.getAction("Vcs.MessageActionGroup") as DefaultActionGroup
+        val texts = group.childActionsOrStubs.map { it.templatePresentation.text }
+        assertTrue("메시지 칸 툴바에 붙어야 한다: $texts", texts.contains("AI로 커밋 메시지 쓰기"))
+    }
+
+    fun `test the commit message draft action stays out of the Jira Task menu`() {
+        // 채울 메시지 칸이 없는 자리에서는 할 일이 없다. 메뉴 항목 수는 위 테스트가 고정한다.
+        val group = ActionManager.getInstance().getAction("JiraTask.Menu") as DefaultActionGroup
+
+        assertFalse(
+            group.childActionsOrStubs.any { it.templatePresentation.text == "AI로 커밋 메시지 쓰기" },
+        )
+    }
+
     fun `test the removed actions are gone`() {
         val manager = ActionManager.getInstance()
 
@@ -58,6 +81,18 @@ class JiraTaskPluginRegistrationTest : BasePlatformTestCase() {
         assertNull("자리표시자 액션도 남아 있으면 안 된다", manager.getAction("JiraTask.CreateIssue"))
         // 브랜치 이름에 규칙이 없다(RULE.md 5.1). 브랜치는 IDE의 기본 Git 기능으로 만든다.
         assertNull("스토리 브랜치 액션은 제거돼야 한다", manager.getAction("JiraTask.CreateStoryBranch"))
+    }
+
+    fun `test the tool window icon is bundled with a dark twin`() {
+        // 경로를 잘못 적으면 IDE는 오류 없이 빈 자리를 그린다. 여기서 잡지 않으면 아무도 모른다.
+        val loader = javaClass.classLoader
+
+        assertNotNull("아이콘이 jar에 들어 있어야 한다", loader.getResource("icons/toolWindowJiraGit.svg"))
+        assertNotNull(
+            "어두운 테마에서 묻히지 않으려면 짝이 있어야 한다",
+            loader.getResource("icons/toolWindowJiraGit_dark.svg"),
+        )
+        assertNotNull(IconLoader.findIcon("/icons/toolWindowJiraGit.svg", javaClass))
     }
 
     fun `test the notification group is registered`() {

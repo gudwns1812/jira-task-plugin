@@ -2,41 +2,15 @@ package io.github.gudwns1812.jiratask.domain.mr
 
 import io.github.gudwns1812.jiratask.domain.jira.IssueSummary
 
-/**
- * MR 제목과 본문을 **규칙으로** 만든다. AI는 다음 단계다(TASKS.md 6장).
- *
- * 규칙 기반이라도 쓸 만해야 한다는 것이 기준이다 — AI가 실패하거나 꺼져 있어도 MR을 만들 수 있어야 한다.
- */
 object MergeRequestDraft {
-
-    /**
-     * 제목. 이슈가 하나면 그 이슈 제목으로 쓰고, 여럿이거나 없으면 브랜치 이름을 사람이 읽을 말로 편다.
-     *
-     * 브랜치 이름에는 이제 이슈 번호가 없으므로(RULE.md 5.1) `feat/signup` 같은 요약이 들어 있다.
-     * 그 요약이 곧 제목으로 쓸 만한 말이다.
-     *
-     * **제목에 작업 키를 적지 않는다**(RULE.md 5.3). 키는 본문 `### 연결된 작업`에 있고, Jira가 이 MR을
-     * 작업에 붙이는 근거도 그 본문이다. 제목에까지 두면 MR 목록에서 열 몇 자가 키로 채워져,
-     * 정작 무슨 일인지 읽을 자리가 좁아진다.
-     *
-     * 이슈 제목은 그대로 옮기지 않고 앞의 대괄호를 도메인 코드로 줄인다([IssueSummary]).
-     */
     fun titleOf(branch: String?, issueKeys: List<String>, summaryOf: (String) -> String?): String {
         if (issueKeys.size == 1) {
             summaryOf(issueKeys.single())?.takeIf { it.isNotBlank() }
                 ?.let { return IssueSummary.withDomainPrefix(it) }
         }
-        // 이슈 제목을 못 읽었으면 키만 적지 않고 브랜치 이름으로 간다. 키 하나뿐인 제목은 읽을 말이 없다.
         return humanize(branch)
     }
 
-    /**
-     * 본문. **작업 키만** 줄줄이 적는다.
-     *
-     * 커밋 제목을 붙이지 않는 이유는 읽는 사람이 여기서 찾는 것이 "어느 작업인가" 하나뿐이기
-     * 때문이다. 무슨 일을 했는지는 MR의 커밋 목록이 이미 보여 준다. 본문에 적힌 키 문자열이
-     * Jira가 이 MR을 작업에 붙이는 근거다(RULE.md 5.3).
-     */
     fun descriptionOf(issueKeys: List<String>, template: String? = null): String {
         val keys = issueKeys.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
         val body = template?.trim().orEmpty()
@@ -54,7 +28,26 @@ object MergeRequestDraft {
         }.trimEnd()
     }
 
-    /** `feat/live-chat` → `live chat`. 접두와 구분자를 걷어내 읽을 수 있는 말로 만든다. */
+    fun withDomain(domain: String?, title: String): String {
+        val bare = stripLeading(title)
+
+        return if (domain.isNullOrBlank()) bare else "$domain $bare".trim()
+    }
+
+    private val LEADING_BRACKET = Regex("""^\s*\[[^\]]*]\s*""")
+    private val LEADING_KEY = Regex("""^\s*[A-Z][A-Z0-9_]*-\d+\s*""")
+
+    private fun stripLeading(title: String): String {
+        var text = title.trim()
+        while (true) {
+            val next = text.replaceFirst(LEADING_BRACKET, "").replaceFirst(LEADING_KEY, "").trim()
+            if (next == text) {
+                return text
+            }
+            text = next
+        }
+    }
+
     private fun humanize(branch: String?): String {
         val name = branch?.trim().orEmpty().substringAfterLast('/')
         if (name.isEmpty()) {

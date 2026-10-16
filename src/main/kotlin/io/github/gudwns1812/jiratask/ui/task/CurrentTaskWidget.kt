@@ -8,7 +8,6 @@ import com.intellij.openapi.wm.StatusBarWidgetFactory
 import java.awt.Component
 import java.awt.event.MouseEvent
 
-/** 현재 작업 번호를 보여주는 상태 표시줄 위젯. 클릭하면 "Start Jira Task"를 연다. */
 class CurrentTaskWidget(private val project: Project) : StatusBarWidget, StatusBarWidget.TextPresentation {
 
     override fun ID(): String = CurrentTaskWidgetFactory.ID

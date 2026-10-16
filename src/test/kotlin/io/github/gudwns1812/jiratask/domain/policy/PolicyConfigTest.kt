@@ -145,11 +145,138 @@ class PolicyConfigTest {
     }
 
     @Test
+    fun `sends the commit diff unless the setting says not to`() {
+        // 예전 설정 파일에는 이 키가 없다. 없다고 기능이 반쪽이 되면 안 되므로 기본값은 켜짐이다.
+        val old = JiraTaskConfig.resolve(mapOf("ai" to mapOf("enabled" to true)))
+        assertEquals(true, old.ai?.sendDiff)
+
+        val off = JiraTaskConfig.resolve(mapOf("ai" to mapOf("enabled" to true, "sendDiff" to false)))
+        assertEquals(false, off.ai?.sendDiff)
+        assertEquals("끈 것은 저장되어 살아남아야 한다", off, JiraTaskConfig.resolve(off.toRawMap()))
+    }
+
+    @Test
+    fun `rejects a sendDiff value that is not true or false`() {
+        assertThrows(PolicyConfigurationError::class.java) {
+            JiraTaskConfig.resolve(mapOf("ai" to mapOf("sendDiff" to "가끔")))
+        }
+    }
+
+    @Test
+    fun `remembers the default reviewers next to the gitlab address`() {
+        val config = JiraTaskConfig.resolve(
+            mapOf(
+                "gitlab" to mapOf(
+                    "baseUrl" to "https://lab.ssafy.com",
+                    "defaultReviewers" to listOf("gudwns1812", "jimin"),
+                ),
+            ),
+        )
+
+        assertEquals(listOf("gudwns1812", "jimin"), config.gitlab?.defaultReviewers)
+        assertEquals(config, JiraTaskConfig.resolve(config.toRawMap()))
+    }
+
+    @Test
+    fun `mergeWith keeps the reviewers when only the gitlab address changes`() {
+        // gitlab 절도 한 겹 깊이로 합친다. 주소만 저장했다고 리뷰어가 사라지면 안 된다.
+        val current = JiraTaskConfig.resolve(
+            mapOf("gitlab" to mapOf("baseUrl" to "https://lab.ssafy.com", "defaultReviewers" to listOf("jimin"))),
+        )
+
+        val merged = current.mergeWith(mapOf("gitlab" to mapOf("baseUrl" to "https://lab.example.com")))
+
+        assertEquals("https://lab.example.com", merged.gitlab?.baseUrl)
+        assertEquals(listOf("jimin"), merged.gitlab?.defaultReviewers)
+    }
+
+    @Test
     fun `leaves the ai section out entirely when it was never configured`() {
         val config = JiraTaskConfig.resolve(mapOf("projectKey" to "S15P11A108"))
 
         assertNull(config.ai)
         assertEquals(setOf("projectKey"), config.toRawMap().keys)
+    }
+
+    @Test
+    fun `reads which ai to use and keeps each one's own model`() {
+        val config = JiraTaskConfig.resolve(
+            mapOf(
+                "ai" to mapOf(
+                    "enabled" to true,
+                    "provider" to "codex",
+                    "claude" to mapOf("model" to "opus"),
+                    "codex" to mapOf("model" to "gpt-5-codex", "executablePath" to "/opt/homebrew/bin/codex"),
+                ),
+            ),
+        )
+
+        assertEquals(AiProvider.CODEX, config.ai?.provider)
+        assertEquals("gpt-5-codex", config.ai?.model)
+        assertEquals("/opt/homebrew/bin/codex", config.ai?.executablePath)
+        assertEquals("고르지 않은 쪽의 값도 그대로 남는다", "opus", config.ai?.cliSettings(AiProvider.CLAUDE)?.model)
+
+        val again = JiraTaskConfig.resolve(config.toRawMap())
+        assertEquals(config.ai, again.ai)
+    }
+
+    @Test
+    fun `treats settings written before there was a choice as claude`() {
+        // 업데이트만으로 이미 설정해 둔 사용자가 자기 모델을 잃어서는 안 된다.
+        val old = JiraTaskConfig.resolve(
+            mapOf("ai" to mapOf("enabled" to true, "model" to "sonnet", "executablePath" to "C:/npm/claude.cmd")),
+        )
+
+        assertEquals(AiProvider.CLAUDE, old.ai?.provider)
+        assertEquals("sonnet", old.ai?.cliSettings(AiProvider.CLAUDE)?.model)
+        assertEquals("C:/npm/claude.cmd", old.ai?.executablePath)
+
+        // 다시 저장할 때는 새 자리에만 쓴다.
+        val saved = old.toRawMap()["ai"] as Map<*, *>
+        assertEquals(mapOf("model" to "sonnet", "executablePath" to "C:/npm/claude.cmd"), saved["claude"])
+        assertNull(saved["model"])
+    }
+
+    @Test
+    fun `rejects an ai it has never heard of`() {
+        // 조용히 claude로 되돌리면 사용자는 고른 적 없는 CLI가 도는 것을 보게 된다.
+        val error = assertThrows(PolicyConfigurationError::class.java) {
+            JiraTaskConfig.resolve(mapOf("ai" to mapOf("provider" to "gemini")))
+        }
+        assertTrue(error.message!!.contains("claude"))
+        assertTrue(error.message!!.contains("codex"))
+
+        assertThrows(PolicyConfigurationError::class.java) {
+            JiraTaskConfig.resolve(mapOf("ai" to mapOf("codex" to mapOf("modell" to "gpt-5-codex"))))
+        }
+        assertThrows(PolicyConfigurationError::class.java) {
+            JiraTaskConfig.resolve(mapOf("ai" to mapOf("codex" to "gpt-5-codex")))
+        }
+    }
+
+    @Test
+    fun `mergeWith keeps the other ai's values and the fields this update left alone`() {
+        val current = JiraTaskConfig.resolve(
+            mapOf(
+                "ai" to mapOf(
+                    "provider" to "claude",
+                    "claude" to mapOf("model" to "opus", "executablePath" to "C:/npm/claude.cmd"),
+                ),
+            ),
+        )
+
+        val merged = current.mergeWith(
+            mapOf("ai" to mapOf("provider" to "codex", "codex" to mapOf("model" to "gpt-5-codex"))),
+        )
+
+        assertEquals(AiProvider.CODEX, merged.ai?.provider)
+        assertEquals("gpt-5-codex", merged.ai?.model)
+        assertEquals("opus", merged.ai?.cliSettings(AiProvider.CLAUDE)?.model)
+        assertEquals(
+            "절 안까지 합치지 않으면 모델만 저장했을 때 경로가 사라진다",
+            "C:/npm/claude.cmd",
+            merged.ai?.cliSettings(AiProvider.CLAUDE)?.executablePath,
+        )
     }
 
     @Test
