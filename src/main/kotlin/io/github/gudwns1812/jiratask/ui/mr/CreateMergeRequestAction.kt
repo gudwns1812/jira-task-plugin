@@ -54,40 +54,20 @@ import java.io.File
 import javax.swing.JComponent
 import javax.swing.JTextField
 
-/**
- * 만들 MR을 확인하는 창. 제목·본문·대상 브랜치를 여기서 고칠 수 있다.
- *
- * 연결된 이슈 키는 커밋에서 뽑아 본문에 적어 둔다 — Jira가 MR을 작업에 붙이는 근거다(RULE.md 5.3).
- */
 class MergeRequestDialog(
     project: Project?,
     proposal: MergeRequestProposal,
-    /** 대상 브랜치·템플릿을 바꿨을 때 그 기준으로 다시 만든 초안. git을 읽으므로 EDT에서 부르지 않는다. */
     private val redraft: (String, String?) -> MergeRequestProposal = { _, _ -> proposal },
     private val background: (() -> Unit) -> Unit = {
         ApplicationManager.getApplication().executeOnPooledThread(Runnable(it))
     },
-    /**
-     * 모달리티를 반드시 [ModalityState.any]로 준다.
-     *
-     * 이 창은 모달이다. 모달리티를 지정하지 않으면 풀 스레드에서 넣은 작업이 `NON_MODAL`로 큐에 들어가
-     * **창이 닫힌 뒤에야** 실행된다 — 다시 만든 초안이 화면에 영영 반영되지 않는다.
-     */
     private val onEdt: (() -> Unit) -> Unit = {
         ApplicationManager.getApplication().invokeLater(Runnable(it), ModalityState.any())
     },
-    /**
-     * 제목·본문을 AI에게 다시 쓰게 한다.
-     *
-     * AI가 꺼져 있어도 버튼은 보인다 — 그때는 이 함수가 이유를 담은 [DraftRewrite.Refused]를 돌려주고,
-     * 그 문구가 곧 "설정에서 켜세요"라는 안내가 된다.
-     */
     private val rewrite: (MergeRequestProposal) -> DraftRewrite = {
         DraftRewrite.Refused(CreateMergeRequestUseCase.DISABLED)
     },
-    /** 리뷰어 후보. 창을 열 때 한 쪽만 받아 둔다. */
     private val candidates: List<GitLabUser> = proposal.availableReviewers,
-    /** 후보에 없는 사람을 GitLab에 물어보는 방법. 네트워크를 타므로 고르기 창이 백그라운드에서 부른다. */
     private val findUsers: (String) -> List<GitLabUser> = { emptyList() },
 ) : DialogWrapper(project, false) {
 
@@ -95,19 +75,11 @@ class MergeRequestDialog(
 
     val titleField: JBTextField = JBTextField(proposal.title)
 
-    /**
-     * 대상 브랜치. 추측하지 않고 고르게 한다 — 통합 브랜치를 쓰는 팀에서는 저장소 기본 브랜치가
-     * 대상인 경우가 오히려 드물다. 목록에 없는 브랜치도 적을 수 있도록 편집을 열어 둔다.
-     */
     val targetBox: ComboBox<String> = ComboBox(proposal.targetCandidates.toTypedArray()).apply {
         isEditable = true
         selectedItem = proposal.targetBranch
     }
 
-    /**
-     * 쓸 템플릿. 팀이 `.gitlab` 아래에 여러 개를 두는 일이 흔해 고르게 한다 — GitLab 웹과 같다.
-     * 목록이 비어 있으면(템플릿이 없으면) 이 줄은 화면에 만들지 않는다.
-     */
     val templateBox: ComboBox<String> = ComboBox((listOf(NO_TEMPLATE) + proposal.templates.keys).toTypedArray())
         .apply { selectedItem = proposal.templateName ?: NO_TEMPLATE }
 
@@ -133,7 +105,6 @@ class MergeRequestDialog(
 
     private val rewriteLabel = JBLabel()
 
-    /** 마지막으로 우리가 만든 초안. 사용자가 직접 고친 글을 덮어쓰지 않으려고 기억해 둔다. */
     private var draftedTitle = proposal.title
     private var draftedDescription = proposal.description
 
@@ -141,15 +112,12 @@ class MergeRequestDialog(
         title = "Create Merge Request"
         setOKButtonText("MR 만들기")
         init()
-        // 테마 글꼴에 한글이 없으면 이 창의 글자가 통째로 네모가 된다.
         applyHangulFallbackToWindow()
 
         titleField.document.addDocumentListener(object : DocumentAdapter() {
             override fun textChanged(event: javax.swing.event.DocumentEvent) = refreshState()
         })
         targetBox.addActionListener { onTargetChanged() }
-        // 목록에서 고르는 것 말고 직접 타이핑하는 경로도 있다. 그쪽은 포커스를 옮길 때 확인한다 —
-        // 글자마다 다시 만들면 git을 수십 번 부른다.
         (targetBox.editor.editorComponent as? JTextField)?.addFocusListener(object : FocusAdapter() {
             override fun focusLost(event: FocusEvent) = onTargetChanged()
         })
@@ -160,15 +128,6 @@ class MergeRequestDialog(
         refreshState()
     }
 
-    /**
-     * 제목·본문을 AI에게 다시 쓰게 한다.
-     *
-     * 대상 브랜치를 바꿀 때와 같은 배선을 탄다 — 백그라운드에서 부르고 [onEdt]로 돌아온다.
-     * [onEdt]가 `ModalityState.any()`를 쓰는 것이 여기서도 반드시 필요하다. 이 창은 모달이라
-     * 모달리티를 주지 않으면 결과 반영이 창 닫힌 뒤로 밀린다.
-     *
-     * **사용자가 손댄 글은 덮지 않는다** — [apply]가 그 규칙을 들고 있다.
-     */
     private fun onRewrite() {
         val current = values()
 
@@ -185,14 +144,12 @@ class MergeRequestDialog(
                         rewriteLabel.text = ""
                         apply(outcome.proposal)
                     }
-                    // 실패해도 MR 생성은 막지 않는다. 규칙 기반 초안이 그대로 남아 있다.
                     is DraftRewrite.Refused -> rewriteLabel.text = outcome.message
                 }
             }
         }
     }
 
-    /** AI가 지금 무엇을 말하고 있는지. 화면을 뒤지지 않고 확인하려고 열어 둔다. */
     fun rewriteText(): String = rewriteLabel.text.orEmpty()
 
     override fun createCenterPanel(): JComponent = panel {
@@ -209,7 +166,6 @@ class MergeRequestDialog(
                 }
             }.align(AlignY.TOP)
 
-            // 오른쪽 열. GitLab 웹에서 MR을 만든 뒤 따로 손보던 것들을 여기서 끝낸다.
             panel {
                 row("담당자:") {
                     cell(assigneesLabel)
@@ -230,7 +186,6 @@ class MergeRequestDialog(
         row {
             cell(issueKeysLabel)
         }
-        // 꺼져 있어도 보인다. 숨기면 기능이 있다는 것도, 켜러 가야 한다는 것도 알 길이 없다.
         row {
             cell(rewriteButton)
             cell(rewriteLabel)
@@ -241,7 +196,6 @@ class MergeRequestDialog(
     override fun getPreferredFocusedComponent(): JComponent = titleField
 
     private fun pickAssignee() {
-        // 담당자는 한 명이다 — GitLab 무료 요금제가 그렇다.
         val dialog = MultiPickDialog(
             project = null,
             dialogTitle = "담당자 고르기",
@@ -292,7 +246,6 @@ class MergeRequestDialog(
         labelsLabel.text = labels.joinToString(", ").ifEmpty { NONE }
     }
 
-    /** 화면이 지금 들고 있는 담당자·리뷰어·라벨. 창을 뒤지지 않고 확인하려고 열어 둔다. */
     fun assignees(): List<GitLabUser> = assignees
 
     fun reviewers(): List<GitLabUser> = reviewers
@@ -301,11 +254,6 @@ class MergeRequestDialog(
 
     fun target(): String = (targetBox.editor.item ?: targetBox.selectedItem)?.toString()?.trim().orEmpty()
 
-    /**
-     * 무엇이 잘못됐는지와 어느 칸을 가리켜야 하는지.
-     *
-     * [doValidate]로 내보내야 화면에 실제로 뜬다 — 버튼만 꺼 두면 사용자는 이유 없이 죽은 버튼을 본다.
-     */
     override fun doValidate(): ValidationInfo? = when {
         titleField.text.isBlank() -> ValidationInfo("MR 제목은 비울 수 없습니다.", titleField)
         target().isBlank() -> ValidationInfo("대상 브랜치를 고르세요.", targetBox)
@@ -324,7 +272,6 @@ class MergeRequestDialog(
 
     fun warningText(): String = warningLabel.text.orEmpty()
 
-    /** 템플릿을 바꾸면 그 템플릿으로 본문을 다시 만든다. 대상 브랜치를 바꿀 때와 같은 배선이다. */
     private fun onTemplateChanged() {
         val chosen = templateBox.selectedItem?.toString()?.takeIf { it != NO_TEMPLATE }
         if (chosen == proposal.templateName) {
@@ -333,12 +280,6 @@ class MergeRequestDialog(
         redraftWith(target(), chosen)
     }
 
-    /**
-     * 대상이 바뀌면 그 기준으로 초안을 다시 만든다.
-     *
-     * 사용자가 손댄 제목·본문은 그대로 둔다 — 브랜치를 잘못 골랐다가 되돌리는 동안 쓰던 글이
-     * 사라지면 안 된다. 우리가 만든 글 그대로일 때만 갈아 끼운다.
-     */
     private fun onTargetChanged() {
         val target = target()
         if (target.isBlank() || target == proposal.targetBranch) {
@@ -348,13 +289,11 @@ class MergeRequestDialog(
         redraftWith(target, proposal.templateName)
     }
 
-    /** 대상 브랜치나 템플릿이 바뀌면 그 조합으로 초안을 다시 만든다. */
     private fun redraftWith(target: String, templateName: String?) {
         background {
             val next = runCatching { redraft(target, templateName) }.getOrNull() ?: return@background
             onEdt {
                 if (target != target()) {
-                    // 그새 또 바꿨다. 지금 화면과 맞지 않는 결과는 버린다.
                     return@onEdt
                 }
                 apply(next)
@@ -398,11 +337,9 @@ class MergeRequestDialog(
     }
 }
 
-/** 현재 브랜치의 커밋에서 이슈 키를 모아 GitLab MR을 만든다(RULE.md 5.3). */
 class CreateMergeRequestAction @JvmOverloads constructor(
     private val settings: JiraTaskSettings = JiraTaskSettings(),
     private val availability: JiraTaskAvailability = JiraTaskAvailability(),
-    /** 어느 AI로 초안을 쓸지. 커밋 창과 한 자리에서 정한다. */
     private val ai: AiWriters = AiWriters(settings),
 ) : AnAction() {
 
@@ -417,7 +354,6 @@ class CreateMergeRequestAction @JvmOverloads constructor(
         val workingDirectory = project.basePath?.let(::File) ?: return
 
         when (val ready = settings.forMergeRequest()) {
-            // 막힌 자리에서 바로 고치러 갈 수 있게 한다. 설정 화면에 이르는 다른 길이 사실상 없다.
             is SettingsLookup.Missing -> JiraTaskNotifications.warning(
                 project,
                 ready.message,
@@ -431,7 +367,6 @@ class CreateMergeRequestAction @JvmOverloads constructor(
         ProgressManager.getInstance().run(object : Task.Backgroundable(project, "MR 초안 준비", true) {
             override fun run(indicator: ProgressIndicator) {
                 val useCase = useCaseFor(project, mr, workingDirectory)
-                // 상태는 한 번만 읽는다. 대상 브랜치를 바꿔 다시 계산할 때도 같은 것을 쓴다.
                 val state = readBranch(workingDirectory)
                 val prepared = useCase.prepare(state)
 
@@ -491,7 +426,6 @@ class CreateMergeRequestAction @JvmOverloads constructor(
     }
 
     private fun report(project: Project, result: MergeRequestResult) = when (result) {
-        // 주소를 못 읽었어도 MR은 만들어졌다. 실패로 알리면 사용자가 같은 MR을 한 번 더 만들려 든다.
         is MergeRequestResult.Created -> result.webUrl?.let { url ->
             JiraTaskNotifications.notify(
                 project,
@@ -505,8 +439,6 @@ class CreateMergeRequestAction @JvmOverloads constructor(
             NotificationType.INFORMATION,
         )
         is MergeRequestResult.Failure -> {
-            // 알림은 사라진다. 실패는 로그에도 남겨야 나중에 원인을 되짚을 수 있다.
-            // 토큰은 절대 적지 않는다 — 메시지에는 출처 이름만 들어 있다(ARCHITECTURE.md 191, 226).
             thisLogger().warn("MR 생성 실패: ${result.message}")
             JiraTaskNotifications.warning(project, "MR을 만들지 못했습니다: ${result.message}")
         }
@@ -520,25 +452,15 @@ class CreateMergeRequestAction @JvmOverloads constructor(
         CreateMergeRequestUseCase(
             gitlab = GitLabClient(mr.gitLabBaseUrl, mr.gitLabToken),
             issueKeysOf = { subjects -> issueKeysIn(subjects) },
-            // 이슈 하나짜리 MR의 제목에 쓴다. 캐시가 모르면 브랜치 이름으로 돌아간다.
             summaryOf = { key -> (SprintTasks.getInstance(project).findCached(key) as? TaskAnswer.Known)?.task?.summary },
             gitLabBaseUrl = mr.gitLabBaseUrl,
             tokenOrigin = mr.tokenSource.describe(),
-            // 꺼져 있으면 아예 만들지 않는다 — 그래야 다이얼로그에 버튼도 나오지 않는다.
             draftWriter = draftWriterFor(workingDirectory),
             defaultReviewers = mr.defaultReviewers,
         )
 
-    /** 설정에서 AI를 켰을 때만 만든다. 기본값은 꺼짐이고, 어느 CLI로 쓸지는 [AiWriters]가 정한다. */
     private fun draftWriterFor(workingDirectory: File): DraftWriter? = ai.of(workingDirectory)?.draftWriter
 
-    /**
-     * 커밋 제목에서 **이 프로젝트의** 이슈 키만 모은다.
-     *
-     * `대문자-숫자`는 Jira 키 말고도 흔하다 — 팀이 쓰는 명세 번호(`API-04`, `GAME-05`)가 그대로 걸린다.
-     * 그런 키로 만든 Jira 링크는 열리지 않으므로 설정된 프로젝트 키로 거른다.
-     * 프로젝트 키를 모를 때만 거르지 않는다 — 아는 게 없으면 덜어내는 것도 추측이다.
-     */
     private fun issueKeysIn(subjects: List<String>): List<String> {
         val found = subjects.flatMap(CommitIssueKeys::all).distinct()
         val projectKey = (settings.forCommit() as? SettingsLookup.Ready)?.value?.projectKey ?: return found
@@ -554,7 +476,6 @@ class CreateMergeRequestAction @JvmOverloads constructor(
             branch = branch,
             remoteUrl = git.remoteUrl(),
             isPushed = branch?.let(git::isPushed),
-            // 대상 브랜치가 정해진 뒤에 불린다. 그 브랜치의 원격 ref가 없으면 있는 기본 브랜치를 찾아 쓴다.
             commitSubjectsSince = { target -> git.baseRef(target)?.let(git::commitSubjectsSince) ?: emptyList() },
             remoteBranches = git.remoteBranches(),
             changedFilesSince = { target -> git.baseRef(target)?.let(git::changedFilesSince) ?: emptyList() },

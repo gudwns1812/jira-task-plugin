@@ -7,7 +7,6 @@ data class JiraIssue(
     val statusId: String,
     val statusName: String,
     val summary: String = "",
-    /** 상태 카테고리. 이미 진행 중인지 판단하는 데 쓴다. 이름은 사이트마다 번역된다. */
     val statusCategory: JiraStatusCategory = JiraStatusCategory.UNKNOWN,
 )
 

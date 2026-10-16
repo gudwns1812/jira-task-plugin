@@ -1,19 +1,6 @@
 package io.github.gudwns1812.jiratask.domain.mr
 
-/**
- * AI에게 건넬 지시와 재료를 글로 만든다.
- *
- * 인프라가 아니라 도메인에 두는 이유는 **CLI를 부르지 않고 검증하기 위해서**다. 프로세스를 띄워야만
- * 확인할 수 있는 자리에 프롬프트를 두면, 무엇을 보내고 있는지 아무도 시험해 볼 수 없다.
- */
 object MergeRequestDraftPrompt {
-
-    /**
-     * 모델에게 늘 같게 주는 지시.
-     *
-     * `### 연결된 작업` 절과 이슈 키를 지키라고 못박는 것이 핵심이다. Jira가 MR을 작업에 붙이는
-     * 근거는 본문에 적힌 키 문자열이라(RULE.md 5.3), AI가 그걸 지우면 기능 자체가 망가진다.
-     */
     val SYSTEM: String = """
         당신은 개발자가 만들 GitLab Merge Request의 제목과 본문을 씁니다.
 
@@ -31,23 +18,10 @@ object MergeRequestDraftPrompt {
           빈 자리만 채웁니다. 작업 키는 관련 이슈를 적는 절에 남깁니다.
     """.trimIndent()
 
-    /**
-     * stdin으로 넘길 전문. 지시와 재료를 한 덩어리로 만든다.
-     *
-     * `--system-prompt`로 따로 넘기지 않는 이유는 Windows 때문이다. `claude`는 npm 셈이라
-     * `claude.cmd`가 `cmd.exe`를 거치는데, 인자 안의 줄바꿈이 명령줄을 끊고 큰따옴표는 따로 이스케이프해야
-     * 한다. 지시문에는 둘 다 들어 있다. stdin으로 보내면 그 문제가 통째로 사라진다.
-     */
     fun stdinOf(request: DraftRequest): String = "$SYSTEM\n\n$FIELDS\n${of(request)}"
 
     private const val FIELDS = "--- 아래는 이번 브랜치의 재료입니다 ---"
 
-    /**
-     * 이번 브랜치의 재료.
-     *
-     * 커밋과 파일은 [LIMIT]개까지만 싣는다. 오래 살아 있던 브랜치에서는 수백 개가 나오는데,
-     * 그대로 보내면 프롬프트가 부풀고 정작 중요한 앞부분이 묻힌다.
-     */
     fun of(request: DraftRequest): String = buildString {
         appendLine("원본 브랜치: ${request.sourceBranch}")
         appendLine("대상 브랜치: ${request.targetBranch}")

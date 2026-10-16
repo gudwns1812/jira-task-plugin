@@ -10,7 +10,6 @@ data class JiraIssueTypeWithStatuses(
     val statuses: List<JiraNamedValue>,
 )
 
-/** 최초 설정에 필요한 읽기 전용 Jira 메타데이터 경계다. */
 interface JiraSetupReader {
     fun verifyIdentity()
     fun listProjects(): List<JiraProject>

@@ -14,10 +14,6 @@ import io.github.gudwns1812.jiratask.application.problemOf
 import javax.swing.DefaultComboBoxModel
 import javax.swing.JComponent
 
-/**
- * 다이얼로그와 분리한 연결 입력 폼. 다이얼로그 껍데기 없이도 검증 규칙을 테스트할 수 있게 나눴다.
- * API 토큰은 [JBPasswordField]로 받아 화면에 원문이 보이지 않는다.
- */
 class SetupConnectionForm(initialBaseUrl: String = "", initialEmail: String = "") {
 
     val baseUrlField: JBTextField = JBTextField(initialBaseUrl)
@@ -38,7 +34,6 @@ class SetupConnectionForm(initialBaseUrl: String = "", initialEmail: String = ""
     private fun apiToken(): String = String(apiTokenField.password)
 }
 
-/** 프로젝트·이슈 유형·상태를 고르는 콤보박스 폼. 라벨은 사람이 읽는 문구, 값은 Jira ID다. */
 class SetupChoiceForm(message: String, choices: List<SetupChoice>) {
 
     val comboBox: ComboBox<SetupChoice> = ComboBox(DefaultComboBoxModel(choices.toTypedArray())).apply {

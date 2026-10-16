@@ -1,24 +1,6 @@
 package io.github.gudwns1812.jiratask.domain.commit
 
-/**
- * 커밋 메시지를 써 달라는 지시와 재료를 글로 만든다.
- *
- * [io.github.gudwns1812.jiratask.domain.mr.MergeRequestDraftPrompt]와 같은 이유로 도메인에 둔다 —
- * 프로세스를 띄우지 않고도 **무엇을 보내고 있는지** 시험해 볼 수 있어야 한다.
- * diff를 함께 보내는 기능이라 그 확인이 MR 초안보다 더 중요하다.
- */
 object CommitDraftPrompt {
-
-    /**
-     * 모델에게 늘 같게 주는 지시.
-     *
-     * 세 가지를 못박는다. **접두사를 붙일 것** — 팀의 커밋은 `refactor: …`처럼 무엇을 한 것인지로
-     * 시작한다. **이슈 키를 쓰지 말 것** — 키는 도구가 앞에 붙이므로(RULE.md 5.2) 모델까지 쓰면
-     * `S15P11A601-152 S15P11A601-152 …`이 된다. **본문을 쓰지 말 것** — 커밋은 한 줄이다.
-     *
-     * 접두사 목록은 [CommitType]에서 가져온다. 지시와 검사가 갈라지면 모델은 목록에 없는 말을
-     * 배우고, 그 답은 읽히지 못해 버려진다.
-     */
     val SYSTEM: String = """
         당신은 개발자가 지금 만들 Git 커밋의 제목을 씁니다.
 
@@ -39,17 +21,10 @@ object CommitDraftPrompt {
         - 한국어로 씁니다.
     """.trimIndent()
 
-    /** stdin으로 넘길 전문. 인자가 아니라 stdin인 이유는 MR 초안 쪽에 적어 두었다. */
     fun stdinOf(request: CommitDraftRequest): String = "$SYSTEM\n\n$FIELDS\n${of(request)}"
 
     private const val FIELDS = "--- 아래는 이번 커밋의 재료입니다 ---"
 
-    /**
-     * 이번 커밋의 재료.
-     *
-     * 파일은 [FILE_LIMIT]개, diff는 [DIFF_LINE_LIMIT]줄·[DIFF_CHAR_LIMIT]자까지만 싣는다.
-     * 큰 커밋에서는 diff가 수만 줄이 되는데, 그대로 보내면 프롬프트가 부풀고 앞부분이 묻힌다.
-     */
     fun of(request: CommitDraftRequest): String = buildString {
         request.branch?.trim()?.takeIf { it.isNotEmpty() }?.let { appendLine("브랜치: $it") }
         request.issueKey?.trim()?.takeIf { it.isNotEmpty() }?.let {
@@ -86,7 +61,6 @@ object CommitDraftPrompt {
         }
     }
 
-    /** 줄 수와 글자 수 중 먼저 걸리는 쪽에서 자르고, 잘랐다는 것을 밝힌다. */
     fun clip(diff: String): String {
         val lines = diff.lineSequence().toList()
         val kept = lines.take(DIFF_LINE_LIMIT).joinToString("\n")

@@ -5,10 +5,6 @@ import com.intellij.notification.NotificationType
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.project.Project
 
-/**
- * CLI가 콘솔에 찍던 성공·경고·실패 문구를 IDE 알림으로 옮긴 자리다.
- * CLI의 종료 코드는 알림 심각도(정보/경고/오류)로 대응한다.
- */
 object JiraTaskNotifications {
     const val GROUP_ID: String = "Jira Task"
 

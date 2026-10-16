@@ -50,16 +50,6 @@ import javax.swing.JComponent
 import javax.swing.JList
 import javax.swing.ListSelectionModel
 
-/**
- * 오른쪽 사이드바의 **Jira Task** 툴 윈도우. 조작은 상단 아이콘 툴바(=액션)로 하고, 본문은
- * 저장된 설정·현재 작업 번호·현재 브랜치를 보여주는 읽기 화면이다.
- *
- * 본문은 상태에 따라 세 화면 중 하나다 — 정상이면 상태 행, 설정이 없으면 마법사를 안내하는 빈 상태,
- * 설정이 손상됐으면 오류와 설정 열기 안내. 처음 쓰는 사용자에게 "설정되지 않음" 일곱 줄을 보여주는
- * 대신 다음에 할 일을 준다.
- *
- * 툴바가 액션을 직접 실행하므로 각 액션의 `update()`가 활성/비활성과 툴팁을 결정한다.
- */
 class JiraTaskToolWindowPanel @JvmOverloads constructor(
     private val project: Project,
     parentDisposable: Disposable,
@@ -68,33 +58,23 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
     private val openSettings: () -> Unit = {
         ShowSettingsUtil.getInstance().showSettingsDialog(project, JiraTaskConfigurable::class.java)
     },
-    /** 화면에 그릴 것을 읽는 방법. 기본은 [readBoard]이고, 테스트에서 갈아 끼운다. */
     private val boardReader: (() -> JiraTaskBoard)? = null,
-    /**
-     * 스프린트를 읽는 방법. 인자는 "새로 고침을 눌렀는가"이고, true면 캐시를 건너뛴다.
-     * 그 갈림이 새로 고침 버튼의 전부라 테스트가 여기를 잡는다.
-     */
     private val readSprint: (Boolean) -> SprintTaskLoad = { force ->
         SprintTasks.getInstance(project).let { if (force) it.reload() else it.current() }
     },
-    /** git에서 현재 작업 번호를 읽는 방법. 기본은 로컬 git 설정이고, 테스트에서 갈아 끼운다. */
     private val taskNumberFromGit: () -> String? = {
         project.basePath?.let { runCatching { GitRepository(File(it)).getCurrentTaskNumber() }.getOrNull() }
     },
 ) : SimpleToolWindowPanel(true, true) {
-
-    /** 본문에 보이는 화면. */
     enum class Shown { STATUS, SETUP_NEEDED, PROBLEM }
 
     private val repository = PolicyConfigRepository()
 
-    /** 항목의 종류(일반 문구 / 링크 / 고정폭)는 고정이므로 컴포넌트도 한 번만 만든다. */
     private val rowViews: Map<String, StatusRowView> = JiraTaskStatus.EMPTY.settingsRows()
         .associate { it.name to StatusRowView.of(it.kind, browse) }
 
     private val problemLabel = JBLabel()
 
-    /** 현재 작업. 번호가 아니라 키·제목·상태로 보여 준다. */
     private val taskKeyLabel = ActionLink("") { openCurrentIssue() }
 
     private val taskSummaryLabel = JBLabel()
@@ -105,7 +85,6 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
 
     private val sprintModel = DefaultListModel<SprintTaskRow>()
 
-    /** 현재 스프린트. 여기서 바로 작업을 바꿀 수 있다 — 다이얼로그를 열 이유가 없다. */
     val sprintList: JBList<SprintTaskRow> = JBList(sprintModel).apply {
         selectionMode = ListSelectionModel.SINGLE_SELECTION
         cellRenderer = SprintRowRenderer()
@@ -133,7 +112,6 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
     }
 
     private val sprintPanel: JComponent = panel {
-        // 목록 전체를 접을 수 있게 둔다. 스프린트를 다 훑고 나면 현재 작업만 보면 되는 때가 온다.
         collapsibleGroup("현재 스프린트") {
             row { cell(JBScrollPane(sprintList)).resizableColumn() }
             row { cell(sprintNoticeLabel) }
@@ -188,16 +166,11 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
     init {
         toolbar = createToolbar().component
         setContent(JBScrollPane(body))
-        // 테마 글꼴에 한글이 없으면 이 패널의 글자가 통째로 네모가 된다.
         body.applyHangulFallback()
         show(JiraTaskBoard.EMPTY)
         subscribe(parentDisposable)
     }
 
-    /**
-     * 스스로 갱신하는 경로 두 가지: 액션이 성공해 상태가 바뀌었다는 통지([JiraTaskStateListener]),
-     * 그리고 툴 윈도우가 다시 보이는 순간. 후자는 다른 창에서 브랜치를 바꾸고 돌아온 경우를 잡아준다.
-     */
     private fun subscribe(parentDisposable: Disposable) {
         val connection = project.messageBus.connect(parentDisposable)
         connection.subscribe(JiraTaskStateListener.TOPIC, JiraTaskStateListener { refreshInBackground() })
@@ -209,35 +182,24 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
         )
     }
 
-    /** 이 툴 윈도우가 보일 때만 다시 읽는다. */
     fun onToolWindowShown(toolWindowId: String) {
         if (toolWindowId == TOOL_WINDOW_ID) {
             refreshInBackground()
         }
     }
 
-    /** 제목 표시줄(gear 줄)에 놓을 액션들. */
     fun titleActions(): List<AnAction> = listOf(RefreshStatusAction(), OpenSettingsAction())
 
-    /** 지금 그려진 상태. 테스트와 새로 고침 판단에 쓴다. */
     fun currentStatus(): JiraTaskStatus = board.status
 
-    /** 지금 그려진 화면 전체. */
     fun currentBoard(): JiraTaskBoard = board
 
-    /** 본문에 어떤 화면이 보이는지. */
     fun shown(): Shown = when {
         setupNeededPanel.isVisible -> Shown.SETUP_NEEDED
         problemPanel.isVisible -> Shown.PROBLEM
         else -> Shown.STATUS
     }
 
-    /**
-     * git과 Jira를 읽어야 하므로 백그라운드에서 만든 뒤 화면에 반영한다.
-     *
-     * [force]는 사용자가 새로 고침을 눌렀다는 뜻이다. 이때는 스프린트 캐시를 건너뛰고 Jira에 다시 묻는다 —
-     * 캐시를 그대로 쓰면 "새로 고침해도 그대로"가 되어 버튼이 거짓말을 한다.
-     */
     @JvmOverloads
     fun refreshInBackground(force: Boolean = false) {
         ApplicationManager.getApplication().executeOnPooledThread {
@@ -246,18 +208,11 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
         }
     }
 
-    /**
-     * 백그라운드에서 화면에 그릴 것을 전부 읽는다(테스트에서는 직접 호출한다).
-     *
-     * Jira 조회는 설정이 갖춰졌을 때만 한다. 설정이 없으면 어차피 빈 상태 화면을 보여 주므로
-     * 네트워크를 칠 이유가 없다.
-     */
     @JvmOverloads
     fun readBoard(force: Boolean = false): JiraTaskBoard {
         val load = EditSettingsUseCase(repository::loadConfig, repository::saveConfig).load()
         val git = project.basePath?.let { GitRepository(File(it)) }
         val state = CurrentTaskState.getInstance(project)
-        // git에서 읽은 값은 캐시에도 남긴다. 커밋 훅처럼 캐시만 보는 쪽이 빈손으로 돌아가지 않게 한다.
         val taskNumber = state.taskNumber ?: taskNumberFromGit()?.also(state::apply)
         val status = JiraTaskStatus.of(load, taskNumber, git?.currentBranch())
 
@@ -305,7 +260,6 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
                 if (sprint.tasks.isEmpty()) {
                     (sprint.reason ?: EmptySprintReason.UNKNOWN).message
                 } else {
-                    // 목록이 비지 않아도 무엇을 거르는지는 보여 준다. 방금 만든 이슈가 없을 때의 답이다.
                     SprintTaskList.excludedNotice(sprint.otherAssigneeCount)
                 }
             }
@@ -314,7 +268,6 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
         }
     }
 
-    /** 목록에서 고른 작업을 시작한다. 머리글을 고른 경우에는 아무 일도 하지 않는다. */
     fun startSelected() {
         val task = (sprintList.selectedValue as? SprintTaskRow.Task)?.task ?: return
         StartTaskAction.start(project, StartTaskChoice(task.key.substringAfterLast('-'), task))
@@ -325,7 +278,6 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
         board.status.issueUrl(issueKey)?.let(browse)
     }
 
-    /** 머리글은 굵게, 끝난 작업은 흐리게. 머리글은 고를 수 없다. */
     private inner class SprintRowRenderer : DefaultListCellRenderer() {
         override fun getListCellRendererComponent(
             list: JList<*>?,
@@ -358,7 +310,6 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
         return toolbar
     }
 
-    /** 툴바 구성. 새로 고침·설정 열기는 제목 표시줄에 있으므로 여기에는 실행 액션만 둔다. */
     fun toolbarGroup(): DefaultActionGroup {
         val group = DefaultActionGroup()
         ActionManager.getInstance().getAction(TOOLBAR_GROUP_ID)?.let { group.add(it) }
@@ -391,7 +342,6 @@ class JiraTaskToolWindowPanel @JvmOverloads constructor(
         const val REFRESH: String = "새로 고침"
         const val START_HINT: String = "아래에서 작업을 골라 시작하세요."
         const val SPRINT_LOADING: String = "현재 스프린트를 읽는 중입니다…"
-        /** 값을 아직 못 읽었을 때 라벨 옆에 두는 자리 문구. 빈칸으로 두면 라벨만 떠 이상해진다. */
         const val UNKNOWN_VALUE: String = "알 수 없음"
     }
 }

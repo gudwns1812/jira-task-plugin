@@ -8,7 +8,6 @@ import io.github.gudwns1812.jiratask.infrastructure.GitLabTokenStore
 import io.github.gudwns1812.jiratask.infrastructure.PasswordSafeCredentialStore
 import io.github.gudwns1812.jiratask.infrastructure.PolicyConfigRepository
 
-/** 저장된 설정에서 명령 하나를 실행할 수 있는지 본 결과. 부족하면 무엇이 없는지 알려준다. */
 sealed interface SettingsLookup<out T> {
     data class Ready<T>(val value: T) : SettingsLookup<T>
     data class Missing(val message: String) : SettingsLookup<Nothing>
@@ -16,22 +15,13 @@ sealed interface SettingsLookup<out T> {
 
 data class CommitSettings(val projectKey: String)
 
-/**
- * AI 초안에 필요한 값.
- *
- * API 키가 없다 — 사용자가 이미 로그인해 둔 CLI를 그대로 쓰기 때문이다.
- * 플러그인이 자격 증명을 갖지 않는 것이 이 기능을 구독 요금제로 쓸 수 있는 이유다.
- */
 data class AiDraftSettings(
-    /** 어느 CLI에게 맡길지. 모델과 실행 파일 경로는 이 provider에 저장된 것이다. */
     val provider: AiProvider,
     val model: String?,
     val executablePath: String?,
-    /** 커밋 초안에 변경 내용(diff)까지 보낼지. 커밋 초안에서만 본다. */
     val sendDiff: Boolean = true,
 )
 
-/** 토큰을 어디서 가져왔는가. 거부당했을 때 **어디를 고쳐야 하는지** 말해 주려고 들고 다닌다. */
 enum class GitLabTokenSource {
     SETTINGS,
     ENVIRONMENT,
@@ -43,22 +33,14 @@ enum class GitLabTokenSource {
     }
 }
 
-/** MR을 만드는 데 필요한 값. Jira 주소는 본문에 이슈 링크를 적는 데 쓴다. */
 data class MergeRequestSettings(
     val gitLabBaseUrl: String,
     val gitLabToken: String,
     val jiraBaseUrl: String?,
     val tokenSource: GitLabTokenSource = GitLabTokenSource.SETTINGS,
-    /** MR 창을 열 때 리뷰어로 미리 넣어 둘 GitLab 아이디들. */
     val defaultReviewers: List<String> = emptyList(),
 )
 
-/**
- * 작업 이슈를 다루는 데 필요한 값.
- *
- * 어느 상태가 "진행 중"인지는 담지 않는다. Jira의 상태 카테고리가 이미 답이라
- * [io.github.gudwns1812.jiratask.application.AdvanceTaskUseCase]가 그 이슈의 워크플로에서 직접 고른다.
- */
 data class TaskTransitionSettings(
     val projectKey: String,
     val baseUrl: String,
@@ -67,20 +49,9 @@ data class TaskTransitionSettings(
     val taskIssueTypeId: String,
 )
 
-/**
- * CLI `src/cli/index.ts`가 명령마다 하던 설정 확인(`getBranchConfig` 등)을 옮긴 자리다.
- * 안내 문구와 환경 변수 우선순위(`JIRA_EMAIL`, `JIRA_API_TOKEN`)를 CLI와 같게 유지한다.
- */
 class JiraTaskSettings(
     private val repository: PolicyConfigRepository = PolicyConfigRepository(),
     private val credentials: CredentialStore = PasswordSafeCredentialStore(),
-    /**
-     * GitLab 주소에 저장해 둔 토큰. 기본 구현은 IDE 비밀번호 저장소다.
-     *
-     * 저장소 타입이 아니라 함수로 받는 이유는 [environment]와 같다 — [GitLabTokenStore]는
-     * `PasswordSafe`를 물고 있어 IDE 없이는 값을 돌려주게 흉내낼 수 없고, 그러면 토큰 우선순위를
-     * 테스트할 방법이 사라진다.
-     */
     private val gitLabToken: (String) -> String? = GitLabTokenStore()::get,
     private val environment: (String) -> String? = { System.getenv(it) },
 ) {
@@ -90,13 +61,6 @@ class JiraTaskSettings(
         SettingsLookup.Ready(CommitSettings(projectKey))
     }
 
-    /**
-     * MR 생성에 필요한 설정. GitLab 주소와 토큰이 없으면 무엇이 없는지 알려준다.
-     *
-     * **설정 화면의 토큰이 환경 변수를 이긴다.** 반대로 두면 사용자가 화면에서 고칠 수 없는 값이
-     * 항상 이겨서, 올바른 토큰을 넣어도 계속 거부당하고 그 이유가 화면 어디에도 보이지 않는다.
-     * 환경 변수는 화면에 아무것도 저장하지 않은 경우(CI, 스크립트)를 위한 뒷받침으로만 남긴다.
-     */
     fun forMergeRequest(): SettingsLookup<MergeRequestSettings> = withConfig { config ->
         val baseUrl = config.gitlab?.baseUrl
             ?: return@withConfig SettingsLookup.Missing(NO_GITLAB)
@@ -107,7 +71,6 @@ class JiraTaskSettings(
             return@withConfig SettingsLookup.Missing(error.message ?: NO_GITLAB_TOKEN)
         }?.trim()?.ifEmpty { null }
 
-        // 빈 문자열도 없는 것으로 친다. `GITLAB_TOKEN=`은 non-null이라 그냥 두면 빈 헤더를 보내 401이 된다.
         val fromEnvironment = environment("GITLAB_TOKEN")?.trim()?.ifEmpty { null }
 
         val (token, source) = when {
@@ -127,7 +90,6 @@ class JiraTaskSettings(
         )
     }
 
-    /** AI 초안 설정. 꺼져 있으면 왜 쓸 수 없는지 알려준다. */
     fun forAiDraft(): SettingsLookup<AiDraftSettings> = withConfig { config ->
         val ai = config.ai?.takeIf { it.enabled }
             ?: return@withConfig SettingsLookup.Missing(AI_DISABLED)
@@ -142,7 +104,6 @@ class JiraTaskSettings(
         )
     }
 
-    /** 작업을 시작할 때의 상태 전환에 필요한 설정. 하나라도 없으면 무엇이 없는지 알려준다. */
     fun forTaskTransition(): SettingsLookup<TaskTransitionSettings> = withConfig { config ->
         val baseUrl = config.jira?.baseUrl
         val email = environment("JIRA_EMAIL") ?: config.jira?.email

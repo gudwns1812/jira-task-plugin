@@ -33,7 +33,6 @@ sealed interface SetupWizardResult {
     data class Failed(val message: String) : SetupWizardResult
 }
 
-/** 예외를 사용자에게 보여줄 문구로 바꾼다. CLI startInitialSetup의 오류 처리와 같은 규칙이다. */
 object SetupFailureMessages {
     const val FALLBACK: String = "Jira 초기 설정을 완료하지 못했습니다. Jira 주소, 인증 정보, 프로젝트 권한을 확인하세요."
 
@@ -44,10 +43,6 @@ object SetupFailureMessages {
     }
 }
 
-/**
- * CLI의 config setup에 대응하는 마법사 실행 단위. 유스케이스(T17)에 IntelliJ 구현체들을 묶어주고,
- * 결과를 화면에 보여줄 세 가지 상태로 정리한다.
- */
 class SetupWizard(
     private val prompter: SetupPrompter,
     private val credentials: CredentialStore = PasswordSafeCredentialStore(),
@@ -73,7 +68,6 @@ class SetupWizard(
     }
 }
 
-/** 액션·알림·Settings 버튼이 공유하는 마법사 실행 경로. 네트워크 호출이 EDT를 막지 않도록 백그라운드에서 돈다. */
 object SetupWizardLauncher {
 
     fun launch(project: Project?) {

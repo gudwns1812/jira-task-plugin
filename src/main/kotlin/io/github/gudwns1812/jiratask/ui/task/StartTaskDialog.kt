@@ -25,25 +25,12 @@ import javax.swing.JList
 import javax.swing.ListSelectionModel
 import javax.swing.event.DocumentEvent
 
-/**
- * 목록에서 고른 작업, 또는 직접 입력한 번호.
- *
- * 목록을 못 불러와도 번호를 직접 칠 수 있어야 한다 — Jira가 죽었다고 커밋을 못 하면 안 된다.
- */
 data class StartTaskChoice(val taskNumber: String, val task: SprintTask?) {
-
-    /** 고른 작업을 `진행 중`으로 옮길 것인가. 직접 입력한 번호는 무엇인지 모르므로 옮겨 본다. */
     fun movesToInProgress(): Boolean = task == null || SprintTaskList.movesToInProgress(task)
 
-    /** 화면에 덧붙일 안내. 없으면 null. */
     fun notice(): String? = task?.takeIf { it.statusCategory.isDone }?.let { SprintTaskList.DONE_NOTICE }
 }
 
-/**
- * 현재 스프린트의 내 작업을 고르는 다이얼로그.
- *
- * 화면에는 세 가지 상태가 있다 — 읽는 중, 목록, 목록 없음. 마지막 경우에도 번호 입력 칸은 살아 있다.
- */
 class StartTaskDialog(
     project: Project?,
     private val currentTaskNumber: String? = null,
@@ -54,8 +41,6 @@ class StartTaskDialog(
     val taskList: JBList<SprintTaskRow> = JBList(model).apply {
         selectionMode = ListSelectionModel.SINGLE_SELECTION
         cellRenderer = RowRenderer()
-        // 목록이 길어질 때를 위한 탈출구. 그냥 타이핑하면 IDE가 겹쳐 그리는 찾기 상자다.
-        // 한 사람의 스프린트 작업은 보통 열 몇 건이라 별도 검색 칸을 두지 않는다.
         ListSpeedSearch.installOn(this) { row -> (row as? SprintTaskRow.Task)?.task?.label() }
         addListSelectionListener {
             selectedTask()?.let { taskNumberField.text = numberOf(it.key) }
@@ -76,14 +61,12 @@ class StartTaskDialog(
 
     private val noticeLabel = JBLabel("")
 
-    /** 마지막으로 받은 목록. 검색은 이 값을 걸러서 보여준다. */
     private var loaded: List<SprintTask> = emptyList()
 
     init {
         title = "Start Jira Task"
         setOKButtonText("작업 시작")
         init()
-        // 테마 글꼴에 한글이 없으면 이 창의 글자가 통째로 네모가 된다.
         applyHangulFallbackToWindow()
 
         taskNumberField.document.addDocumentListener(object : DocumentAdapter() {
@@ -106,12 +89,10 @@ class StartTaskDialog(
 
     fun values(): TaskFormInput = TaskFormInput(taskNumberField.text)
 
-    // 화면을 띄우지 않고도 상태 문구를 확인할 수 있게 공개 범위를 넓힌다.
     fun statusText(): String = statusLabel.text.orEmpty()
 
     fun noticeText(): String = noticeLabel.text.orEmpty()
 
-    /** 지금 확정하면 무엇이 저장되는가. */
     fun choice(): StartTaskChoice {
         val number = taskNumberField.text.trim()
         val selected = selectedTask()?.takeIf { numberOf(it.key) == number }
@@ -119,10 +100,6 @@ class StartTaskDialog(
         return StartTaskChoice(number, selected)
     }
 
-    /**
-     * 목록을 받았다. EDT에서 호출한다.
-     * [emptyReason]은 목록이 비었을 때 왜 비었는지, [otherAssigneeCount]는 내 담당이 아니라 빠진 수다.
-     */
     @JvmOverloads
     fun show(tasks: List<SprintTask>, emptyReason: EmptySprintReason? = null, otherAssigneeCount: Int = 0) {
         loaded = tasks
@@ -136,7 +113,6 @@ class StartTaskDialog(
         refreshState()
     }
 
-    /** 목록을 받지 못했다. 번호 입력만 남는다. */
     fun showProblem(message: String) {
         loaded = emptyList()
         model.clear()
@@ -165,10 +141,8 @@ class StartTaskDialog(
         noticeLabel.text = choice().notice().orEmpty()
     }
 
-    /** `S15P11A108-257` → `257`. 키에서 프로젝트 접두를 떼어 저장 형식으로 맞춘다. */
     private fun numberOf(issueKey: String): String = issueKey.substringAfterLast('-')
 
-    /** 머리글은 굵게, 끝난 작업은 흐리게. 머리글은 고를 수 없다. */
     private inner class RowRenderer : DefaultListCellRenderer() {
         override fun getListCellRendererComponent(
             list: JList<*>?,

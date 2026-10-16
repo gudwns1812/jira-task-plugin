@@ -21,10 +21,8 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <notificationGroup id="Jira Task" displayType="BALLOON"/>
-        <!-- 커밋 창이 열릴 때의 기본 메시지. 모달 다이얼로그와 커밋 툴 윈도우가 함께 쓰는 경로다. -->
         <vcs.commitMessageProvider
             implementation="io.github.gudwns1812.jiratask.ui.commit.JiraTaskCommitMessageProvider"/>
-        <!-- 커밋 직전에 이슈 키를 한 번 더 보정하는 안전망. -->
         <checkinHandlerFactory implementation="io.github.gudwns1812.jiratask.ui.commit.JiraTaskCheckinHandlerFactory"/>
         <statusBarWidgetFactory id="JiraTask.CurrentTask"
                                 implementation="io.github.gudwns1812.jiratask.ui.task.CurrentTaskWidgetFactory"
@@ -77,10 +75,6 @@
                     icon="AllIcons.General.Settings"/>
         </group>
 
-        <!--
-            IDE 커밋 창의 메시지 칸 옆 툴바. 커밋은 대부분 여기서 하므로 초안 버튼도 여기 둔다.
-            Jira Task 메뉴에는 넣지 않는다 — 채울 메시지 칸이 없는 자리에서는 할 일이 없다.
-        -->
         <action id="JiraTask.DraftCommitMessage"
                 class="io.github.gudwns1812.jiratask.ui.commit.DraftCommitMessageAction"
                 text="AI로 커밋 메시지 쓰기"
@@ -89,7 +83,6 @@
             <add-to-group group-id="Vcs.MessageActionGroup" anchor="first"/>
         </action>
 
-        <!-- 툴 윈도우 상단 아이콘 툴바. 메뉴와 같은 액션을 참조해 동작이 갈라지지 않게 한다. -->
         <group id="JiraTask.ToolWindowToolbar">
             <reference id="JiraTask.StartTask"/>
             <reference id="JiraTask.Commit"/>

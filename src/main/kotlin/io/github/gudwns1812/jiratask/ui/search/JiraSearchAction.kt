@@ -19,7 +19,6 @@ import io.github.gudwns1812.jiratask.ui.TaskTransitionSettings
 import io.github.gudwns1812.jiratask.ui.applyAvailability
 import io.github.gudwns1812.jiratask.ui.task.SprintTasks
 
-/** Jira를 여는 대신 IDE 안에서 이슈를 찾아보고 제목·설명을 고친다. */
 class JiraSearchAction @JvmOverloads constructor(
     private val settings: JiraTaskSettings = JiraTaskSettings(),
     private val availability: JiraTaskAvailability = JiraTaskAvailability(),
@@ -86,10 +85,6 @@ class JiraSearchAction @JvmOverloads constructor(
             }
         }
 
-    /**
-     * 저장한다. 실패하면 화면을 되돌리지 않는다 — 사용자가 친 글을 잃게 만들면 안 된다.
-     * 성공한 뒤에는 캐시를 비운다. 제목이 바뀌었으니 목록도 낡았다.
-     */
     private fun runSave(project: Project, dialog: JiraSearchDialog, editor: JiraIssueEditor, edit: IssueEdit) =
         inBackground(project) {
             val result = runCatching {
@@ -118,10 +113,6 @@ class JiraSearchAction @JvmOverloads constructor(
         }
     }
 
-    /**
-     * 검색 창은 모달이다. 풀 스레드에서 예약한 `invokeLater`는 기본이 비모달이라 창이 닫힐 때까지
-     * 실행되지 않으므로, 열려 있는 창을 갱신하려면 [ModalityState.any]로 올려야 한다.
-     */
     private fun onEdt(project: Project, block: () -> Unit) {
         ApplicationManager.getApplication().invokeLater(
             { if (!project.isDisposed) block() },

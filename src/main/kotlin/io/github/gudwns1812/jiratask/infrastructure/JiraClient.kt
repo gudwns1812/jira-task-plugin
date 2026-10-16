@@ -30,7 +30,6 @@ import java.util.Base64
 
 data class JiraHttpResponse(val statusCode: Int, val body: String)
 
-/** 실제 네트워크 전송을 추상화해 테스트에서 가짜 응답을 주입할 수 있게 한다. */
 fun interface JiraHttpTransport {
     fun send(url: String, method: String, body: String?, headers: Map<String, String>): JiraHttpResponse
 }
@@ -87,7 +86,6 @@ class JiraClient(
     }
 
     override fun currentSprintTasks(projectKey: String, taskIssueTypeId: String): List<SprintTask> {
-        // 상태로 거르지 않는다. 끝난 작업도 목록에 담아 두고 화면이 아래로 내린다(RULE.md 6.1).
         val jql = """project = "$projectKey" AND issuetype = $taskIssueTypeId """ +
             "AND assignee = currentUser() AND sprint IN openSprints() ORDER BY created ASC"
 
@@ -115,7 +113,6 @@ class JiraClient(
         val body = try {
             requestObject("/rest/api/3/issue/${encode(issueKey)}?fields=summary,status")
         } catch (error: JiraRequestError) {
-            // 없는 키와 볼 수 없는 키를 구분하지 않는다. 어느 쪽이든 가드가 할 말은 같다.
             return null
         }
         val fields = body.objectOrNull("fields")
@@ -132,7 +129,6 @@ class JiraClient(
     }
 
     override fun searchByText(projectKey: String, text: String, limit: Int): List<SprintTask> {
-        // 담당자·스프린트·상태로 좁히지 않는다. 끝난 작업을 다시 보는 것이 검색의 주된 쓰임이다.
         val jql = """project = "$projectKey" AND summary ~ "${escapeJqlText(text)}" ORDER BY updated DESC"""
 
         return searchIssues(jql, limit) { key, summary, status ->
@@ -140,13 +136,6 @@ class JiraClient(
         }
     }
 
-    /**
-     * 이 이슈가 지금 열려 있는 스프린트에 담겨 있는지. 스프린트는 사이트마다 커스텀 필드 ID가 달라
-     * 필드를 직접 읽을 수 없으므로, 필드 ID가 필요 없는 JQL 함수로 되묻는다.
-     *
-     * 확인할 수 없으면 `true`를 준다. 커밋 가드는 이 값이 `false`일 때만 경고하므로,
-     * 모르는 것을 위반으로 바꾸지 않기 위해서다(RULE.md 5.2).
-     */
     private fun isInOpenSprint(issueKey: String): Boolean = try {
         searchIssues("""key = "$issueKey" AND sprint IN openSprints()""", 1) { _, _, _ -> Unit }.isNotEmpty()
     } catch (error: Exception) {
@@ -179,7 +168,6 @@ class JiraClient(
                 results += decode(key, fields?.stringOrNull("summary").orEmpty(), decodeStatus(fields?.objectOrNull("status")))
             }
 
-            // 토큰이 없으면 마지막 페이지다. 빈 페이지에 토큰만 오면 멈춘다 — 무한 루프를 만들지 않는다.
             pageToken = body.stringOrNull("nextPageToken")?.takeIf { issues.size() > 0 } ?: return results
         }
 
@@ -193,7 +181,6 @@ class JiraClient(
 
     private data class DecodedStatus(val name: String, val category: JiraStatusCategory)
 
-    /** JQL 문자열 리터럴 안에서 따옴표와 역슬래시를 막는다. 검색어는 사용자가 자유롭게 친다. */
     private fun escapeJqlText(text: String): String =
         text.replace("\\", "\\\\").replace("\"", "\\\"")
 
@@ -215,10 +202,6 @@ class JiraClient(
         )
     }
 
-    /**
-     * 제목과 설명만 보낸다. 상태와 스프린트는 automation과 계획의 영역이라 손대지 않는다(RULE.md 6.2).
-     * 설명은 REST v3가 요구하는 ADF로 옮긴다.
-     */
     override fun updateSummaryAndDescription(issueKey: String, summary: String, description: String) {
         val payload = mapOf(
             "fields" to mapOf(
@@ -234,10 +217,6 @@ class JiraClient(
         )
     }
 
-    /**
-     * 스프린트 이름. 사이트마다 커스텀 필드 ID가 달라 REST v3로는 읽을 수 없으므로 이름이 고정된
-     * Agile API를 쓴다. 실패하면 빈 문자열 — 보여 주기용 값 하나 때문에 상세 조회를 실패시키지 않는다.
-     */
     private fun sprintNameOf(issueKey: String): String = try {
         requestObject("/rest/agile/1.0/issue/${encode(issueKey)}?fields=sprint")
             .objectOrNull("fields")?.objectOrNull("sprint")?.stringOrNull("name").orEmpty()
@@ -278,7 +257,6 @@ class JiraClient(
             if (isLast) {
                 return projects
             }
-            // 요청한 maxResults가 아니라 실제로 받은 개수만큼 넘긴다(서버가 더 적게 줄 수 있다).
             startAt += values.size()
         }
     }

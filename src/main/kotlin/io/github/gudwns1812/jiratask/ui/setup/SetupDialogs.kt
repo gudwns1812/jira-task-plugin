@@ -71,10 +71,6 @@ class SetupConfirmDialog(project: Project?, private val summary: SetupSummary) :
     }
 }
 
-/**
- * [SetupPrompter]의 IntelliJ 구현. 유스케이스는 백그라운드 스레드에서 돌고 다이얼로그는 EDT에서만
- * 만들 수 있으므로, 각 물음을 EDT로 넘겨 응답을 기다린다(CLI가 stdin 응답을 기다리는 것과 같은 동기 흐름).
- */
 class DialogSetupPrompter(
     private val project: Project?,
     initialBaseUrl: String = "",
@@ -115,7 +111,6 @@ class DialogSetupPrompter(
     }
 }
 
-/** EDT에서 [block]을 실행하고 결과(또는 예외)를 호출한 스레드로 되돌린다. 이미 EDT면 그 자리에서 실행된다. */
 private fun <T> onEdt(block: () -> T): T {
     var result: Result<T>? = null
     ApplicationManager.getApplication().invokeAndWait { result = runCatching(block) }
